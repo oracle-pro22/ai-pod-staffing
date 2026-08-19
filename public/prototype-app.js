@@ -12,8 +12,12 @@
     calendarAssignments: [],
     newRequestSkillIds: [],
     newRequestDefaultSkillIds: [],
+    newRequestExcludedDefaultSkillIds: [],
     newRequestCustomSkills: [],
     newRequestCustomSkillCounter: 0,
+    newRequestDeliverableIds: [],
+    newRequestCustomDeliverables: [],
+    newRequestCustomDeliverableCounter: 0,
   };
 
   const navItems = [
@@ -65,6 +69,20 @@
     const items = typeof limit === 'number' ? skills.slice(0, limit) : skills;
     return `<div class="skill-tags">${items.map((skill) => `<span class="skill-tag">${esc(skill.name ?? skill)}</span>`).join('')}${limit && skills.length > limit ? `<span class="skill-tag">+${skills.length - limit}</span>` : ''}</div>`;
   };
+  const requestDeliverables = (request) => request?.deliverables?.length ? request.deliverables : request?.deliverable ? [request.deliverable] : [];
+  const requestDeliverableNames = (request) => requestDeliverables(request).map((deliverable) => deliverable.name).filter(Boolean);
+  const primaryRequestDeliverable = (request) => requestDeliverables(request)[0] || { id: '', name: 'No deliverable recorded', note: '' };
+  const requestEffortLabel = (request) => {
+    const value = Number(request?.estimatedEffort?.value);
+    const unit = String(request?.estimatedEffort?.unit || '').toLowerCase();
+    if (value > 0 && unit) {
+      const label = value === 1 ? unit.replace(/s$/, '') : unit;
+      return `${value} ${label}`;
+    }
+    return `${Number(request?.estimatedHours) || 0} hours`;
+  };
+  const requestBusinessObjectives = (request) => request?.businessObjectivesAndExpectedOutcomes || request?.businessContext || '';
+  const requestProjectDescription = (request) => request?.projectDescription || request?.projectType?.description || '';
   const empty = (message) => `<div class="empty compact">${esc(message)}</div>`;
   const navIcon = (name) => `<svg viewBox="0 0 24 24" aria-hidden="true">${iconPaths[name]}</svg>`;
 
@@ -184,7 +202,7 @@
       kpiCard('Pending recommendations', pending, 'Advisory', '', 'purple'),
     ].join('');
 
-    $('priorityQueue').innerHTML = requests.length ? requests.map((request) => `<div class="list-row"><div><div class="row-title">${esc(request.title)}</div><div class="row-sub">${esc(request.id)} • ${esc(request.projectType.name)} • ${esc(request.deliverable.name)}</div></div><span class="pill ${statusClass(request.status)}">${esc(request.status)}</span><div><b>${formatShortDate(request.neededBy)}</b><div class="row-sub">${esc(request.priority)}</div></div><button class="btn sm" data-open-request="${esc(request.id)}">Review</button></div>`).join('') : empty('No assigned requests in this persona scope.');
+    $('priorityQueue').innerHTML = requests.length ? requests.map((request) => `<div class="list-row"><div><div class="row-title">${esc(request.title)}</div><div class="row-sub">${esc(request.id)} • ${esc(request.projectType.name)} • ${esc(requestDeliverableNames(request).join(', '))}</div></div><span class="pill ${statusClass(request.status)}">${esc(request.status)}</span><div><b>${formatShortDate(request.neededBy)}</b><div class="row-sub">${esc(request.priority)}</div></div><button class="btn sm" data-open-request="${esc(request.id)}">Review</button></div>`).join('') : empty('No assigned requests in this persona scope.');
 
     $('capacityWatch').innerHTML = people.length ? [...people].sort((a, b) => b.allocationPct - a.allocationPct).map((person) => `<div class="capacity-row"><div class="avatar">${esc(person.initials)}</div><div><div style="display:flex;justify-content:space-between;gap:8px"><b>${esc(person.name)}</b><span>${person.allocationPct}%</span></div><div class="progress ${pctClass(person.allocationPct)}"><span style="width:${Math.min(person.allocationPct, 100)}%"></span></div></div><span class="pill ${person.allocationPct >= 80 ? 'red' : person.allocationPct >= 70 ? 'amber' : ''}">${person.activePods} pods</span></div>`).join('') : empty('No capacity records are visible.');
 
@@ -212,7 +230,7 @@
       return;
     }
     const events = person.availability.length ? `${person.availability.length} recorded event${person.availability.length === 1 ? '' : 's'}` : 'No recorded conflicts';
-    $('podMemberPreviewBody').innerHTML = `<div style="display:flex;justify-content:space-between;gap:14px;align-items:flex-start"><div><div class="row-title">${esc(request.title)}</div><div class="row-sub">${esc(request.id)} • ${esc(request.deliverable.name)} • ${formatShortDate(request.neededBy)}</div></div><div class="score">${recommendation.score}</div></div><div class="reason-grid"><div class="reason"><span>Proposed role</span><strong>${esc(recommendation.roleInPod)}</strong></div><div class="reason"><span>Matching skills</span><strong>${recommendation.matchingSkills.length}/${request.requiredSkills.length}</strong></div><div class="reason"><span>Availability</span><strong>${esc(events)}</strong></div></div><div class="rationale">${esc(recommendation.rationale)}</div><button class="btn primary" style="margin-top:16px" data-open-fitment="${esc(request.id)}">View my fitment</button>`;
+    $('podMemberPreviewBody').innerHTML = `<div style="display:flex;justify-content:space-between;gap:14px;align-items:flex-start"><div><div class="row-title">${esc(request.title)}</div><div class="row-sub">${esc(request.id)} • ${esc(requestDeliverableNames(request).join(', '))} • ${formatShortDate(request.neededBy)}</div></div><div class="score">${recommendation.score}</div></div><div class="reason-grid"><div class="reason"><span>Proposed role</span><strong>${esc(recommendation.roleInPod)}</strong></div><div class="reason"><span>Matching capabilities</span><strong>${recommendation.matchingSkills.length}/${request.requiredSkills.length}</strong></div><div class="reason"><span>Availability</span><strong>${esc(events)}</strong></div></div><div class="rationale">${esc(recommendation.rationale)}</div><button class="btn primary" style="margin-top:16px" data-open-fitment="${esc(request.id)}">View my fitment</button>`;
   }
 
   function renderUpcomingDemand() {
@@ -262,7 +280,7 @@
     setSelectOptions('requestStatusFilter', 'All status', [...requests.map((request) => request.status), 'Closed'], $('requestStatusFilter').value);
     setSelectOptions('requestPriorityFilter', 'All priorities', requests.map((request) => request.priority), $('requestPriorityFilter').value);
     setSelectOptions('requestProjectFilter', 'All project types', requests.map((request) => request.projectType.name), $('requestProjectFilter').value);
-    setSelectOptions('requestDeliverableFilter', 'All deliverables', requests.map((request) => request.deliverable.name), $('requestDeliverableFilter').value);
+    setSelectOptions('requestDeliverableFilter', 'All deliverables', requests.flatMap(requestDeliverableNames), $('requestDeliverableFilter').value);
   }
 
   function renderRequests(refreshFilters = false) {
@@ -273,10 +291,11 @@
     const project = $('requestProjectFilter').value;
     const deliverable = $('requestDeliverableFilter').value;
     const rows = visibleRequests().filter((request) => {
-      const haystack = [request.id, request.title, request.projectType.name, request.deliverable.name, request.ownerName, ...request.requiredSkills.map((skill) => skill.name)].join(' ').toLowerCase();
-      return (!query || haystack.includes(query)) && (!status || request.status === status) && (!priority || request.priority === priority) && (!project || request.projectType.name === project) && (!deliverable || request.deliverable.name === deliverable);
+      const names = requestDeliverableNames(request);
+      const haystack = [request.id, request.title, request.projectType.name, ...names, request.requestSource || request.ownerName, ...request.requiredSkills.map((skill) => skill.name)].join(' ').toLowerCase();
+      return (!query || haystack.includes(query)) && (!status || request.status === status) && (!priority || request.priority === priority) && (!project || request.projectType.name === project) && (!deliverable || names.includes(deliverable));
     });
-    $('requestRows').innerHTML = rows.length ? rows.map((request) => `<tr><td><b>${esc(request.title)}</b><div class="row-sub">${esc(request.id)} • ${request.estimatedHours} hours</div></td><td>${esc(request.projectType.name)}</td><td class="request-context"><b>${esc(request.deliverable.name)}</b>${skillsHtml(request.requiredSkills, 3)}</td><td>${esc(request.ownerName)}</td><td><span class="pill ${statusClass(request.status)}">${esc(request.status)}</span></td><td>${formatDate(request.neededBy)}</td><td><button class="btn sm" data-open-request="${esc(request.id)}">Open</button></td></tr>`).join('') : `<tr><td colspan="7">${empty('No requests match the current filters.')}</td></tr>`;
+    $('requestRows').innerHTML = rows.length ? rows.map((request) => `<tr><td><b>${esc(request.title)}</b><div class="row-sub">${esc(request.id)} • ${esc(requestEffortLabel(request))}</div></td><td>${esc(request.projectType.name)}</td><td class="request-context"><b>${esc(requestDeliverableNames(request).join(', '))}</b>${skillsHtml(request.requiredSkills, 3)}</td><td>${esc(request.requestSource || request.ownerName)}</td><td><span class="pill ${statusClass(request.status)}">${esc(request.status)}</span></td><td>${formatDate(request.neededBy)}</td><td><button class="btn sm" data-open-request="${esc(request.id)}">Open</button></td></tr>`).join('') : `<tr><td colspan="7">${empty('No requests match the current filters.')}</td></tr>`;
   }
 
   function renderFitment() {
@@ -289,8 +308,8 @@
       return;
     }
     state.activeRequestId = request.id;
-    const note = request.deliverable.note || request.businessContext;
-    $('fitmentRequestSummary').innerHTML = `<div style="display:flex;justify-content:space-between;align-items:start"><div><span class="pill ${request.priority.toLowerCase() === 'high' ? 'red' : 'amber'}">${esc(request.priority)} priority</span><h3 style="font-size:18px;margin:10px 0 4px">${esc(request.title)}</h3><div class="muted small">${esc(request.id)} • ${esc(request.projectType.name)}</div></div><button class="icon-btn" data-open-request="${esc(request.id)}">↗</button></div><dl style="margin:16px 0 0"><div class="summary-pair"><dt>Needed by</dt><dd>${formatDate(request.neededBy)}</dd></div><div class="summary-pair"><dt>Deliverable</dt><dd>${esc(request.deliverable.name)}</dd></div><div class="summary-pair"><dt>Estimated effort</dt><dd>${request.estimatedHours} hours</dd></div>${request.requestedPodSize ? `<div class="summary-pair"><dt>Requested pod size</dt><dd>${esc(request.requestedPodSize)}</dd></div>` : ''}<div class="summary-pair"><dt>Required skills</dt><dd>${skillsHtml(request.requiredSkills)}</dd></div><div class="summary-pair"><dt>Status</dt><dd>${esc(request.status)}</dd></div></dl><div class="fit-summary-note"><b>Customer context</b><p class="muted small">${esc(note || 'No additional note is recorded.')}</p></div><div class="source-strip"><span>Mapping ${esc(request.mappingVersion || state.data.source.version)}</span><span>•</span><span>Human approval required</span></div>`;
+    const note = requestBusinessObjectives(request) || requestDeliverables(request).map((deliverable) => deliverable.note).filter(Boolean).join(' ');
+    $('fitmentRequestSummary').innerHTML = `<div style="display:flex;justify-content:space-between;align-items:start"><div><span class="pill ${request.priority.toLowerCase() === 'high' ? 'red' : 'amber'}">${esc(request.priority)} priority</span><h3 style="font-size:18px;margin:10px 0 4px">${esc(request.title)}</h3><div class="muted small">${esc(request.id)} • ${esc(request.projectType.name)}</div></div><button class="icon-btn" data-open-request="${esc(request.id)}">↗</button></div><dl style="margin:16px 0 0"><div class="summary-pair"><dt>Needed by date</dt><dd>${formatDate(request.neededBy)}</dd></div><div class="summary-pair"><dt>Key deliverables</dt><dd>${esc(requestDeliverableNames(request).join(', '))}</dd></div>${request.estimatedStartDate ? `<div class="summary-pair"><dt>Estimated start date</dt><dd>${formatDate(request.estimatedStartDate)}</dd></div>` : ''}${request.estimatedCompletionDate ? `<div class="summary-pair"><dt>Estimated completion date</dt><dd>${formatDate(request.estimatedCompletionDate)}</dd></div>` : ''}<div class="summary-pair"><dt>Estimated effort</dt><dd>${esc(requestEffortLabel(request))}</dd></div>${request.requestedPodSize ? `<div class="summary-pair"><dt>Requested pod size</dt><dd>${esc(request.requestedPodSize)}</dd></div>` : ''}<div class="summary-pair"><dt>Required capabilities</dt><dd>${skillsHtml(request.requiredSkills)}</dd></div><div class="summary-pair"><dt>Status</dt><dd>${esc(request.status)}</dd></div></dl><div class="fit-summary-note"><b>Business objectives and expected outcomes</b><p class="muted small">${esc(note || 'No additional context is recorded.')}</p></div><div class="source-strip"><span>Mapping ${esc(request.mappingVersion || state.data.source.version)}</span><span>•</span><span>Human approval required</span></div>`;
 
     const recommendationFactors = [
       ['Interest strength', 35, 92, 'var(--oj-teal)'],
@@ -330,7 +349,7 @@
   }
 
   function calendarBookingTone(request) {
-    const text = `${request?.projectType?.name || ''} ${request?.deliverable?.name || ''}`.toLowerCase();
+    const text = `${request?.projectType?.name || ''} ${requestDeliverableNames(request).join(' ')}`.toLowerCase();
     if (/video|demo/.test(text)) return 'video';
     if (/enable|webinar|workshop/.test(text)) return 'enable';
     return 'write';
@@ -360,6 +379,7 @@
     let people = visiblePeople().filter((person) => !skillId || person.skills.some((skill) => skill.id === skillId));
     people = people.filter((person) => capacity === 'Available' ? person.allocationPct < 70 : capacity === 'Constrained' ? person.allocationPct >= 70 : capacity === 'OOO / leave / travel' ? person.availability.length > 0 : true);
     if (!$('showAlternates').checked) people = people.filter((person) => visibleRequests().some((request) => request.recommendations.some((recommendation) => recommendation.personId === person.id)));
+    people.sort((a, b) => b.allocationPct - a.allocationPct);
     const week = startOfCalendarWeek();
     const days = Array.from({ length: 5 }, (_, index) => { const date = new Date(week); date.setDate(week.getDate() + index); return date; });
     $('weekLabel').textContent = `${days[0].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}–${days[4].toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
@@ -379,7 +399,7 @@
         const assignments = [...generated, ...local].filter((assignment) => assignment.date.toDateString() === day.toDateString());
         const bookings = events.length
           ? events.map((event) => ({ title: event.title || event.eventType, hours: Number(event.allocatedHours) || 8, tone: /travel/i.test(event.eventType) ? 'travel' : 'ooo' }))
-          : assignments.map((assignment) => ({ title: assignment.request.deliverable.name, hours: assignment.hours, tone: assignment.tone }));
+          : assignments.map((assignment) => ({ title: primaryRequestDeliverable(assignment.request).name, hours: assignment.hours, tone: assignment.tone }));
         const hours = bookings.reduce((sum, booking) => sum + booking.hours, 0);
         html += `<div class="cell">${bookings.map((booking) => `<div class="booking ${booking.tone}" title="${esc(booking.title)}">${esc(booking.title)} • ${booking.hours}h</div>`).join('')}<span class="day-hours ${hours > 8 ? 'hot' : ''}">${hours}h</span></div>`;
       }
@@ -389,7 +409,7 @@
   }
 
   function quickAllocation() {
-    const people = visiblePeople();
+    const people = [...visiblePeople()].sort((a, b) => b.allocationPct - a.allocationPct);
     const requests = visibleRequests();
     if (!people.length || !requests.length) {
       toast('Allocation unavailable', 'No people or requests are available in the current access scope.');
@@ -449,11 +469,11 @@
 
   function renderAgent() {
     const requests = visibleRequests();
-    $('agentRequest').innerHTML = requests.map((request) => `<option value="${esc(request.id)}">${esc(request.id)} • ${esc(request.deliverable.name)}</option>`).join('');
+    $('agentRequest').innerHTML = requests.map((request) => `<option value="${esc(request.id)}">${esc(request.id)} • ${esc(requestDeliverableNames(request).join(', '))}</option>`).join('');
     if (state.activeRequestId && requests.some((request) => request.id === state.activeRequestId)) $('agentRequest').value = state.activeRequestId;
     const stages = [
-      ['Validate request', 'Load customer project type and deliverable'],
-      ['Resolve required skills', 'Read mapped Skills (Type of work)'],
+      ['Validate request', 'Load project details and key deliverables'],
+      ['Resolve required capabilities', 'Read mapped and request-specific capabilities'],
       ['Retrieve people', 'Load skills, strength, and evidence'],
       ['Apply availability', 'Check travel, commitments, and allocation'],
       ['Rank and explain', 'Use workbook recommendations and rationale'],
@@ -560,7 +580,9 @@
       return;
     }
     const scopedRecommendationCount = recommendationsInScope(request).length;
-    openDrawer(request.title, `<span class="pill blue">${esc(request.id)}</span><h3>${esc(request.projectType.name)}</h3><dl><div class="summary-pair"><dt>Deliverable</dt><dd>${esc(request.deliverable.name)}</dd></div><div class="summary-pair"><dt>Required skills</dt><dd>${skillsHtml(request.requiredSkills)}</dd></div><div class="summary-pair"><dt>Owner</dt><dd>${esc(request.ownerName)}</dd></div><div class="summary-pair"><dt>Status</dt><dd>${esc(request.status)}</dd></div><div class="summary-pair"><dt>Needed by</dt><dd>${formatDate(request.neededBy)}</dd></div><div class="summary-pair"><dt>Estimated effort</dt><dd>${request.estimatedHours} hours</dd></div>${request.requestedPodSize ? `<div class="summary-pair"><dt>Requested pod size</dt><dd>${esc(request.requestedPodSize)}</dd></div>` : ''}</dl><div class="fit-summary-note"><b>Business context</b><p class="muted small">${esc(request.businessContext || request.deliverable.note || 'No context recorded')}</p></div><div class="source-strip"><span>${esc(request.mappingVersion || state.data.source.version)}</span><span>•</span><span>${scopedRecommendationCount} scoped recommendation${scopedRecommendationCount === 1 ? '' : 's'}</span></div>`, `<button class="btn" data-close-drawer>Close</button><button class="btn primary" data-open-fitment="${esc(request.id)}">Open fitment</button>`);
+    const projectDescription = requestProjectDescription(request);
+    const businessObjectives = requestBusinessObjectives(request);
+    openDrawer(request.title, `<span class="pill blue">${esc(request.id)}</span><h3>${esc(request.projectType.name)}</h3><dl><div class="summary-pair"><dt>Key deliverables</dt><dd>${esc(requestDeliverableNames(request).join(', '))}</dd></div><div class="summary-pair"><dt>Required capabilities</dt><dd>${skillsHtml(request.requiredSkills)}</dd></div><div class="summary-pair"><dt>Request source</dt><dd>${esc(request.requestSource || request.ownerName)}</dd></div><div class="summary-pair"><dt>Status</dt><dd>${esc(request.status)}</dd></div><div class="summary-pair"><dt>Needed by date</dt><dd>${formatDate(request.neededBy)}</dd></div>${request.estimatedStartDate ? `<div class="summary-pair"><dt>Estimated start date</dt><dd>${formatDate(request.estimatedStartDate)}</dd></div>` : ''}${request.estimatedCompletionDate ? `<div class="summary-pair"><dt>Estimated completion date</dt><dd>${formatDate(request.estimatedCompletionDate)}</dd></div>` : ''}<div class="summary-pair"><dt>Estimated effort</dt><dd>${esc(requestEffortLabel(request))}</dd></div>${request.requestedPodSize ? `<div class="summary-pair"><dt>Requested pod size</dt><dd>${esc(request.requestedPodSize)}</dd></div>` : ''}</dl><div class="fit-summary-note"><b>Project description</b><p class="muted small">${esc(projectDescription || 'No project description recorded')}</p></div><div class="fit-summary-note"><b>Business objectives and expected outcomes</b><p class="muted small">${esc(businessObjectives || 'No objectives or outcomes recorded')}</p></div><div class="source-strip"><span>${esc(request.mappingVersion || state.data.source.version)}</span><span>•</span><span>${scopedRecommendationCount} scoped recommendation${scopedRecommendationCount === 1 ? '' : 's'}</span></div>`, `<button class="btn" data-close-drawer>Close</button><button class="btn primary" data-open-fitment="${esc(request.id)}">Open fitment</button>`);
   }
 
   function openPerson(id) {
@@ -576,31 +598,105 @@
     const projects = state.data.catalog.projects;
     state.newRequestSkillIds = [];
     state.newRequestDefaultSkillIds = [];
+    state.newRequestExcludedDefaultSkillIds = [];
     state.newRequestCustomSkills = [];
     state.newRequestCustomSkillCounter = 0;
-    openDrawer('Create staffing request', `<div class="form-grid"><div class="form-group full"><label>Request title</label><input class="field" id="newTitle" placeholder="Enter request title"></div><div class="form-group"><label>Project type</label><select class="select" id="newProjectType">${projects.map((project) => `<option value="${esc(project.id)}">${esc(project.name)}</option>`).join('')}</select></div><div class="form-group"><label>Deliverable</label><select class="select" id="newDeliverable"></select></div><div class="form-group"><label>Priority</label><select class="select" id="newPriority"><option>Normal</option><option>High</option></select></div><div class="form-group"><label>Needed by</label><input class="field" id="newNeededBy" type="date" value="2026-08-21"></div><div class="form-group"><label>Estimated hours</label><input class="field" id="newHours" type="number" min="1" value="40"></div><div class="form-group"><label>Requested pod size</label><select class="select" id="newPodSize"><option>1 lead + 2 contributors</option><option>1 lead + 1 contributor</option><option>1 lead + 3 contributors</option></select></div><div class="form-group full"><label>Required Skills (Type of work)</label><div id="newSkills"></div></div><div class="form-group full"><label>Customer note</label><div id="newCustomerNote" class="readonly-note"></div></div><div class="form-group full"><label>Business context</label><textarea class="textarea" id="newContext" placeholder="Describe the audience and outcome"></textarea></div></div>`, '<button class="btn" data-close-drawer>Cancel</button><button class="btn primary" id="submitDraftRequest">Save request</button>');
-    const updateDeliverables = () => {
+    state.newRequestDeliverableIds = [];
+    state.newRequestCustomDeliverables = [];
+    state.newRequestCustomDeliverableCounter = 0;
+    const defaultRequestSource = isScopedRole() ? identityPerson()?.name : 'Indranie B.';
+    openDrawer('Create staffing request', `<div class="form-grid"><div class="form-group full"><label>Request title</label><input class="field" id="newTitle" placeholder="Enter request title"></div><div class="form-group"><label>Project type</label><select class="select" id="newProjectType">${projects.map((project) => `<option value="${esc(project.id)}">${esc(project.name)}</option>`).join('')}</select></div><div class="form-group"><label>Request source</label><input class="field" id="newRequestSource" value="${esc(defaultRequestSource || 'Current user')}" placeholder="Person or team requesting the work"></div><div class="form-group full"><label>Project description</label><textarea class="textarea" id="newProjectDescription" placeholder="Describe the project and the work being requested"></textarea></div><div class="form-group full"><label>Key deliverables</label><div id="newDeliverables"></div></div><div class="form-group"><label>Priority</label><select class="select" id="newPriority"><option>Normal</option><option>High</option></select></div><div class="form-group"><label>Needed by date</label><input class="field" id="newNeededBy" type="date" value="2026-08-21"></div><div class="form-group"><label>Estimated start date</label><input class="field" id="newStartDate" type="date" value="2026-08-17"></div><div class="form-group"><label>Estimated completion date</label><input class="field" id="newCompletionDate" type="date" value="2026-08-21"></div><div class="form-group"><label>Estimated effort</label><div class="effort-control"><input class="field" id="newEffortValue" type="number" min="1" value="5"><select class="select" id="newEffortUnit"><option value="days">Days</option><option value="weeks">Weeks</option><option value="months">Months</option></select></div></div><div class="form-group"><label>Requested pod size</label><select class="select" id="newPodSize"><option>1 lead + 2 contributors</option><option>1 lead + 1 contributor</option><option>1 lead + 3 contributors</option></select></div><div class="form-group full"><label>Required capabilities</label><div id="newSkills"></div></div><div class="form-group full"><label>Customer catalogue note</label><div id="newCustomerNote" class="readonly-note"></div></div><div class="form-group full"><label>Business objectives and expected outcomes</label><textarea class="textarea" id="newContext" placeholder="Describe the business objective, intended audience, success measures, and expected outcome"></textarea></div></div>`, '<button class="btn" data-close-drawer>Cancel</button><button class="btn primary" id="submitDraftRequest">Save request</button>');
+    const updateProject = () => {
       const project = projects.find((item) => item.id === $('newProjectType').value) || projects[0];
-      $('newDeliverable').innerHTML = project.deliverables.map((deliverable) => `<option value="${esc(deliverable.id)}">${esc(deliverable.name)}</option>`).join('');
-      resetDraftSkillsFromDeliverable();
+      $('newProjectDescription').value = project?.description || '';
+      state.newRequestDeliverableIds = project?.deliverables[0] ? [project.deliverables[0].id] : [];
+      state.newRequestCustomDeliverables = [];
+      state.newRequestCustomDeliverableCounter = 0;
+      state.newRequestExcludedDefaultSkillIds = [];
+      renderDraftDeliverablesEditor();
+      syncDraftSkillsFromDeliverables(true);
     };
-    $('newProjectType').addEventListener('change', updateDeliverables);
-    $('newDeliverable').addEventListener('change', resetDraftSkillsFromDeliverable);
+    $('newProjectType').addEventListener('change', updateProject);
     $('submitDraftRequest').addEventListener('click', submitDraftRequest);
-    updateDeliverables();
+    updateProject();
   }
 
-  function currentDraftDeliverable() {
-    const project = state.data.catalog.projects.find((item) => item.id === $('newProjectType').value);
-    return project?.deliverables.find((item) => item.id === $('newDeliverable').value) || null;
+  function currentDraftProject() {
+    return state.data.catalog.projects.find((item) => item.id === $('newProjectType')?.value) || null;
   }
 
-  function resetDraftSkillsFromDeliverable() {
-    const deliverable = currentDraftDeliverable();
-    state.newRequestDefaultSkillIds = unique((deliverable?.skills || []).map((skill) => skill.id));
-    state.newRequestSkillIds = [...state.newRequestDefaultSkillIds];
-    state.newRequestCustomSkills = [];
-    $('newCustomerNote').textContent = deliverable?.note || 'No customer note recorded.';
+  function draftDeliverableById(id) {
+    return currentDraftProject()?.deliverables.find((item) => item.id === id) || state.newRequestCustomDeliverables.find((item) => item.id === id) || null;
+  }
+
+  function currentDraftDeliverables() {
+    return state.newRequestDeliverableIds.map(draftDeliverableById).filter(Boolean);
+  }
+
+  function renderDraftDeliverablesEditor() {
+    const project = currentDraftProject();
+    const selected = currentDraftDeliverables();
+    const available = (project?.deliverables || []).filter((deliverable) => !state.newRequestDeliverableIds.includes(deliverable.id));
+    $('newDeliverables').innerHTML = `<div class="editable-skills editable-deliverables"><div class="editable-skill-list">${selected.length ? selected.map((deliverable) => `<span class="editable-skill ${deliverable.custom ? 'custom' : ''}">${esc(deliverable.name)}${deliverable.custom ? ' <small>(Other)</small>' : ''}<button type="button" data-remove-draft-deliverable="${esc(deliverable.id)}" aria-label="Remove ${esc(deliverable.name)}">×</button></span>`).join('') : '<span class="muted small">No deliverables selected. Add at least one deliverable.</span>'}</div><div class="skill-picker"><select class="select" id="draftDeliverablePicker" aria-label="Additional key deliverable">${available.map((deliverable) => `<option value="${esc(deliverable.id)}">${esc(deliverable.name)}</option>`).join('')}<option value="__other__">Other — type a deliverable</option></select><button class="btn sm" type="button" id="addDraftDeliverable">＋ Add deliverable</button></div><div class="custom-skill-entry" id="customDeliverableEntry"><input class="field" id="customDeliverableName" maxlength="120" placeholder="Type a deliverable and press Enter"></div><div class="skills-help">Choose one or more mapped deliverables, or add a request-specific deliverable.</div></div>`;
+    document.querySelectorAll('[data-remove-draft-deliverable]').forEach((button) => button.addEventListener('click', () => {
+      state.newRequestDeliverableIds = state.newRequestDeliverableIds.filter((id) => id !== button.dataset.removeDraftDeliverable);
+      state.newRequestCustomDeliverables = state.newRequestCustomDeliverables.filter((deliverable) => deliverable.id !== button.dataset.removeDraftDeliverable);
+      renderDraftDeliverablesEditor();
+      syncDraftSkillsFromDeliverables();
+    }));
+    const setCustomDeliverableVisibility = () => {
+      const isOther = $('draftDeliverablePicker').value === '__other__';
+      $('customDeliverableEntry').classList.toggle('visible', isOther);
+      if (isOther) $('customDeliverableName').focus();
+    };
+    const addSelectedDraftDeliverable = () => {
+      const selectedId = $('draftDeliverablePicker').value;
+      if (selectedId === '__other__') {
+        const name = $('customDeliverableName').value.trim();
+        if (!name) {
+          toast('Deliverable name required', 'Type the custom deliverable before adding it.');
+          $('customDeliverableName').focus();
+          return;
+        }
+        const duplicate = [...(project?.deliverables || []), ...state.newRequestCustomDeliverables].some((deliverable) => deliverable.name.toLowerCase() === name.toLowerCase());
+        if (duplicate) {
+          toast('Deliverable already available', `${name} is already available for this project.`);
+          return;
+        }
+        state.newRequestCustomDeliverableCounter += 1;
+        const id = `CUSTOM-DELIVERABLE-${state.newRequestCustomDeliverableCounter}`;
+        state.newRequestCustomDeliverables.push({ id, name, note: '', skills: [], custom: true });
+        state.newRequestDeliverableIds.push(id);
+      } else if (selectedId && !state.newRequestDeliverableIds.includes(selectedId)) {
+        state.newRequestDeliverableIds.push(selectedId);
+      }
+      renderDraftDeliverablesEditor();
+      syncDraftSkillsFromDeliverables();
+    };
+    $('draftDeliverablePicker').addEventListener('change', setCustomDeliverableVisibility);
+    $('addDraftDeliverable').addEventListener('click', addSelectedDraftDeliverable);
+    $('customDeliverableName').addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        addSelectedDraftDeliverable();
+      }
+    });
+    setCustomDeliverableVisibility();
+  }
+
+  function syncDraftSkillsFromDeliverables(reset = false) {
+    const oldDefaultIds = [...state.newRequestDefaultSkillIds];
+    const manualSkillIds = reset ? [] : state.newRequestSkillIds.filter((id) => !oldDefaultIds.includes(id));
+    const nextDefaultIds = unique(currentDraftDeliverables().flatMap((deliverable) => (deliverable.skills || []).map((skill) => skill.id)));
+    state.newRequestDefaultSkillIds = nextDefaultIds;
+    const activeDefaults = nextDefaultIds.filter((id) => !state.newRequestExcludedDefaultSkillIds.includes(id));
+    state.newRequestSkillIds = unique([...activeDefaults, ...manualSkillIds]);
+    if (reset) {
+      state.newRequestCustomSkills = [];
+      state.newRequestCustomSkillCounter = 0;
+    }
+    const notes = unique(currentDraftDeliverables().map((deliverable) => deliverable.note).filter(Boolean));
+    $('newCustomerNote').textContent = notes.length ? notes.join(' • ') : 'No customer note recorded for the selected deliverables.';
     renderDraftSkillsEditor();
   }
 
@@ -611,8 +707,11 @@
   function renderDraftSkillsEditor() {
     const selected = state.newRequestSkillIds.map(draftSkillById).filter(Boolean);
     const available = state.data.catalog.skills.filter((skill) => !state.newRequestSkillIds.includes(skill.id));
-    $('newSkills').innerHTML = `<div class="editable-skills"><div class="editable-skill-list">${selected.length ? selected.map((skill) => `<span class="editable-skill ${skill.custom ? 'custom' : ''}">${esc(skill.name)}${skill.custom ? ' <small>(Other)</small>' : ''}<button type="button" data-remove-draft-skill="${esc(skill.id)}" aria-label="Remove ${esc(skill.name)}">×</button></span>`).join('') : '<span class="muted small">No skills selected. Add at least one skill.</span>'}</div><div class="skill-picker"><select class="select" id="draftSkillPicker" aria-label="Additional required skill">${available.map((skill) => `<option value="${esc(skill.id)}">${esc(skill.name)}</option>`).join('')}<option value="__other__">Other — type a skill</option></select><button class="btn sm" type="button" id="addDraftSkill">＋ Add skill</button></div><div class="custom-skill-entry" id="customSkillEntry"><input class="field" id="customSkillName" maxlength="80" placeholder="Type a skill and press Enter"></div><div class="skills-help">Add or remove skills for this request.</div></div>`;
+    $('newSkills').innerHTML = `<div class="editable-skills"><div class="editable-skill-list">${selected.length ? selected.map((skill) => `<span class="editable-skill ${skill.custom ? 'custom' : ''}">${esc(skill.name)}${skill.custom ? ' <small>(Other)</small>' : ''}<button type="button" data-remove-draft-skill="${esc(skill.id)}" aria-label="Remove ${esc(skill.name)}">×</button></span>`).join('') : '<span class="muted small">No capabilities selected. Add at least one capability.</span>'}</div><div class="skill-picker"><select class="select" id="draftSkillPicker" aria-label="Additional required capability">${available.map((skill) => `<option value="${esc(skill.id)}">${esc(skill.name)}</option>`).join('')}<option value="__other__">Other — type a capability</option></select><button class="btn sm" type="button" id="addDraftSkill">＋ Add capability</button></div><div class="custom-skill-entry" id="customSkillEntry"><input class="field" id="customSkillName" maxlength="80" placeholder="Type a capability and press Enter"></div><div class="skills-help">Mapped defaults can be removed, and additional or custom capabilities can be added for this request.</div></div>`;
     document.querySelectorAll('[data-remove-draft-skill]').forEach((button) => button.addEventListener('click', () => {
+      if (state.newRequestDefaultSkillIds.includes(button.dataset.removeDraftSkill) && !state.newRequestExcludedDefaultSkillIds.includes(button.dataset.removeDraftSkill)) {
+        state.newRequestExcludedDefaultSkillIds.push(button.dataset.removeDraftSkill);
+      }
       state.newRequestSkillIds = state.newRequestSkillIds.filter((id) => id !== button.dataset.removeDraftSkill);
       state.newRequestCustomSkills = state.newRequestCustomSkills.filter((skill) => skill.id !== button.dataset.removeDraftSkill);
       renderDraftSkillsEditor();
@@ -638,6 +737,7 @@
         }
         const catalogMatch = state.data.catalog.skills.find((skill) => skill.name.toLowerCase() === name.toLowerCase());
         if (catalogMatch) {
+          state.newRequestExcludedDefaultSkillIds = state.newRequestExcludedDefaultSkillIds.filter((id) => id !== catalogMatch.id);
           state.newRequestSkillIds.push(catalogMatch.id);
         } else {
           state.newRequestCustomSkillCounter += 1;
@@ -646,6 +746,7 @@
           state.newRequestSkillIds.push(id);
         }
       } else if (selectedId && !state.newRequestSkillIds.includes(selectedId)) {
+        state.newRequestExcludedDefaultSkillIds = state.newRequestExcludedDefaultSkillIds.filter((id) => id !== selectedId);
         state.newRequestSkillIds.push(selectedId);
       }
       renderDraftSkillsEditor();
@@ -663,31 +764,62 @@
 
   function submitDraftRequest() {
     const title = $('newTitle').value.trim();
-    const project = state.data.catalog.projects.find((item) => item.id === $('newProjectType').value);
-    const deliverable = project?.deliverables.find((item) => item.id === $('newDeliverable').value);
-    if (!title || !project || !deliverable) {
-      toast('Missing information', 'Enter a title and choose a deliverable.');
+    const project = currentDraftProject();
+    const deliverables = currentDraftDeliverables();
+    const requestSource = $('newRequestSource').value.trim();
+    const neededBy = $('newNeededBy').value;
+    const estimatedStartDate = $('newStartDate').value;
+    const estimatedCompletionDate = $('newCompletionDate').value;
+    const estimatedEffortValue = Number($('newEffortValue').value) || 0;
+    const estimatedEffortUnit = $('newEffortUnit').value;
+    if (!title || !project || !requestSource || !deliverables.length) {
+      toast('Missing information', 'Enter a title and request source, then choose at least one key deliverable.');
+      return;
+    }
+    if (!neededBy || !estimatedStartDate || !estimatedCompletionDate) {
+      toast('Dates required', 'Enter the needed-by, estimated start, and estimated completion dates.');
+      return;
+    }
+    if (estimatedStartDate > estimatedCompletionDate) {
+      toast('Check the dates', 'The estimated completion date must be on or after the estimated start date.');
+      return;
+    }
+    if (estimatedEffortValue <= 0) {
+      toast('Estimated effort required', 'Enter an effort greater than zero and choose days, weeks, or months.');
       return;
     }
     if (!state.newRequestSkillIds.length) {
-      toast('Required skill missing', 'Add at least one required skill before saving the request.');
+      toast('Required capability missing', 'Add at least one required capability before saving the request.');
       return;
     }
     const selectedSkills = state.newRequestSkillIds.map(draftSkillById).filter(Boolean);
+    const requiredCapabilities = selectedSkills.map((skill) => ({ ...skill, requiredStrength: null, source: skill.custom ? 'Request-entered' : state.newRequestDefaultSkillIds.includes(skill.id) ? 'Customer Mapping' : 'Request override' }));
+    const savedDeliverables = deliverables.map((deliverable) => ({ id: deliverable.id, name: deliverable.name, note: deliverable.note || '', custom: Boolean(deliverable.custom), source: deliverable.custom ? 'Request-entered' : 'Customer Mapping' }));
+    const effortHours = estimatedEffortValue * ({ days: 8, weeks: 40, months: 160 }[estimatedEffortUnit] || 8);
+    const businessObjectives = $('newContext').value.trim();
     const id = `DRAFT-${String(state.drafts.length + 1).padStart(3, '0')}`;
     state.drafts.push({
       id,
       title,
       projectType: { id: project.id, name: project.name, description: project.description },
-      deliverable: { id: deliverable.id, name: deliverable.name, note: deliverable.note },
-      requiredSkills: selectedSkills.map((skill) => ({ ...skill, requiredStrength: null, source: skill.custom ? 'Request-entered' : state.newRequestDefaultSkillIds.includes(skill.id) ? 'Customer Mapping' : 'Request override' })),
-      ownerName: identityPerson()?.name || 'Current user',
-      neededBy: $('newNeededBy').value,
-      estimatedHours: Number($('newHours').value) || 0,
+      projectDescription: $('newProjectDescription').value.trim(),
+      deliverable: savedDeliverables[0],
+      deliverables: savedDeliverables,
+      keyDeliverables: savedDeliverables.map((deliverable) => deliverable.name),
+      requiredSkills: requiredCapabilities,
+      requiredCapabilities,
+      ownerName: requestSource,
+      requestSource,
+      neededBy,
+      estimatedStartDate,
+      estimatedCompletionDate,
+      estimatedEffort: { value: estimatedEffortValue, unit: estimatedEffortUnit },
+      estimatedHours: effortHours,
       requestedPodSize: $('newPodSize').value,
       priority: $('newPriority').value,
       status: 'Needs recommendation',
-      businessContext: $('newContext').value.trim(),
+      businessContext: businessObjectives,
+      businessObjectivesAndExpectedOutcomes: businessObjectives,
       mappingVersion: state.data.source.version,
       recommendations: [],
     });
@@ -716,8 +848,8 @@
     state.activeRequestId = request.id;
     const steps = [...document.querySelectorAll('#agentPipeline .step')];
     const logs = [
-      `Validated ${request.id}: ${request.projectType.name} / ${request.deliverable.name}.`,
-      `Loaded ${request.requiredSkills.length} required customer skills: ${request.requiredSkills.map((skill) => skill.name).join(', ') || 'none recorded'}.`,
+      `Validated ${request.id}: ${request.projectType.name} / ${requestDeliverableNames(request).join(', ')}.`,
+      `Loaded ${request.requiredSkills.length} required capabilities: ${request.requiredSkills.map((skill) => skill.name).join(', ') || 'none recorded'}.`,
       `Loaded ${visiblePeople().length} people in the ${state.role} access scope.`,
       `Checked ${visiblePeople().reduce((sum, person) => sum + person.availability.length, 0)} availability events and current allocation.`,
       `Read ${request.recommendations.length} workbook recommendation${request.recommendations.length === 1 ? '' : 's'} with rationale.`,
@@ -769,8 +901,8 @@
   }
 
   function exportRequests() {
-    const headers = ['ID', 'Title', 'Project Type', 'Deliverable', 'Required Skills', 'Owner', 'Status', 'Priority', 'Needed By', 'Estimated Hours', 'Requested Pod Size', 'Mapping Version'];
-    const csvRows = visibleRequests().map((request) => [request.id, request.title, request.projectType.name, request.deliverable.name, request.requiredSkills.map((skill) => skill.name).join('; '), request.ownerName, request.status, request.priority, request.neededBy, request.estimatedHours, request.requestedPodSize || '', request.mappingVersion]);
+    const headers = ['ID', 'Title', 'Project Type', 'Project Description', 'Key Deliverables', 'Required Capabilities', 'Request Source', 'Status', 'Priority', 'Needed By Date', 'Estimated Start Date', 'Estimated Completion Date', 'Estimated Effort Value', 'Estimated Effort Unit', 'Requested Pod Size', 'Business Objectives and Expected Outcomes', 'Mapping Version'];
+    const csvRows = visibleRequests().map((request) => [request.id, request.title, request.projectType.name, requestProjectDescription(request), requestDeliverableNames(request).join('; '), request.requiredSkills.map((skill) => skill.name).join('; '), request.requestSource || request.ownerName, request.status, request.priority, request.neededBy, request.estimatedStartDate || '', request.estimatedCompletionDate || '', request.estimatedEffort?.value || request.estimatedHours, request.estimatedEffort?.unit || 'hours', request.requestedPodSize || '', requestBusinessObjectives(request), request.mappingVersion]);
     const csv = [headers, ...csvRows].map((row) => row.map((value) => `"${String(value ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
     const link = document.createElement('a');
     link.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
