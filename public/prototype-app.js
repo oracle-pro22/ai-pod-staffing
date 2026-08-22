@@ -81,7 +81,8 @@
     }
     return `${Number(request?.estimatedHours) || 0} hours`;
   };
-  const requestBusinessObjectives = (request) => request?.businessObjectivesAndExpectedOutcomes || request?.businessContext || '';
+  const requestBusinessObjectives = (request) => request?.businessObjectives || request?.businessObjectivesAndExpectedOutcomes || request?.businessContext || '';
+  const requestExpectedOutcomes = (request) => request?.expectedOutcomes || '';
   const requestProjectDescription = (request) => request?.projectDescription || request?.projectType?.description || '';
   const empty = (message) => `<div class="empty compact">${esc(message)}</div>`;
   const navIcon = (name) => `<svg viewBox="0 0 24 24" aria-hidden="true">${iconPaths[name]}</svg>`;
@@ -193,12 +194,15 @@
     const data = state.data;
     const requests = visibleRequests();
     const people = visiblePeople();
+    const activeRequests = requests.filter((request) => request.status.toLowerCase() !== 'closed');
+    const staffedRequests = activeRequests.filter((request) => request.status.toLowerCase() === 'staffed');
+    const staffingProgress = activeRequests.length ? Math.round(staffedRequests.length / activeRequests.length * 100) : 0;
     const high = requests.filter((request) => /high|urgent/i.test(request.priority)).length;
     const pending = requests.reduce((total, request) => total + recommendationsInScope(request).filter((recommendation) => /pending/i.test(recommendation.decisionStatus)).length, 0);
     $('dashboardKpis').innerHTML = [
-      kpiCard('Open requests', requests.filter((request) => request.status.toLowerCase() !== 'closed').length, `${high} high priority`, '', 'red'),
+      kpiCard('Open requests', activeRequests.length, `${high} high priority`, '', 'red'),
       kpiCard('Team allocation', `${Math.round(people.reduce((sum, person) => sum + person.allocationPct, 0) / Math.max(people.length, 1))}%`, `${people.filter((person) => person.allocationPct >= 70).length} constrained`, '', 'amber'),
-      kpiCard('Customer deliverables', data.metrics.deliverables, `${data.metrics.projectTypes} project types`, '', 'teal'),
+      kpiCard('Staffing progress', `${staffingProgress}%`, `${staffedRequests.length} of ${activeRequests.length} staffed`, '', 'green'),
       kpiCard('Pending recommendations', pending, 'Advisory', '', 'purple'),
     ].join('');
 
@@ -299,8 +303,15 @@
   }
 
   function renderFitment() {
+    const requests = visibleRequests();
     const request = activeRequest();
+    $('fitmentRequestSelect').innerHTML = requests.length
+      ? requests.map((item) => `<option value="${esc(item.id)}">${esc(item.id)} — ${esc(item.title)} • ${esc(item.status)}</option>`).join('')
+      : '<option value="">No staffing requests available</option>';
+    $('fitmentRequestSelect').disabled = !requests.length;
+    $('fitmentRequestSelect').value = request?.id || '';
     if (!request) {
+      $('approveFit').disabled = true;
       $('fitmentRequestSummary').innerHTML = empty('No assigned request is available for fitment review.');
       $('fitmentFactors').innerHTML = empty('No workbook evidence in this access scope.');
       $('leadCandidates').innerHTML = empty('No recommendation recorded.');
@@ -308,8 +319,11 @@
       return;
     }
     state.activeRequestId = request.id;
-    const note = requestBusinessObjectives(request) || requestDeliverables(request).map((deliverable) => deliverable.note).filter(Boolean).join(' ');
-    $('fitmentRequestSummary').innerHTML = `<div style="display:flex;justify-content:space-between;align-items:start"><div><span class="pill ${request.priority.toLowerCase() === 'high' ? 'red' : 'amber'}">${esc(request.priority)} priority</span><h3 style="font-size:18px;margin:10px 0 4px">${esc(request.title)}</h3><div class="muted small">${esc(request.id)} • ${esc(request.projectType.name)}</div></div><button class="icon-btn" data-open-request="${esc(request.id)}">↗</button></div><dl style="margin:16px 0 0"><div class="summary-pair"><dt>Needed by date</dt><dd>${formatDate(request.neededBy)}</dd></div><div class="summary-pair"><dt>Key deliverables</dt><dd>${esc(requestDeliverableNames(request).join(', '))}</dd></div>${request.estimatedStartDate ? `<div class="summary-pair"><dt>Estimated start date</dt><dd>${formatDate(request.estimatedStartDate)}</dd></div>` : ''}${request.estimatedCompletionDate ? `<div class="summary-pair"><dt>Estimated completion date</dt><dd>${formatDate(request.estimatedCompletionDate)}</dd></div>` : ''}<div class="summary-pair"><dt>Estimated effort</dt><dd>${esc(requestEffortLabel(request))}</dd></div>${request.requestedPodSize ? `<div class="summary-pair"><dt>Requested pod size</dt><dd>${esc(request.requestedPodSize)}</dd></div>` : ''}<div class="summary-pair"><dt>Required capabilities</dt><dd>${skillsHtml(request.requiredSkills)}</dd></div><div class="summary-pair"><dt>Status</dt><dd>${esc(request.status)}</dd></div></dl><div class="fit-summary-note"><b>Business objectives and expected outcomes</b><p class="muted small">${esc(note || 'No additional context is recorded.')}</p></div><div class="source-strip"><span>Mapping ${esc(request.mappingVersion || state.data.source.version)}</span><span>•</span><span>Human approval required</span></div>`;
+    const scopedRecommendations = recommendationsInScope(request);
+    $('approveFit').disabled = !scopedRecommendations.length;
+    const businessObjectives = requestBusinessObjectives(request) || requestDeliverables(request).map((deliverable) => deliverable.note).filter(Boolean).join(' ');
+    const expectedOutcomes = requestExpectedOutcomes(request);
+    $('fitmentRequestSummary').innerHTML = `<div style="display:flex;justify-content:space-between;align-items:start"><div><span class="pill ${request.priority.toLowerCase() === 'high' ? 'red' : 'amber'}">${esc(request.priority)} priority</span><h3 style="font-size:18px;margin:10px 0 4px">${esc(request.title)}</h3><div class="muted small">${esc(request.id)} • ${esc(request.projectType.name)}</div></div><button class="icon-btn" data-open-request="${esc(request.id)}">↗</button></div><dl style="margin:16px 0 0"><div class="summary-pair"><dt>Needed by date</dt><dd>${formatDate(request.neededBy)}</dd></div><div class="summary-pair"><dt>Key deliverables</dt><dd>${esc(requestDeliverableNames(request).join(', '))}</dd></div>${request.estimatedStartDate ? `<div class="summary-pair"><dt>Estimated start date</dt><dd>${formatDate(request.estimatedStartDate)}</dd></div>` : ''}${request.estimatedCompletionDate ? `<div class="summary-pair"><dt>Estimated completion date</dt><dd>${formatDate(request.estimatedCompletionDate)}</dd></div>` : ''}<div class="summary-pair"><dt>Estimated effort</dt><dd>${esc(requestEffortLabel(request))}</dd></div>${request.requestedPodSize ? `<div class="summary-pair"><dt>Requested pod size</dt><dd>${esc(request.requestedPodSize)}</dd></div>` : ''}<div class="summary-pair"><dt>Required capabilities</dt><dd>${skillsHtml(request.requiredSkills)}</dd></div><div class="summary-pair"><dt>Status</dt><dd>${esc(request.status)}</dd></div></dl><div class="fit-summary-note"><b>Business objectives</b><p class="muted small">${esc(businessObjectives || 'No business objectives recorded.')}</p></div><div class="fit-summary-note"><b>Expected outcomes</b><p class="muted small">${esc(expectedOutcomes || 'No expected outcomes recorded.')}</p></div><div class="source-strip"><span>Mapping ${esc(request.mappingVersion || state.data.source.version)}</span><span>•</span><span>Human approval required</span></div>`;
 
     const recommendationFactors = [
       ['Interest strength', 35, 92, 'var(--oj-teal)'],
@@ -318,9 +332,10 @@
       ['Growth preference', 10, 61, '#c88413'],
       ['Team continuity', 5, 48, 'var(--oj-red)'],
     ];
-    $('fitmentFactors').innerHTML = `<div class="explain-title"><div class="spark">✦</div><div><div>How the recommendation was formed</div><span class="muted small">Inputs preserved for governance review</span></div></div><div style="margin-top:14px">${recommendationFactors.map(([label, weight, score, color]) => `<div class="factor"><span>${esc(label)}</span><div class="progress"><span style="width:${score}%;background:${color}"></span></div><strong>${weight}%</strong></div>`).join('')}</div>`;
+    $('fitmentFactors').innerHTML = scopedRecommendations.length
+      ? `<div class="explain-title"><div class="spark">✦</div><div><div>How the recommendation was formed</div><span class="muted small">Inputs preserved for governance review</span></div></div><div style="margin-top:14px">${recommendationFactors.map(([label, weight, score, color]) => `<div class="factor"><span>${esc(label)}</span><div class="progress"><span style="width:${score}%;background:${color}"></span></div><strong>${weight}%</strong></div>`).join('')}</div>`
+      : `<div class="explain-title"><div class="spark">✦</div><div><div>No AI fitment available</div><span class="muted small">No recommendation has been generated for this request.</span></div></div>`;
 
-    const scopedRecommendations = recommendationsInScope(request);
     const lead = scopedRecommendations.filter((item) => /lead/i.test(item.roleInPod));
     const contributors = scopedRecommendations.filter((item) => !/lead/i.test(item.roleInPod));
     $('leadCandidates').innerHTML = renderCandidates(lead, request);
@@ -448,8 +463,8 @@
     const person = identityPerson();
     if (!person) return;
     const average = person.skills.length ? (person.skills.reduce((sum, skill) => sum + skill.strength, 0) / person.skills.length).toFixed(1) : '0.0';
-    $('profileCard').innerHTML = `<div class="avatar">${esc(person.initials)}</div><h3>${esc(person.name)}</h3><p>${esc(person.jobTitle)} • ${esc(person.location)}</p><div class="stat-pairs"><div><strong>${person.allocationPct}%</strong><span>Current allocation</span></div><div><strong>${person.activePods}</strong><span>Active pods</span></div><div><strong>${average}</strong><span>Average strength</span></div><div><strong>${person.skills.length}</strong><span>Mapped skills</span></div></div><div class="readonly-note" style="margin-top:15px">Profile evidence is loaded from the workbook for this demo.</div>`;
-    $('interestEditor').innerHTML = person.skills.length ? person.skills.map((skill) => `<div class="interest-row"><div><b>${esc(skill.name)}</b><div class="row-sub">${esc(skill.category)}</div></div><div class="stars" aria-label="Strength ${skill.strength} out of 5">${'★'.repeat(skill.strength)}${'☆'.repeat(Math.max(0, 5 - skill.strength))}</div><span class="pill teal">${esc(skill.source || 'Workbook')}</span><div class="row-sub">${esc(skill.evidence || 'No evidence note recorded')}</div></div>`).join('') : empty('No mapped skills are recorded for this person.');
+    $('profileCard').innerHTML = `<div class="avatar">${esc(person.initials)}</div><h3>${esc(person.name)}</h3><p>${esc(person.jobTitle)} • ${esc(person.location)}</p><div class="stat-pairs"><div><strong>${person.allocationPct}%</strong><span>Current allocation</span></div><div><strong>${person.activePods}</strong><span>Active pods</span></div><div><strong>${average}</strong><span>Average strength</span></div><div><strong>${person.skills.length}</strong><span>Mapped skills</span></div></div>`;
+    $('interestEditor').innerHTML = person.skills.length ? person.skills.map((skill) => `<div class="interest-row"><div><b>${esc(skill.name)}</b><div class="row-sub">${esc(skill.category)}</div></div><div class="stars" aria-label="Strength ${skill.strength} out of 5">${'★'.repeat(skill.strength)}${'☆'.repeat(Math.max(0, 5 - skill.strength))}</div><div class="row-sub">${esc(skill.evidence || 'No evidence note recorded')}</div></div>`).join('') : empty('No mapped skills are recorded for this person.');
 
     const scoped = [...visiblePeople()];
     const sort = $('teamSort').value;
@@ -582,7 +597,8 @@
     const scopedRecommendationCount = recommendationsInScope(request).length;
     const projectDescription = requestProjectDescription(request);
     const businessObjectives = requestBusinessObjectives(request);
-    openDrawer(request.title, `<span class="pill blue">${esc(request.id)}</span><h3>${esc(request.projectType.name)}</h3><dl><div class="summary-pair"><dt>Key deliverables</dt><dd>${esc(requestDeliverableNames(request).join(', '))}</dd></div><div class="summary-pair"><dt>Required capabilities</dt><dd>${skillsHtml(request.requiredSkills)}</dd></div><div class="summary-pair"><dt>Request source</dt><dd>${esc(request.requestSource || request.ownerName)}</dd></div><div class="summary-pair"><dt>Status</dt><dd>${esc(request.status)}</dd></div><div class="summary-pair"><dt>Needed by date</dt><dd>${formatDate(request.neededBy)}</dd></div>${request.estimatedStartDate ? `<div class="summary-pair"><dt>Estimated start date</dt><dd>${formatDate(request.estimatedStartDate)}</dd></div>` : ''}${request.estimatedCompletionDate ? `<div class="summary-pair"><dt>Estimated completion date</dt><dd>${formatDate(request.estimatedCompletionDate)}</dd></div>` : ''}<div class="summary-pair"><dt>Estimated effort</dt><dd>${esc(requestEffortLabel(request))}</dd></div>${request.requestedPodSize ? `<div class="summary-pair"><dt>Requested pod size</dt><dd>${esc(request.requestedPodSize)}</dd></div>` : ''}</dl><div class="fit-summary-note"><b>Project description</b><p class="muted small">${esc(projectDescription || 'No project description recorded')}</p></div><div class="fit-summary-note"><b>Business objectives and expected outcomes</b><p class="muted small">${esc(businessObjectives || 'No objectives or outcomes recorded')}</p></div><div class="source-strip"><span>${esc(request.mappingVersion || state.data.source.version)}</span><span>•</span><span>${scopedRecommendationCount} scoped recommendation${scopedRecommendationCount === 1 ? '' : 's'}</span></div>`, `<button class="btn" data-close-drawer>Close</button><button class="btn primary" data-open-fitment="${esc(request.id)}">Open fitment</button>`);
+    const expectedOutcomes = requestExpectedOutcomes(request);
+    openDrawer(request.title, `<span class="pill blue">${esc(request.id)}</span><h3>${esc(request.projectType.name)}</h3><dl><div class="summary-pair"><dt>Key deliverables</dt><dd>${esc(requestDeliverableNames(request).join(', '))}</dd></div><div class="summary-pair"><dt>Required capabilities</dt><dd>${skillsHtml(request.requiredSkills)}</dd></div><div class="summary-pair"><dt>Request source</dt><dd>${esc(request.requestSource || request.ownerName)}</dd></div><div class="summary-pair"><dt>Status</dt><dd>${esc(request.status)}</dd></div><div class="summary-pair"><dt>Needed by date</dt><dd>${formatDate(request.neededBy)}</dd></div>${request.estimatedStartDate ? `<div class="summary-pair"><dt>Estimated start date</dt><dd>${formatDate(request.estimatedStartDate)}</dd></div>` : ''}${request.estimatedCompletionDate ? `<div class="summary-pair"><dt>Estimated completion date</dt><dd>${formatDate(request.estimatedCompletionDate)}</dd></div>` : ''}<div class="summary-pair"><dt>Estimated effort</dt><dd>${esc(requestEffortLabel(request))}</dd></div>${request.requestedPodSize ? `<div class="summary-pair"><dt>Requested pod size</dt><dd>${esc(request.requestedPodSize)}</dd></div>` : ''}</dl><div class="fit-summary-note"><b>Project description</b><p class="muted small">${esc(projectDescription || 'No project description recorded')}</p></div><div class="fit-summary-note"><b>Business objectives</b><p class="muted small">${esc(businessObjectives || 'No business objectives recorded')}</p></div><div class="fit-summary-note"><b>Expected outcomes</b><p class="muted small">${esc(expectedOutcomes || 'No expected outcomes recorded')}</p></div><div class="source-strip"><span>${esc(request.mappingVersion || state.data.source.version)}</span><span>•</span><span>${scopedRecommendationCount} scoped recommendation${scopedRecommendationCount === 1 ? '' : 's'}</span></div>`, `<button class="btn" data-close-drawer>Close</button><button class="btn primary" data-open-fitment="${esc(request.id)}">Open fitment</button>`);
   }
 
   function openPerson(id) {
@@ -605,7 +621,7 @@
     state.newRequestCustomDeliverables = [];
     state.newRequestCustomDeliverableCounter = 0;
     const defaultRequestSource = isScopedRole() ? identityPerson()?.name : 'Indranie B.';
-    openDrawer('Create staffing request', `<div class="form-grid"><div class="form-group full"><label>Request title</label><input class="field" id="newTitle" placeholder="Enter request title"></div><div class="form-group"><label>Project type</label><select class="select" id="newProjectType">${projects.map((project) => `<option value="${esc(project.id)}">${esc(project.name)}</option>`).join('')}</select></div><div class="form-group"><label>Request source</label><input class="field" id="newRequestSource" value="${esc(defaultRequestSource || 'Current user')}" placeholder="Person or team requesting the work"></div><div class="form-group full"><label>Project description</label><textarea class="textarea" id="newProjectDescription" placeholder="Describe the project and the work being requested"></textarea></div><div class="form-group full"><label>Key deliverables</label><div id="newDeliverables"></div></div><div class="form-group"><label>Priority</label><select class="select" id="newPriority"><option>Normal</option><option>High</option></select></div><div class="form-group"><label>Needed by date</label><input class="field" id="newNeededBy" type="date" value="2026-08-21"></div><div class="form-group"><label>Estimated start date</label><input class="field" id="newStartDate" type="date" value="2026-08-17"></div><div class="form-group"><label>Estimated completion date</label><input class="field" id="newCompletionDate" type="date" value="2026-08-21"></div><div class="form-group"><label>Estimated effort</label><div class="effort-control"><input class="field" id="newEffortValue" type="number" min="1" value="5"><select class="select" id="newEffortUnit"><option value="days">Days</option><option value="weeks">Weeks</option><option value="months">Months</option></select></div></div><div class="form-group"><label>Requested pod size</label><select class="select" id="newPodSize"><option>1 lead + 2 contributors</option><option>1 lead + 1 contributor</option><option>1 lead + 3 contributors</option></select></div><div class="form-group full"><label>Required capabilities</label><div id="newSkills"></div></div><div class="form-group full"><label>Customer catalogue note</label><div id="newCustomerNote" class="readonly-note"></div></div><div class="form-group full"><label>Business objectives and expected outcomes</label><textarea class="textarea" id="newContext" placeholder="Describe the business objective, intended audience, success measures, and expected outcome"></textarea></div></div>`, '<button class="btn" data-close-drawer>Cancel</button><button class="btn primary" id="submitDraftRequest">Save request</button>');
+    openDrawer('Create staffing request', `<div class="form-grid"><div class="form-group full"><label>Request title</label><input class="field" id="newTitle" placeholder="Enter request title"></div><div class="form-group"><label>Project type</label><select class="select" id="newProjectType">${projects.map((project) => `<option value="${esc(project.id)}">${esc(project.name)}</option>`).join('')}</select></div><div class="form-group"><label>Request source</label><input class="field" id="newRequestSource" value="${esc(defaultRequestSource || 'Current user')}" placeholder="Person or team requesting the work"></div><div class="form-group full"><label>Project description</label><textarea class="textarea" id="newProjectDescription" placeholder="Describe the project and the work being requested"></textarea></div><div class="form-group full"><label>Key deliverables</label><div id="newDeliverables"></div></div><div class="form-group"><label>Priority</label><select class="select" id="newPriority"><option>Normal</option><option>High</option></select></div><div class="form-group"><label>Needed by date</label><input class="field" id="newNeededBy" type="date" value="2026-08-21"></div><div class="form-group"><label>Estimated start date</label><input class="field" id="newStartDate" type="date" value="2026-08-17"></div><div class="form-group"><label>Estimated completion date</label><input class="field" id="newCompletionDate" type="date" value="2026-08-21"></div><div class="form-group"><label>Estimated effort</label><div class="effort-control"><input class="field" id="newEffortValue" type="number" min="1" value="5"><select class="select" id="newEffortUnit"><option value="days">Days</option><option value="weeks">Weeks</option><option value="months">Months</option></select></div></div><div class="form-group"><label>Requested pod size</label><select class="select" id="newPodSize"><option>1 lead + 2 contributors</option><option>1 lead + 1 contributor</option><option>1 lead + 3 contributors</option></select></div><div class="form-group full"><label>Required capabilities</label><div id="newSkills"></div></div><div class="form-group full"><label>Customer catalogue note</label><div id="newCustomerNote" class="readonly-note"></div></div><div class="form-group full"><label>Business objectives</label><textarea class="textarea" id="newBusinessObjectives" placeholder="Describe the business objective, intended audience, and reason for the request"></textarea></div><div class="form-group full"><label>Expected outcomes</label><textarea class="textarea" id="newExpectedOutcomes" placeholder="Describe the expected results, success measures, and desired impact"></textarea></div></div>`, '<button class="btn" data-close-drawer>Cancel</button><button class="btn primary" id="submitDraftRequest">Save request</button>');
     const updateProject = () => {
       const project = projects.find((item) => item.id === $('newProjectType').value) || projects[0];
       $('newProjectDescription').value = project?.description || '';
@@ -796,7 +812,9 @@
     const requiredCapabilities = selectedSkills.map((skill) => ({ ...skill, requiredStrength: null, source: skill.custom ? 'Request-entered' : state.newRequestDefaultSkillIds.includes(skill.id) ? 'Customer Mapping' : 'Request override' }));
     const savedDeliverables = deliverables.map((deliverable) => ({ id: deliverable.id, name: deliverable.name, note: deliverable.note || '', custom: Boolean(deliverable.custom), source: deliverable.custom ? 'Request-entered' : 'Customer Mapping' }));
     const effortHours = estimatedEffortValue * ({ days: 8, weeks: 40, months: 160 }[estimatedEffortUnit] || 8);
-    const businessObjectives = $('newContext').value.trim();
+    const businessObjectives = $('newBusinessObjectives').value.trim();
+    const expectedOutcomes = $('newExpectedOutcomes').value.trim();
+    const combinedBusinessContext = [businessObjectives, expectedOutcomes].filter(Boolean).join(' ');
     const id = `DRAFT-${String(state.drafts.length + 1).padStart(3, '0')}`;
     state.drafts.push({
       id,
@@ -818,8 +836,10 @@
       requestedPodSize: $('newPodSize').value,
       priority: $('newPriority').value,
       status: 'Needs recommendation',
-      businessContext: businessObjectives,
-      businessObjectivesAndExpectedOutcomes: businessObjectives,
+      businessContext: combinedBusinessContext,
+      businessObjectives,
+      expectedOutcomes,
+      businessObjectivesAndExpectedOutcomes: combinedBusinessContext,
       mappingVersion: state.data.source.version,
       recommendations: [],
     });
@@ -901,8 +921,8 @@
   }
 
   function exportRequests() {
-    const headers = ['ID', 'Title', 'Project Type', 'Project Description', 'Key Deliverables', 'Required Capabilities', 'Request Source', 'Status', 'Priority', 'Needed By Date', 'Estimated Start Date', 'Estimated Completion Date', 'Estimated Effort Value', 'Estimated Effort Unit', 'Requested Pod Size', 'Business Objectives and Expected Outcomes', 'Mapping Version'];
-    const csvRows = visibleRequests().map((request) => [request.id, request.title, request.projectType.name, requestProjectDescription(request), requestDeliverableNames(request).join('; '), request.requiredSkills.map((skill) => skill.name).join('; '), request.requestSource || request.ownerName, request.status, request.priority, request.neededBy, request.estimatedStartDate || '', request.estimatedCompletionDate || '', request.estimatedEffort?.value || request.estimatedHours, request.estimatedEffort?.unit || 'hours', request.requestedPodSize || '', requestBusinessObjectives(request), request.mappingVersion]);
+    const headers = ['ID', 'Title', 'Project Type', 'Project Description', 'Key Deliverables', 'Required Capabilities', 'Request Source', 'Status', 'Priority', 'Needed By Date', 'Estimated Start Date', 'Estimated Completion Date', 'Estimated Effort Value', 'Estimated Effort Unit', 'Requested Pod Size', 'Business Objectives', 'Expected Outcomes', 'Mapping Version'];
+    const csvRows = visibleRequests().map((request) => [request.id, request.title, request.projectType.name, requestProjectDescription(request), requestDeliverableNames(request).join('; '), request.requiredSkills.map((skill) => skill.name).join('; '), request.requestSource || request.ownerName, request.status, request.priority, request.neededBy, request.estimatedStartDate || '', request.estimatedCompletionDate || '', request.estimatedEffort?.value || request.estimatedHours, request.estimatedEffort?.unit || 'hours', request.requestedPodSize || '', requestBusinessObjectives(request), requestExpectedOutcomes(request), request.mappingVersion]);
     const csv = [headers, ...csvRows].map((row) => row.map((value) => `"${String(value ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
     const link = document.createElement('a');
     link.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
@@ -939,6 +959,7 @@
     $('newRequestBtn2').addEventListener('click', newRequest);
     ['requestSearch', 'requestStatusFilter', 'requestPriorityFilter', 'requestProjectFilter', 'requestDeliverableFilter'].forEach((id) => $(id).addEventListener(id === 'requestSearch' ? 'input' : 'change', () => renderRequests(false)));
     $('demandProjectFilter').addEventListener('change', renderUpcomingDemand);
+    $('fitmentRequestSelect').addEventListener('change', (event) => { state.activeRequestId = event.target.value; renderFitment(); });
     $('refreshFit').addEventListener('click', () => { renderFitment(); toast('Fitment refreshed', 'Current workbook evidence was re-rendered.'); });
     $('approveFit').addEventListener('click', () => {
       const request = activeRequest();
