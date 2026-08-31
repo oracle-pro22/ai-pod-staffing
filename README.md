@@ -1,7 +1,45 @@
-# AI Pod Staffing prototype
+# AI Pod Staffing
 
-Run with `npm run dev` and open http://localhost:3001. Port 3000 is already used by another local app on this machine.
+AI Pod Staffing is a component-based Next.js application for staffing requests, evidence-based fitment, allocation planning and human approval.
 
-The UI is a Next.js recreation of the supplied mockup. `data/ai-pod-staffing-prototype.xlsx` is the editable prototype source. `lib/staffing-data.ts` is the temporary UI adapter.
+## Run locally
 
-Future 26ai handoff points: `lib/staffing-data.ts` for database reads, `app/api/staffing/route.ts` for the secure data boundary, and `app/api/chat/route.ts` for a 26ai chat-model request grounded in authorized staffing context. `sql/001_ai_pod_staffing.sql` provides the PostgreSQL schema and Excel-to-CSV load templates.
+```powershell
+npm install
+npm run dev
+```
+
+Open [http://localhost:3001](http://localhost:3001). The development script uses port 3001 because port 3000 is used by another local application on this machine.
+
+For a production check:
+
+```powershell
+npm run build
+npm run start -- -H 0.0.0.0 -p 8005
+```
+
+## Application routes
+
+- `/` — primary React/Next.js application.
+- `/react-preview` — compatibility route that redirects to `/`.
+- `/prototype.html` — preserved legacy HTML rollback reference.
+- `/api/staffing` — server-side staffing view-model boundary.
+- `/api/chat` — server-side chat boundary for the future governed AI integration.
+
+## Structure
+
+- `app/` — Next.js routes and global application styles.
+- `components/shell/` — application shell and global navigation.
+- `components/screens/` — workspace screens.
+- `components/ui/` — reusable controls and overlays.
+- `context/` — application state, persona scope and session actions.
+- `lib/staffing-data.ts` — server-only workbook adapter.
+- `lib/selectors.ts` and `lib/role-policy.ts` — scoped data selection and role policy.
+- `data/ai-pod-staffing-prototype.xlsx` — current prototype data source.
+- `styles/react-foundation.css` — shared visual system that preserves the approved UI.
+
+## Data and future backend handoff
+
+The workbook is read only on the server; it is not downloaded into the browser. The current API and data-source boundary can later be replaced by Oracle Database 26ai services without rewriting the screen components. `sql/001_ai_pod_staffing.sql` contains the initial relational schema and load templates.
+
+Migration evidence and acceptance records are under `docs/migration/`.

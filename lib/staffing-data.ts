@@ -4,6 +4,10 @@ import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import JSZip from 'jszip';
 
+import type { StaffingViewModel } from '@/types/staffing';
+
+export type { StaffingViewModel } from '@/types/staffing';
+
 type CellValue = string | number | boolean | null;
 type SheetRow = Record<string, CellValue>;
 
@@ -20,88 +24,6 @@ export type StaffingSnapshot = {
   deliverableSkills: SheetRow[];
   customerMapping: SheetRow[];
   workbook: { fileName: string; modifiedAt: string };
-};
-
-export type StaffingViewModel = {
-  source: { fileName: string; modifiedAt: string; version: string };
-  catalog: {
-    projects: Array<{
-      id: string;
-      name: string;
-      description: string;
-      sourceRow: number | null;
-      deliverables: Array<{
-        id: string;
-        name: string;
-        note: string;
-        sourceRow: number | null;
-        skills: Array<{ id: string; name: string; category: string }>;
-      }>;
-    }>;
-    skills: Array<{ id: string; name: string; category: string; customerControlled: boolean }>;
-  };
-  people: Array<{
-    id: string;
-    name: string;
-    initials: string;
-    jobTitle: string;
-    location: string;
-    allocationPct: number;
-    activePods: number;
-    skills: Array<{
-      id: string;
-      name: string;
-      category: string;
-      strength: number;
-      evidence: string;
-      source: string;
-    }>;
-    availability: Array<{
-      eventType: string;
-      startsOn: string;
-      endsOn: string;
-      title: string;
-      allocatedHours: number;
-    }>;
-  }>;
-  requests: Array<{
-    id: string;
-    title: string;
-    projectType: { id: string; name: string; description: string };
-    deliverable: { id: string; name: string; note: string };
-    requiredSkills: Array<{ id: string; name: string; requiredStrength: number | null; source: string }>;
-    ownerName: string;
-    neededBy: string;
-    estimatedHours: number;
-    priority: string;
-    status: string;
-    businessContext: string;
-    mappingVersion: string;
-    recommendations: Array<{
-      personId: string;
-      personName: string;
-      roleInPod: string;
-      score: number;
-      rationale: string;
-      decisionStatus: string;
-      source: string;
-      matchingSkills: string[];
-    }>;
-  }>;
-  metrics: {
-    people: number;
-    projectTypes: number;
-    deliverables: number;
-    skills: number;
-    requests: number;
-    openRequests: number;
-    staffedRequests: number;
-    averageAllocationPct: number;
-    constrainedPeople: number;
-    pendingRecommendations: number;
-  };
-  demoIdentity: { podMemberPersonId: string; podLeadPersonId: string };
-  integrity: { checked: true; counts: Record<string, number> };
 };
 
 const workbookRelativePath = path.join('data', 'ai-pod-staffing-prototype.xlsx');
@@ -419,26 +341,40 @@ export function buildStaffingViewModel(snapshot: StaffingSnapshot): StaffingView
       source: textValue(requirement, 'requirement_source'),
     }));
     const requiredNames = new Set(requirements.map((requirement) => requirement.name.toLowerCase()));
+    const projectDescription = projectRow ? textValue(projectRow, 'project_description') : '';
+    const primaryDeliverable = {
+      id: textValue(row, 'deliverable_id'),
+      name: textValue(row, 'deliverable') || (deliverableRow ? textValue(deliverableRow, 'deliverable_name') : ''),
+      note: deliverableRow ? textValue(deliverableRow, 'customer_note') : '',
+    };
+    const ownerName = textValue(row, 'owner_name');
+    const estimatedHours = numberValue(row, 'estimated_hours');
+    const businessContext = textValue(row, 'business_context');
     return {
       id: requestId,
       title: textValue(row, 'title'),
       projectType: {
         id: textValue(row, 'project_type_id'),
         name: textValue(row, 'project_type') || (projectRow ? textValue(projectRow, 'project_name') : ''),
-        description: projectRow ? textValue(projectRow, 'project_description') : '',
+        description: projectDescription,
       },
-      deliverable: {
-        id: textValue(row, 'deliverable_id'),
-        name: textValue(row, 'deliverable') || (deliverableRow ? textValue(deliverableRow, 'deliverable_name') : ''),
-        note: deliverableRow ? textValue(deliverableRow, 'customer_note') : '',
-      },
+      deliverable: primaryDeliverable,
+      deliverables: [primaryDeliverable],
       requiredSkills: requirements,
-      ownerName: textValue(row, 'owner_name'),
+      ownerName,
+      requestSource: ownerName,
       neededBy: textValue(row, 'needed_by'),
-      estimatedHours: numberValue(row, 'estimated_hours'),
+      estimatedHours,
+      estimatedEffort: { value: estimatedHours, unit: 'hours' as const },
+      estimatedStartDate: '',
+      estimatedCompletionDate: '',
+      requestedPodSize: '',
       priority: textValue(row, 'priority'),
       status: textValue(row, 'status'),
-      businessContext: textValue(row, 'business_context'),
+      businessContext,
+      projectDescription,
+      businessObjectives: businessContext,
+      expectedOutcomes: '',
       mappingVersion: textValue(row, 'mapping_version'),
       recommendations: (recommendationRows.get(requestId) ?? []).map((recommendation) => {
         const personId = textValue(recommendation, 'person_id');

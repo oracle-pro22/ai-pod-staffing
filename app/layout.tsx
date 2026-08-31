@@ -1,5 +1,12 @@
 import type { Metadata } from 'next';
-import './globals.css';
+import './base.css';
+import '../styles/react-foundation.css';
 
-export const metadata: Metadata = { title: 'AI Pod Staffing', description: 'Staffing operations prototype' };
-export default function RootLayout({ children }: Readonly<{children: React.ReactNode}>) { return <html lang="en"><body>{children}</body></html>; }
+export const metadata: Metadata = {
+  title: 'AI Pod Staffing',
+  description: 'Agent-assisted staffing operations and human approval workspace.',
+};
+
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  return <html lang="en"><body>{children}</body></html>;
+}
