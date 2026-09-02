@@ -19,7 +19,7 @@ function RequestDetailsDrawer() {
   const { data, state, dispatch } = useStaffingApp();
   const open = state.drawer?.id === 'request-details';
   const requestId = typeof state.drawer?.payload?.requestId === 'string' ? state.drawer.payload.requestId : null;
-  const request = selectVisibleRequests(data, state.role, state.drafts).find((item) => item.id === requestId) ?? null;
+  const request = selectVisibleRequests(data, state.role).find((item) => item.id === requestId) ?? null;
   const close = () => dispatch({ type: 'close-drawer' });
   return (
     <Drawer open={open} title={request?.title ?? 'Request details'} onClose={close} footer={<><Button onClick={close}>Close</Button>{request?.recommendations.length ? <Button variant="primary" onClick={() => { dispatch({ type: 'set-active-request', requestId: request.id }); close(); dispatch({ type: 'set-screen', screen: 'fitment' }); }}>Open fitment</Button> : null}</>}>
@@ -49,12 +49,12 @@ function ApprovalModal() {
   const { data, state, dispatch, notify } = useStaffingApp();
   const open = state.modal?.id === 'approve-pod';
   const requestId = typeof state.modal?.payload?.requestId === 'string' ? state.modal.payload.requestId : null;
-  const request = selectActiveRequest(data, state.role, requestId, state.drafts);
+  const request = selectActiveRequest(data, state.role, requestId);
   const selectedIds = request ? state.selectedCandidatesByRequest[request.id] ?? [] : [];
   const selectedNames = selectedIds.map((id) => data.people.find((person) => person.id === id)?.name).filter(Boolean);
   const suggested = request?.recommendations.slice(0, 3).map((item) => item.personName) ?? [];
   const close = () => dispatch({ type: 'close-modal' });
-  return <Modal open={open} title="Approve proposed pod" onClose={close} footer={<><Button onClick={close}>Cancel</Button><Button variant="primary" onClick={() => { close(); notify('Pod approved', 'The selected people were notified and the audit trail was updated for this prototype session.'); }}>Approve & notify</Button></>}>
+  return <Modal open={open} title="Approve proposed pod" onClose={close} footer={<><Button onClick={close}>Cancel</Button><Button variant="primary" onClick={() => { close(); notify('Integration in progress', 'This workflow will be available in a future release.'); }}>Approve & notify</Button></>}>
     <Notice icon="✓" title="Human approval required">You are approving the proposed staffing pod for {request?.id ?? 'this request'}. No assignment is made without this decision.</Notice>
     <div className="staffing-approval-summary"><b>{request?.title}</b><p>{(selectedNames.length ? selectedNames : suggested).join(', ') || 'No candidates selected'}</p></div>
     <FormGroup label="Approval comment" full><TextArea defaultValue="Approved based on fit, delivery history, and protected capacity." /></FormGroup>

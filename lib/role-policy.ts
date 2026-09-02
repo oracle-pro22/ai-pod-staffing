@@ -1,4 +1,5 @@
 import type { NavigationItem, ScreenAccess, ScreenId, StaffingRole } from '@/types/roles';
+import type { StaffingViewModel } from '@/types/staffing';
 
 export const NAVIGATION_ITEMS: readonly NavigationItem[] = [
   { id: 'dashboard', icon: 'home', label: 'Command Center', route: '/' },
@@ -15,16 +16,41 @@ export const NAVIGATION_ITEMS: readonly NavigationItem[] = [
 const SCOPED_ROLES = new Set<StaffingRole>(['Pod Lead', 'POD Member']);
 const RESTRICTED_SCREENS = new Set<ScreenId>(['calendar', 'agent', 'reports', 'admin']);
 
+const SCREEN_RESOURCE: Record<ScreenId, string> = {
+  dashboard: 'DASHBOARD',
+  requests: 'REQUESTS',
+  fitment: 'AI_FITMENT',
+  calendar: 'ALLOCATION_CALENDAR',
+  interests: 'TEAM_SKILLS',
+  availability: 'MY_AVAILABILITY',
+  agent: 'AGENT_EXECUTION',
+  reports: 'REPORTS',
+  admin: 'ADMINISTRATION',
+};
+
+type Authorization = StaffingViewModel['authorization'];
+
 export function isScopedRole(role: StaffingRole): boolean {
   return SCOPED_ROLES.has(role);
 }
 
-export function canAccessScreen(role: StaffingRole, screen: ScreenId): boolean {
+function databasePermission(role: StaffingRole, screen: ScreenId, authorization?: Authorization) {
+  if (!authorization?.roles.length) return undefined;
+  return authorization.roles
+    .find((item) => item.name === role && item.active)
+    ?.permissions.find((permission) => permission.resourceCode === SCREEN_RESOURCE[screen]);
+}
+
+export function canAccessScreen(role: StaffingRole, screen: ScreenId, authorization?: Authorization): boolean {
+  const permission = databasePermission(role, screen, authorization);
+  if (permission) return permission.canView && permission.accessScope !== 'locked';
   return !(isScopedRole(role) && RESTRICTED_SCREENS.has(screen));
 }
 
-export function getScreenAccess(role: StaffingRole, screen: ScreenId): ScreenAccess {
-  if (!canAccessScreen(role, screen)) return 'locked';
+export function getScreenAccess(role: StaffingRole, screen: ScreenId, authorization?: Authorization): ScreenAccess {
+  const permission = databasePermission(role, screen, authorization);
+  if (permission) return permission.canView ? permission.accessScope : 'locked';
+  if (!canAccessScreen(role, screen, authorization)) return 'locked';
   if (role === 'POD Member' && (screen === 'interests' || screen === 'availability')) return 'own';
   if (isScopedRole(role) && (screen === 'dashboard' || screen === 'requests' || screen === 'fitment' || screen === 'interests' || screen === 'availability')) return 'scoped';
   return 'full';

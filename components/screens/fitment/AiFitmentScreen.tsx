@@ -11,27 +11,23 @@ import { useStaffingApp } from '@/context/StaffingAppProvider';
 import { formatDate, requestEffortLabel } from '@/lib/formatting';
 import { selectActiveRequest, selectScopedRecommendations, selectVisibleRequests } from '@/lib/selectors';
 import type { StaffingRecommendation } from '@/types/staffing';
+import type { Tone } from '@/types/ui';
 
-const FACTORS = [
-  ['Interest strength', 35, 92, 'teal'],
-  ['Relevant delivery history', 25, 84, 'blue'],
-  ['Available capacity', 25, 76, 'teal'],
-  ['Growth preference', 10, 61, 'amber'],
-  ['Team continuity', 5, 48, 'red'],
-] as const;
+const FACTOR_TONES: Tone[] = ['teal', 'blue', 'teal', 'amber', 'red'];
 
 export function AiFitmentScreen() {
   const { data, state, dispatch, notify } = useStaffingApp();
-  const requests = selectVisibleRequests(data, state.role, state.drafts).filter((request) => request.recommendations.length > 0);
-  const request = selectActiveRequest(data, state.role, state.activeRequestId, state.drafts);
+  const requests = selectVisibleRequests(data, state.role).filter((request) => request.recommendations.length > 0);
+  const request = selectActiveRequest(data, state.role, state.activeRequestId);
   const recommendations = selectScopedRecommendations(request, data, state.role);
   const isMember = state.role === 'POD Member';
   const leads = recommendations.filter((item) => /lead/i.test(item.roleInPod));
   const contributors = recommendations.filter((item) => !/lead/i.test(item.roleInPod));
+  const recommendationFactors = (leads[0] ?? contributors[0])?.factors ?? [];
 
   return (
     <section className="staffing-screen">
-      <PageHeader title="AI fitment review" description="Evidence-based recommendations remain advisory until a person approves them." actions={<><label className="staffing-fitment-picker"><span>Staffing request</span><SelectField value={request?.id ?? ''} onChange={(event) => dispatch({ type: 'set-active-request', requestId: event.target.value })}>{requests.map((item) => <option key={item.id} value={item.id}>{item.id} — {item.title} • {item.status}</option>)}</SelectField></label>{!isMember ? <Button onClick={() => notify('Recommendation refreshed', 'Current profiles and calendar data were re-evaluated.')}>↻ Re-run</Button> : null}{!isMember ? <Button variant="primary" onClick={() => request && dispatch({ type: 'open-modal', modal: { id: 'approve-pod', title: 'Approve proposed pod', payload: { requestId: request.id } } })}>Approve pod</Button> : null}</>} />
+      <PageHeader title="AI fitment review" description="Evidence-based recommendations remain advisory until a person approves them." actions={<><label className="staffing-fitment-picker"><span>Staffing request</span><SelectField value={request?.id ?? ''} onChange={(event) => dispatch({ type: 'set-active-request', requestId: event.target.value })}>{requests.map((item) => <option key={item.id} value={item.id}>{item.id} — {item.title} • {item.status}</option>)}</SelectField></label>{!isMember ? <Button onClick={() => notify('Integration in progress', 'This workflow will be available in a future release.')}>↻ Re-run</Button> : null}{!isMember ? <Button variant="primary" onClick={() => request && dispatch({ type: 'open-modal', modal: { id: 'approve-pod', title: 'Approve proposed pod', payload: { requestId: request.id } } })}>Approve pod</Button> : null}</>} />
       {request ? <div className="staffing-fit-layout">
         <Card padded className="staffing-request-summary">
           <div className="staffing-summary-head"><div><Pill tone={/high|urgent/i.test(request.priority) ? 'red' : ''}>{request.priority} priority</Pill><h3 className="staffing-summary-title">{request.title}</h3><p className="staffing-muted">{request.id} • {request.projectType.name}</p></div><Button size="small" aria-label={`Open details for ${request.id}`} onClick={() => dispatch({ type: 'open-drawer', drawer: { id: 'request-details', title: request.title, payload: { requestId: request.id } } })}>↗</Button></div>
@@ -49,7 +45,7 @@ export function AiFitmentScreen() {
         <div>
           <Card padded className="staffing-fit-factors">
             <div className="staffing-explain-title"><span className="staffing-spark">✦</span><span><b>How the recommendation was formed</b><small>Inputs preserved for governance review</small></span></div>
-            {FACTORS.map(([label, weight, evidence, tone]) => <div className="staffing-factor" key={label}><span>{label}</span><ProgressBar value={evidence} tone={tone} /><strong>{weight}%</strong></div>)}
+            {recommendationFactors.length ? recommendationFactors.map((factor, index) => <div className="staffing-factor" key={factor.code || factor.name}><span>{factor.name}</span><ProgressBar value={factor.evidenceScore} tone={FACTOR_TONES[index % FACTOR_TONES.length]} /><strong>{factor.weightPct}%</strong></div>) : <div className="staffing-empty compact">No recommendation-factor evidence is recorded for this request.</div>}
           </Card>
           <CandidateSection title={isMember ? 'My proposed assignment' : 'Recommended pod lead'} subtitle={isMember ? 'Recommendation evidence in your access scope' : 'Choose a candidate to update the proposed pod'} badge={isMember ? 'Advisory' : '1 required'} recommendations={isMember ? recommendations : leads} requestId={request.id} />
           {!isMember ? <CandidateSection title="Recommended contributors" subtitle="Multi-interest fit, strength, and remaining capacity" badge="2 required" recommendations={contributors} requestId={request.id} /> : null}

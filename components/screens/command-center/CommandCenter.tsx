@@ -14,14 +14,15 @@ import { selectDashboardMetrics, selectIdentityPerson, selectScopedRecommendatio
 
 export function CommandCenter() {
   const { data, state, dispatch } = useStaffingApp();
-  const requests = selectVisibleRequests(data, state.role, state.drafts);
-  const people = selectVisiblePeople(data, state.role, state.drafts);
+  const requests = selectVisibleRequests(data, state.role);
+  const people = selectVisiblePeople(data, state.role);
   const identity = selectIdentityPerson(data, state.role);
-  const metrics = selectDashboardMetrics(data, state.role, state.drafts);
+  const metrics = selectDashboardMetrics(data, state.role);
   const isMember = state.role === 'POD Member';
   const greetingName = isScopedRole(state.role) ? identity?.name.split(' ')[0] ?? 'there' : 'Indranie';
   const activeRequests = requests.filter((request) => request.status.toLowerCase() !== 'closed');
   const demand = activeRequests.slice(0, 5);
+  const demandWeeks = buildDemandWeeks(activeRequests.map((request) => request.neededBy));
   const capacityPeople = [...people].sort((a, b) => b.allocationPct - a.allocationPct);
 
   function openRequest(requestId: string) {
@@ -87,15 +88,15 @@ export function CommandCenter() {
           <Card>
             <CardHeader><div><h3>Upcoming demand</h3><p>Staffing requests by customer project type</p></div><select className="staffing-select" defaultValue="all"><option value="all">All project types</option>{data.catalog.projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></CardHeader>
             <CardBody>
-              <div className="staffing-heat">{['m', 'm', 'h', 'v', 'h'].map((level, index) => <span className={level} key={index} />)}</div>
-              <div className="staffing-heat-labels"><span>Jul 20</span><span>Jul 27</span><span>Aug 3</span><span>Aug 10</span><span>Aug 17</span></div>
+              <div className="staffing-heat">{demandWeeks.map((week) => <span className={week.level} key={week.label} />)}</div>
+              <div className="staffing-heat-labels">{demandWeeks.map((week) => <span key={week.label}>{week.label}</span>)}</div>
               <div className="staffing-demand-list">
                 {demand.slice(0, 3).map((request) => <div key={request.id}><span><b>{request.deliverable.name}</b><small>{request.projectType.name} • {request.title}</small></span><span><b>{formatShortDate(request.neededBy)}</b><small>{request.estimatedHours}h</small></span></div>)}
               </div>
             </CardBody>
           </Card>
           <Card className="staffing-audit-card">
-            <CardHeader><div><h3>Audit trail</h3><p>Workbook recommendations awaiting review</p></div><Button size="small" onClick={() => dispatch({ type: 'set-screen', screen: 'admin' })}>Open audit trail</Button></CardHeader>
+            <CardHeader><div><h3>Audit trail</h3><p>Stored recommendations awaiting review</p></div><Button size="small" onClick={() => dispatch({ type: 'set-screen', screen: 'admin' })}>Open audit trail</Button></CardHeader>
           </Card>
         </div>
       ) : null}
@@ -105,11 +106,11 @@ export function CommandCenter() {
 
 function MyFitmentPreview() {
   const { data, state, dispatch } = useStaffingApp();
-  const request = selectVisibleRequests(data, state.role, state.drafts).find((item) => selectScopedRecommendations(item, data, state.role).length > 0);
+  const request = selectVisibleRequests(data, state.role).find((item) => selectScopedRecommendations(item, data, state.role).length > 0);
   const recommendation = request ? selectScopedRecommendations(request, data, state.role)[0] : null;
   return (
     <Card>
-      <CardHeader><div><h3>My AI fitment preview</h3><p>Your proposed assignment and workbook evidence</p></div><Pill tone="teal">Workbook</Pill></CardHeader>
+      <CardHeader><div><h3>My AI fitment preview</h3><p>Your proposed assignment and stored evidence</p></div><Pill tone="teal">Database</Pill></CardHeader>
       <CardBody>
         {request && recommendation ? <>
           <div className="staffing-preview-score"><span><b>{request.title}</b><small>{request.id} • {recommendation.roleInPod}</small></span><strong>{recommendation.score}</strong></div>
@@ -119,4 +120,26 @@ function MyFitmentPreview() {
       </CardBody>
     </Card>
   );
+}
+
+function buildDemandWeeks(neededByDates: string[]) {
+  const base = new Date(Date.UTC(2026, 6, 20));
+  const weeks = Array.from({ length: 5 }, (_, index) => {
+    const start = new Date(base);
+    start.setUTCDate(base.getUTCDate() + index * 7);
+    const end = new Date(start);
+    end.setUTCDate(start.getUTCDate() + 6);
+    const startKey = start.toISOString().slice(0, 10);
+    const endKey = end.toISOString().slice(0, 10);
+    const count = neededByDates.filter((date) => date >= startKey && date <= endKey).length;
+    return {
+      label: start.toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric' }),
+      count,
+    };
+  });
+  const maximum = Math.max(...weeks.map((week) => week.count), 1);
+  return weeks.map((week) => ({
+    ...week,
+    level: week.count === 0 ? '' : week.count === maximum ? 'v' : week.count / maximum >= 0.5 ? 'h' : 'm',
+  }));
 }

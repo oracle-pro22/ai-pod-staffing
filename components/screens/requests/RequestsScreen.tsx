@@ -11,9 +11,12 @@ import { selectVisibleRequests } from '@/lib/selectors';
 
 export function RequestsScreen() {
   const { data, state, dispatch, notify } = useStaffingApp();
-  const requests = selectVisibleRequests(data, state.role, state.drafts);
+  const requests = selectVisibleRequests(data, state.role);
   const filters = state.requestFilters;
   const isMember = state.role === 'POD Member';
+  const canCreateRequest = data.authorization.roles
+    .find((role) => role.name === state.role && role.active)
+    ?.permissions.find((permission) => permission.resourceCode === 'REQUESTS')?.canCreate ?? false;
   const statuses = unique(requests.map((request) => request.status).concat('Closed'));
   const priorities = unique(requests.map((request) => request.priority));
   const filtered = requests.filter((request) => {
@@ -31,7 +34,7 @@ export function RequestsScreen() {
     const csv = [headers, ...rows].map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(',')).join('\n');
     const link = document.createElement('a');
     link.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
-    link.download = 'ai-pod-workbook-requests.csv';
+    link.download = 'ai-pod-staffing-requests.csv';
     link.click();
     URL.revokeObjectURL(link.href);
     notify('Export created', `${rows.length} scoped request${rows.length === 1 ? '' : 's'} exported.`);
@@ -39,7 +42,7 @@ export function RequestsScreen() {
 
   return (
     <section className="staffing-screen">
-      <PageHeader title="Staffing requests" description="Customer project types, key deliverables, and required capabilities from the staffing workbook." actions={<><SelectField value={filters.status} onChange={(event) => dispatch({ type: 'set-request-filter', key: 'status', value: event.target.value })}><option value="">All status</option>{statuses.map((status) => <option key={status}>{status}</option>)}</SelectField>{!isMember ? <Button variant="primary" onClick={() => dispatch({ type: 'open-modal', modal: { id: 'create-request', title: 'Create staffing request' } })}>＋ New request</Button> : null}</>} />
+      <PageHeader title="Staffing requests" description="Customer project types, key deliverables, and required capabilities from the staffing catalogue." actions={<><SelectField value={filters.status} onChange={(event) => dispatch({ type: 'set-request-filter', key: 'status', value: event.target.value })}><option value="">All status</option>{statuses.map((status) => <option key={status}>{status}</option>)}</SelectField>{canCreateRequest ? <Button variant="primary" onClick={() => dispatch({ type: 'open-modal', modal: { id: 'create-request', title: 'Create staffing request' } })}>＋ New request</Button> : null}</>} />
       <Card>
         <div className="staffing-card-head staffing-request-toolbar">
           <div className="staffing-toolbar">

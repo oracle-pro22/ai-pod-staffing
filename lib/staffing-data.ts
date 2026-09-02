@@ -391,6 +391,7 @@ export function buildStaffingViewModel(snapshot: StaffingSnapshot): StaffingView
           decisionStatus: textValue(recommendation, 'decision_status'),
           source: textValue(recommendation, 'source'),
           matchingSkills,
+          factors: [],
         };
       }),
     };
@@ -402,7 +403,7 @@ export function buildStaffingViewModel(snapshot: StaffingSnapshot): StaffingView
   const version = textValue(snapshot.projectTypes[0] ?? {}, 'source_version');
 
   return {
-    source: { ...snapshot.workbook, version },
+    source: { provider: 'excel-prototype', ...snapshot.workbook, version },
     catalog: { projects, skills },
     people,
     requests,
@@ -419,6 +420,7 @@ export function buildStaffingViewModel(snapshot: StaffingSnapshot): StaffingView
       pendingRecommendations: snapshot.recommendations.filter((row) => textValue(row, 'decision_status').toLowerCase().includes('pending')).length,
     },
     demoIdentity: { podMemberPersonId: 'P-001', podLeadPersonId: 'P-006' },
+    authorization: { roles: [], userRoles: [] },
     integrity: {
       checked: true,
       counts: {

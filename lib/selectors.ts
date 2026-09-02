@@ -10,9 +10,8 @@ export function selectIdentityPerson(data: StaffingViewModel, role: StaffingRole
 export function selectVisibleRequests(
   data: StaffingViewModel,
   role: StaffingRole,
-  drafts: StaffingRequest[] = [],
 ): StaffingRequest[] {
-  const requests = [...data.requests, ...drafts];
+  const requests = data.requests;
   if (!isScopedRole(role)) return requests;
   const person = selectIdentityPerson(data, role);
   if (!person) return [];
@@ -22,7 +21,6 @@ export function selectVisibleRequests(
 export function selectVisiblePeople(
   data: StaffingViewModel,
   role: StaffingRole,
-  drafts: StaffingRequest[] = [],
 ): StaffingPerson[] {
   const identity = selectIdentityPerson(data, role);
   if (role === 'POD Member') return identity ? [identity] : [];
@@ -30,7 +28,7 @@ export function selectVisiblePeople(
 
   const visibleIds = new Set<string>();
   if (identity) visibleIds.add(identity.id);
-  for (const request of selectVisibleRequests(data, role, drafts)) {
+  for (const request of selectVisibleRequests(data, role)) {
     for (const recommendation of request.recommendations) visibleIds.add(recommendation.personId);
   }
   return data.people.filter((person) => visibleIds.has(person.id));
@@ -40,9 +38,8 @@ export function selectActiveRequest(
   data: StaffingViewModel,
   role: StaffingRole,
   activeRequestId: string | null,
-  drafts: StaffingRequest[] = [],
 ): StaffingRequest | null {
-  const requests = selectVisibleRequests(data, role, drafts);
+  const requests = selectVisibleRequests(data, role);
   return requests.find((request) => request.id === activeRequestId)
     ?? requests.find((request) => request.recommendations.length > 0)
     ?? requests[0]
@@ -60,9 +57,9 @@ export function selectScopedRecommendations(
   return request.recommendations.filter((item) => item.personId === identity?.id);
 }
 
-export function selectDashboardMetrics(data: StaffingViewModel, role: StaffingRole, drafts: StaffingRequest[] = []) {
-  const requests = selectVisibleRequests(data, role, drafts);
-  const people = selectVisiblePeople(data, role, drafts);
+export function selectDashboardMetrics(data: StaffingViewModel, role: StaffingRole) {
+  const requests = selectVisibleRequests(data, role);
+  const people = selectVisiblePeople(data, role);
   const activeRequests = requests.filter((request) => request.status.toLowerCase() !== 'closed');
   const staffedRequests = activeRequests.filter((request) => request.status.toLowerCase() === 'staffed');
   const pendingRecommendations = requests.reduce(

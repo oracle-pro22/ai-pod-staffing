@@ -8,6 +8,12 @@ out/
 .env.*
 !.env.example
 
+# Oracle client wallets and credentials
+Wallet_*/
+*.pem
+*.p12
+*.sso
+
 # Logs and operating-system files
 *.log
 .DS_Store
@@ -23,3 +29,5 @@ data/*.inspect.ndjson
 # Temporary local files
 tmp/
 .cache/
+~$*
+data/~$*

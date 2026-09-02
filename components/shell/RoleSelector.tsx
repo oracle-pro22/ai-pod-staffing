@@ -13,7 +13,7 @@ export function RoleSelector() {
       onChange={(event) => {
         const role = event.target.value as StaffingRole;
         setRole(role);
-        notify('Role changed', `Viewing the prototype as ${role}.`);
+        notify('Role changed', `Viewing the application as ${role}.`);
       }}
     >
       {STAFFING_ROLES.map((role) => <option key={role}>{role}</option>)}

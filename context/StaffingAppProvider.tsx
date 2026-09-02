@@ -34,27 +34,24 @@ const initialState: StaffingAppState = {
   drawer: null,
   modal: null,
   toasts: [],
-  drafts: [],
-  localAvailability: [],
-  calendarAssignments: [],
   selectedCandidatesByRequest: {},
   adminTab: 'roles',
   agentRunning: false,
 };
 
-function staffingAppReducer(state: StaffingAppState, action: StaffingAppAction): StaffingAppState {
+function staffingAppReducer(state: StaffingAppState, action: StaffingAppAction, authorization: StaffingViewModel['authorization']): StaffingAppState {
   switch (action.type) {
     case 'set-role':
       return {
         ...state,
         role: action.role,
-        activeScreen: canAccessScreen(action.role, state.activeScreen) ? state.activeScreen : 'dashboard',
+        activeScreen: canAccessScreen(action.role, state.activeScreen, authorization) ? state.activeScreen : 'dashboard',
         activeRequestId: null,
         drawer: null,
         modal: null,
       };
     case 'set-screen':
-      return canAccessScreen(state.role, action.screen)
+      return canAccessScreen(state.role, action.screen, authorization)
         ? { ...state, activeScreen: action.screen, drawer: null, modal: null }
         : state;
     case 'set-active-request':
@@ -75,12 +72,6 @@ function staffingAppReducer(state: StaffingAppState, action: StaffingAppAction):
       return { ...state, toasts: [...state.toasts, action.toast] };
     case 'remove-toast':
       return { ...state, toasts: state.toasts.filter((toast) => toast.id !== action.id) };
-    case 'add-draft':
-      return { ...state, drafts: [...state.drafts, action.request] };
-    case 'add-availability':
-      return { ...state, localAvailability: [...state.localAvailability, action.entry] };
-    case 'add-calendar-assignment':
-      return { ...state, calendarAssignments: [...state.calendarAssignments, action.assignment] };
     case 'toggle-candidate': {
       const selected = state.selectedCandidatesByRequest[action.requestId] ?? [];
       return {
@@ -127,7 +118,11 @@ export function StaffingAppProvider({
   data: StaffingViewModel;
   children: ReactNode;
 }) {
-  const [state, dispatch] = useReducer(staffingAppReducer, initialState);
+  const reducer = useMemo(
+    () => (state: StaffingAppState, action: StaffingAppAction) => staffingAppReducer(state, action, data.authorization),
+    [data.authorization],
+  );
+  const [state, dispatch] = useReducer(reducer, initialState);
   const storageReady = useRef(false);
 
   useEffect(() => {

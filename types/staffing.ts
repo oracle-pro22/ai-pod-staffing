@@ -1,8 +1,11 @@
-export type WorkbookSource = {
+export type StaffingSource = {
+  provider: 'excel-prototype' | 'oracle-26ai';
   fileName: string;
   modifiedAt: string;
   version: string;
 };
+
+export type WorkbookSource = StaffingSource;
 
 export type CatalogSkill = {
   id: string;
@@ -75,6 +78,42 @@ export type StaffingRecommendation = {
   decisionStatus: string;
   source: string;
   matchingSkills: string[];
+  factors: RecommendationFactor[];
+};
+
+export type RecommendationFactor = {
+  code: string;
+  name: string;
+  weightPct: number;
+  evidenceScore: number;
+};
+
+export type PermissionAccessScope = 'full' | 'scoped' | 'own' | 'locked';
+
+export type StaffingPermission = {
+  resourceCode: string;
+  accessScope: PermissionAccessScope;
+  canView: boolean;
+  canCreate: boolean;
+  canUpdate: boolean;
+  canApprove: boolean;
+  canExport: boolean;
+  canAdminister: boolean;
+};
+
+export type StaffingRoleDefinition = {
+  code: string;
+  name: string;
+  description: string;
+  active: boolean;
+  permissions: StaffingPermission[];
+};
+
+export type StaffingUserRole = {
+  identitySubject: string;
+  roleCode: string;
+  personId: string | null;
+  active: boolean;
 };
 
 export type EffortUnit = 'hours' | 'days' | 'weeks' | 'months';
@@ -112,7 +151,6 @@ export type StaffingRequest = {
   expectedOutcomes: string;
   mappingVersion: string;
   recommendations: StaffingRecommendation[];
-  localDraft?: boolean;
 };
 
 export type StaffingMetrics = {
@@ -129,7 +167,7 @@ export type StaffingMetrics = {
 };
 
 export type StaffingViewModel = {
-  source: WorkbookSource;
+  source: StaffingSource;
   catalog: {
     projects: CatalogProject[];
     skills: CatalogSkill[];
@@ -140,6 +178,10 @@ export type StaffingViewModel = {
   demoIdentity: {
     podMemberPersonId: string;
     podLeadPersonId: string;
+  };
+  authorization: {
+    roles: StaffingRoleDefinition[];
+    userRoles: StaffingUserRole[];
   };
   integrity: {
     checked: true;

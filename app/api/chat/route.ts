@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { dataSource, type StaffingViewModel } from '@/lib/staffing-data';
+import { dataSource } from '@/lib/staffing-data-source';
+import type { StaffingViewModel } from '@/types/staffing';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -65,11 +66,11 @@ export async function POST(request: Request) {
         : requestWithFit.recommendations
       : [];
     answer = requestWithFit
-      ? `${requestWithFit.id} has ${scopedRecommendations.length} workbook recommendation${scopedRecommendations.length === 1 ? '' : 's'} in your access scope: ${scopedRecommendations.map((item) => `${item.personName} as ${item.roleInPod} (${item.score})`).join(', ')}. All remain advisory until human approval.`
+      ? `${requestWithFit.id} has ${scopedRecommendations.length} recommendation${scopedRecommendations.length === 1 ? '' : 's'} in your access scope: ${scopedRecommendations.map((item) => `${item.personName} as ${item.roleInPod} (${item.score})`).join(', ')}. All remain advisory until human approval.`
       : 'No recommendation is recorded for requests in your current access scope.';
   } else {
     answer = `Your ${role} view contains ${visibleRequests.length} staffing request${visibleRequests.length === 1 ? '' : 's'} backed by customer mapping version ${data.source.version}. Ask about a request, person, capacity, project type, deliverable, or required skill.`;
   }
 
-  return NextResponse.json({ answer, source: 'excel-prototype', role, workbookVersion: data.source.version });
+  return NextResponse.json({ answer, source: data.source.provider, role, mappingVersion: data.source.version });
 }

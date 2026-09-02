@@ -8,10 +8,10 @@ import { selectScopedRecommendations, selectVisiblePeople, selectVisibleRequests
 export function NotificationDrawer() {
   const { data, state, dispatch } = useStaffingApp();
   const open = state.drawer?.id === 'notifications';
-  const requests = selectVisibleRequests(data, state.role, state.drafts);
+  const requests = selectVisibleRequests(data, state.role);
   const pending = requests.flatMap((request) => selectScopedRecommendations(request, data, state.role))
     .filter((item) => /pending/i.test(item.decisionStatus));
-  const constrained = selectVisiblePeople(data, state.role, state.drafts)
+  const constrained = selectVisiblePeople(data, state.role)
     .filter((person) => person.allocationPct >= 70);
   const close = () => dispatch({ type: 'close-drawer' });
 

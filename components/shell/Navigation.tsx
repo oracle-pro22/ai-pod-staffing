@@ -5,12 +5,12 @@ import { useStaffingApp } from '@/context/StaffingAppProvider';
 import { canAccessScreen, NAVIGATION_ITEMS } from '@/lib/role-policy';
 
 export function Navigation({ onNavigate }: { onNavigate?: () => void }) {
-  const { state, dispatch, notify } = useStaffingApp();
+  const { data, state, dispatch, notify } = useStaffingApp();
 
   return (
     <nav className="staffing-nav" aria-label="Workspace navigation">
       {NAVIGATION_ITEMS.map((item) => {
-        const accessible = canAccessScreen(state.role, item.id);
+        const accessible = canAccessScreen(state.role, item.id, data.authorization);
         const active = state.activeScreen === item.id;
         return (
           <button

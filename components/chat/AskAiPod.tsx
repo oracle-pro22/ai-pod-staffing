@@ -15,7 +15,7 @@ export function AskAiPod() {
   const [sending, setSending] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const [messages, setMessages] = useState<Message[]>([
-    { id: 1, role: 'ai', text: 'I answer from the staffing workbook and respect the selected persona.' },
+    { id: 1, role: 'ai', text: 'I answer from the staffing database and respect the selected persona.' },
   ]);
 
   async function send(question: string) {
@@ -23,7 +23,7 @@ export function AskAiPod() {
     if (!trimmed || sending) return;
     const userId = Date.now();
     const waitingId = userId + 1;
-    setMessages((current) => [...current, { id: userId, role: 'me', text: trimmed }, { id: waitingId, role: 'ai', text: 'Checking the staffing workbook…' }]);
+    setMessages((current) => [...current, { id: userId, role: 'me', text: trimmed }, { id: waitingId, role: 'ai', text: 'Checking the staffing database…' }]);
     setInput('');
     setSending(true);
     try {
@@ -39,7 +39,7 @@ export function AskAiPod() {
         : message));
     } catch {
       setMessages((current) => current.map((message) => message.id === waitingId
-        ? { ...message, text: 'I could not read the staffing workbook right now. Please retry after checking the local server.' }
+        ? { ...message, text: 'I could not read the staffing database right now. Please retry after checking the local server.' }
         : message));
     } finally {
       setSending(false);
@@ -72,7 +72,7 @@ export function AskAiPod() {
           {QUICK_QUESTIONS.map((question) => <button type="button" key={question} onClick={() => void send(question)}>{question}</button>)}
         </div>
         <div className="staffing-chat-input">
-          <input ref={inputRef} value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={submitOnEnter} placeholder="Ask about workbook staffing data..." aria-label="Ask AI Pod a question" />
+          <input ref={inputRef} value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={submitOnEnter} placeholder="Ask about staffing data..." aria-label="Ask AI Pod a question" />
           <button type="button" onClick={() => void send(input)} disabled={sending}>Send</button>
         </div>
       </section>

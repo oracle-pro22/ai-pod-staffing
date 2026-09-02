@@ -8,7 +8,7 @@ import { selectDashboardMetrics } from '@/lib/selectors';
 
 export function FoundationPreview() {
   const { data, state } = useStaffingApp();
-  const metrics = selectDashboardMetrics(data, state.role, state.drafts);
+  const metrics = selectDashboardMetrics(data, state.role);
   const cards = [
     { label: 'Open requests', value: metrics.openRequests, badge: `${metrics.highPriorityRequests} high priority`, tone: 'red' as const },
     { label: 'Team allocation', value: `${metrics.averageAllocationPct}%`, badge: `${metrics.constrainedPeople} constrained`, tone: 'amber' as const },
