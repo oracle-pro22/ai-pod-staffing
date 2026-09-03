@@ -766,7 +766,8 @@
 .staffing-source-strip { margin-top: 14px; padding: 9px 11px; border-radius: 9px; display: flex; flex-wrap: wrap; gap: 8px; color: var(--staffing-ink-3); background: var(--staffing-surface-soft); font-size: 10px; }
 .staffing-fit-factors { margin-bottom: 16px; background: linear-gradient(145deg, #fbfaf7, #fff); }
 .staffing-explain-title { display: flex; align-items: center; gap: 9px; font-weight: 750; }
-.staffing-explain-title span:last-child { display: grid; }
+.staffing-explain-title > span:nth-child(2) { display: grid; }
+.staffing-explain-title > .staffing-pill { margin-left: auto; white-space: nowrap; }
 .staffing-explain-title small { color: var(--staffing-ink-3); }
 .staffing-spark { width: 28px; height: 28px; border-radius: 9px; display: grid; place-items: center; color: var(--staffing-purple); background: var(--staffing-purple-soft); }
 .staffing-factor { display: grid; grid-template-columns: 130px 1fr 36px; gap: 10px; align-items: center; margin: 10px 0; font-size: 11px; }
@@ -782,6 +783,7 @@
 .staffing-candidate-meta, .staffing-candidate-foot { color: var(--staffing-ink-3); font-size: 11px; }
 .staffing-score { color: var(--staffing-teal); font-size: 20px; font-weight: 790; }
 .staffing-rationale { margin: 13px 0; padding-left: 10px; border-left: 3px solid var(--staffing-teal); color: var(--staffing-ink-2); font-size: 12px; }
+.staffing-inline-actions { display: flex; align-items: center; gap: 8px; }
 .staffing-approval-summary { margin: 15px 0; padding: 12px; border-radius: 10px; background: var(--staffing-surface-soft); }
 .staffing-approval-summary p { margin: 4px 0 0; color: var(--staffing-ink-3); }
 .staffing-notice { margin-top: 15px; padding: 12px 14px; border: 1px solid #e7d5a4; border-radius: 12px; display: flex; align-items: flex-start; gap: 10px; background: #fff9ea; }

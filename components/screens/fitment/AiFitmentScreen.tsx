@@ -1,5 +1,7 @@
 'use client';
 
+import { useEffect, useRef, useState } from 'react';
+
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
@@ -8,8 +10,14 @@ import { Pill } from '@/components/ui/Pill';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { SelectField } from '@/components/ui/FormControls';
 import { useStaffingApp } from '@/context/StaffingAppProvider';
+import { resolveFitmentRecommendations } from '@/lib/demo-fitment';
 import { formatDate, requestEffortLabel } from '@/lib/formatting';
-import { selectActiveRequest, selectScopedRecommendations, selectVisibleRequests } from '@/lib/selectors';
+import {
+  selectActiveRequest,
+  selectScopedRecommendations,
+  selectVisiblePeople,
+  selectVisibleRequests,
+} from '@/lib/selectors';
 import type { StaffingRecommendation } from '@/types/staffing';
 import type { Tone } from '@/types/ui';
 
@@ -17,17 +25,44 @@ const FACTOR_TONES: Tone[] = ['teal', 'blue', 'teal', 'amber', 'red'];
 
 export function AiFitmentScreen() {
   const { data, state, dispatch, notify } = useStaffingApp();
-  const requests = selectVisibleRequests(data, state.role).filter((request) => request.recommendations.length > 0);
+  const requests = selectVisibleRequests(data, state.role);
   const request = selectActiveRequest(data, state.role, state.activeRequestId);
-  const recommendations = selectScopedRecommendations(request, data, state.role);
+  const people = selectVisiblePeople(data, state.role);
+  const storedRecommendations = selectScopedRecommendations(request, data, state.role);
+  const { recommendations, isDemo } = resolveFitmentRecommendations(request, storedRecommendations, people);
   const isMember = state.role === 'POD Member';
   const leads = recommendations.filter((item) => /lead/i.test(item.roleInPod));
   const contributors = recommendations.filter((item) => !/lead/i.test(item.roleInPod));
   const recommendationFactors = (leads[0] ?? contributors[0])?.factors ?? [];
+  const [rerunning, setRerunning] = useState(false);
+  const rerunTimer = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (rerunTimer.current !== null) window.clearTimeout(rerunTimer.current);
+    setRerunning(false);
+    return () => {
+      if (rerunTimer.current !== null) window.clearTimeout(rerunTimer.current);
+    };
+  }, [request?.id]);
+
+  function rerunFitment() {
+    if (!request || rerunning) return;
+    setRerunning(true);
+    rerunTimer.current = window.setTimeout(() => {
+      setRerunning(false);
+      rerunTimer.current = null;
+      notify(
+        isDemo ? 'Demo fitment refreshed' : 'Fitment evidence refreshed',
+        isDemo
+          ? `Simulated suggestions for ${request.id} are ready for demonstration.`
+          : `Stored recommendations for ${request.id} are ready for review.`,
+      );
+    }, 900);
+  }
 
   return (
     <section className="staffing-screen">
-      <PageHeader title="AI fitment review" description="Evidence-based recommendations remain advisory until a person approves them." actions={<><label className="staffing-fitment-picker"><span>Staffing request</span><SelectField value={request?.id ?? ''} onChange={(event) => dispatch({ type: 'set-active-request', requestId: event.target.value })}>{requests.map((item) => <option key={item.id} value={item.id}>{item.id} — {item.title} • {item.status}</option>)}</SelectField></label>{!isMember ? <Button onClick={() => notify('Integration in progress', 'This workflow will be available in a future release.')}>↻ Re-run</Button> : null}{!isMember ? <Button variant="primary" onClick={() => request && dispatch({ type: 'open-modal', modal: { id: 'approve-pod', title: 'Approve proposed pod', payload: { requestId: request.id } } })}>Approve pod</Button> : null}</>} />
+      <PageHeader title="AI fitment review" description="Evidence-based recommendations remain advisory until a person approves them." actions={<><label className="staffing-fitment-picker"><span>Staffing request</span><SelectField value={request?.id ?? ''} onChange={(event) => dispatch({ type: 'set-active-request', requestId: event.target.value })}>{requests.map((item) => <option key={item.id} value={item.id}>{item.id} — {item.title} • {item.status}</option>)}</SelectField></label>{!isMember ? <Button disabled={rerunning || !request} onClick={rerunFitment}>↻ {rerunning ? 'Re-running…' : 'Re-run'}</Button> : null}{!isMember ? <Button variant="primary" onClick={() => request && dispatch({ type: 'open-modal', modal: { id: 'approve-pod', title: 'Approve proposed pod', payload: { requestId: request.id } } })}>Approve pod</Button> : null}</>} />
       {request ? <div className="staffing-fit-layout">
         <Card padded className="staffing-request-summary">
           <div className="staffing-summary-head"><div><Pill tone={/high|urgent/i.test(request.priority) ? 'red' : ''}>{request.priority} priority</Pill><h3 className="staffing-summary-title">{request.title}</h3><p className="staffing-muted">{request.id} • {request.projectType.name}</p></div><Button size="small" aria-label={`Open details for ${request.id}`} onClick={() => dispatch({ type: 'open-drawer', drawer: { id: 'request-details', title: request.title, payload: { requestId: request.id } } })}>↗</Button></div>
@@ -44,13 +79,13 @@ export function AiFitmentScreen() {
         </Card>
         <div>
           <Card padded className="staffing-fit-factors">
-            <div className="staffing-explain-title"><span className="staffing-spark">✦</span><span><b>How the recommendation was formed</b><small>Inputs preserved for governance review</small></span></div>
+            <div className="staffing-explain-title"><span className="staffing-spark">✦</span><span><b>How the recommendation was formed</b><small>{isDemo ? 'Simulated from current profile and request data' : 'Inputs preserved for governance review'}</small></span>{isDemo ? <Pill tone="purple">Demo data</Pill> : null}</div>
             {recommendationFactors.length ? recommendationFactors.map((factor, index) => <div className="staffing-factor" key={factor.code || factor.name}><span>{factor.name}</span><ProgressBar value={factor.evidenceScore} tone={FACTOR_TONES[index % FACTOR_TONES.length]} /><strong>{factor.weightPct}%</strong></div>) : <div className="staffing-empty compact">No recommendation-factor evidence is recorded for this request.</div>}
           </Card>
           <CandidateSection title={isMember ? 'My proposed assignment' : 'Recommended pod lead'} subtitle={isMember ? 'Recommendation evidence in your access scope' : 'Choose a candidate to update the proposed pod'} badge={isMember ? 'Advisory' : '1 required'} recommendations={isMember ? recommendations : leads} requestId={request.id} />
           {!isMember ? <CandidateSection title="Recommended contributors" subtitle="Multi-interest fit, strength, and remaining capacity" badge="2 required" recommendations={contributors} requestId={request.id} /> : null}
         </div>
-      </div> : <div className="staffing-empty">No recommendation-backed request is available in this access scope.</div>}
+      </div> : <div className="staffing-empty">No staffing request is available in this access scope.</div>}
     </section>
   );
 }
