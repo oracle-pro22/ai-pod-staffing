@@ -136,6 +136,7 @@ export type StaffingRequest = {
   deliverables: RequestDeliverable[];
   requiredSkills: RequiredCapability[];
   ownerName: string;
+  requestSourcePersonId: string | null;
   requestSource: string;
   neededBy: string;
   estimatedHours: number;
@@ -192,7 +193,7 @@ export type StaffingViewModel = {
 export type RequestDraftInput = {
   title: string;
   projectTypeId: string;
-  requestSource: string;
+  requestSourcePersonId: string;
   projectDescription: string;
   deliverables: RequestDeliverable[];
   priority: string;

@@ -271,6 +271,7 @@ export function buildOracleStaffingViewModel(snapshot: OracleStaffingSnapshot): 
       deliverables,
       requiredSkills,
       ownerName: text(row, 'owner_name'),
+      requestSourcePersonId: nullableText(row, 'request_source_person_id'),
       requestSource: text(row, 'request_source'),
       neededBy: isoDate(row, 'needed_by'),
       estimatedHours: number(row, 'estimated_hours'),

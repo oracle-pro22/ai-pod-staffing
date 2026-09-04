@@ -675,9 +675,13 @@
 .staffing-delta.good { color: var(--staffing-green); }
 .staffing-delta.warn { color: var(--staffing-amber); }
 .staffing-list { display: flex; flex-direction: column; }
-.staffing-list-row { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(120px, .7fr) minmax(100px, .55fr) auto; gap: 14px; align-items: center; padding: 13px 18px; border-bottom: 1px solid var(--staffing-border-2); }
+.staffing-list-row { display: grid; grid-template-columns: minmax(0, 1fr) max-content minmax(62px, 72px) max-content; gap: clamp(8px, 1vw, 16px); align-items: center; padding: 13px 18px; border-bottom: 1px solid var(--staffing-border-2); }
 .staffing-list-row:last-child { border-bottom: 0; }
 .staffing-list-row:hover { background: var(--staffing-surface-soft); }
+.staffing-list-request { min-width: 0; }
+.staffing-list-status { justify-self: start; }
+.staffing-list-date { min-width: 0; }
+.staffing-list-row > .staffing-btn { max-width: 100%; justify-self: end; }
 .staffing-row-title { font-weight: 700; }
 .staffing-row-sub, .staffing-person-line small { display: block; margin-top: 2px; color: var(--staffing-ink-3); font-size: 11px; }
 .staffing-muted { color: var(--staffing-ink-3); }
@@ -704,6 +708,11 @@
 
 .staffing-field, .staffing-select, .staffing-textarea { width: 100%; padding: 9px 11px; border: 1px solid var(--staffing-border); border-radius: 10px; outline: none; background: #fff; color: var(--staffing-ink); }
 .staffing-field:focus, .staffing-select:focus, .staffing-textarea:focus { border-color: #9f9890; box-shadow: 0 0 0 3px rgba(159, 152, 144, .12); }
+.staffing-person-combobox { position: relative; }
+.staffing-person-options { position: absolute; top: calc(100% + 5px); right: 0; left: 0; z-index: 30; max-height: 210px; padding: 5px; overflow-y: auto; border: 1px solid var(--staffing-border); border-radius: 10px; background: #fff; box-shadow: 0 12px 28px rgba(37, 32, 27, .14); }
+.staffing-person-options button { width: 100%; padding: 9px 10px; border: 0; border-radius: 7px; display: block; color: var(--staffing-ink); background: transparent; text-align: left; }
+.staffing-person-options button:hover, .staffing-person-options button.active { background: var(--staffing-surface-soft); }
+.staffing-person-empty { padding: 10px; color: var(--staffing-ink-3); font-size: 11px; }
 .staffing-textarea { min-height: 92px; resize: vertical; }
 .staffing-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 13px; }
 .staffing-form-group { min-width: 0; }
@@ -801,6 +810,9 @@
 .staffing-cell.person { position: sticky; left: 0; z-index: 3; background: #fff; }
 .staffing-cell.head.person { z-index: 5; background: #efede8; }
 .staffing-person-line { display: flex; align-items: center; gap: 9px; }
+.staffing-list-row.staffing-directory-row { grid-template-columns: minmax(260px, 1.2fr) minmax(220px, 1fr) max-content max-content; }
+.staffing-directory-capacity { display: flex; align-items: baseline; gap: 16px; white-space: nowrap; }
+.staffing-directory-capacity small { color: var(--staffing-ink-3); font-size: 11px; }
 .staffing-booking { margin-bottom: 4px; padding: 6px 7px; overflow: hidden; border-left: 3px solid var(--staffing-blue); border-radius: 7px; background: var(--staffing-blue-soft); font-size: 10px; white-space: nowrap; text-overflow: ellipsis; }
 .staffing-booking.video { border-color: var(--staffing-purple); background: var(--staffing-purple-soft); }
 .staffing-booking.write { border-color: var(--staffing-teal); background: var(--staffing-teal-soft); }
@@ -946,7 +958,9 @@
   .staffing-actions:has(> .staffing-select) .staffing-btn.primary { min-width: 138px; }
   .staffing-kpi-grid, .staffing-report-grid { grid-template-columns: 1fr; }
   .staffing-list-row { grid-template-columns: 1fr auto; }
-  .staffing-list-row > div:nth-child(2), .staffing-list-row > div:nth-child(3) { display: none; }
+  .staffing-list-row > .staffing-list-status, .staffing-list-row > .staffing-list-date { display: none; }
+  .staffing-list-row.staffing-directory-row { grid-template-columns: 1fr auto; }
+  .staffing-directory-row > .staffing-tag-row, .staffing-directory-row > .staffing-directory-capacity { display: none; }
   .staffing-form-grid { grid-template-columns: 1fr; }
   .staffing-form-group.full { grid-column: auto; }
   .staffing-fit-layout { grid-template-columns: 1fr; }

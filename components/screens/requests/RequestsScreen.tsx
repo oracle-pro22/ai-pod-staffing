@@ -1,16 +1,20 @@
 'use client';
 
+import { useState } from 'react';
+
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Pill } from '@/components/ui/Pill';
 import { SelectField, TextField } from '@/components/ui/FormControls';
 import { useStaffingApp } from '@/context/StaffingAppProvider';
+import { downloadExcelWorkbook } from '@/lib/export-xlsx';
 import { formatDate, statusTone, unique } from '@/lib/formatting';
 import { selectVisibleRequests } from '@/lib/selectors';
 
 export function RequestsScreen() {
   const { data, state, dispatch, notify } = useStaffingApp();
+  const [exporting, setExporting] = useState(false);
   const requests = selectVisibleRequests(data, state.role);
   const filters = state.requestFilters;
   const isMember = state.role === 'POD Member';
@@ -28,16 +32,24 @@ export function RequestsScreen() {
       && (!filters.deliverableId || request.deliverables.some((item) => item.id === filters.deliverableId));
   });
 
-  function exportCsv() {
+  async function exportExcel() {
+    if (exporting) return;
     const headers = ['ID', 'Title', 'Project Type', 'Deliverables', 'Required Capabilities', 'Request Source', 'Status', 'Priority', 'Needed By'];
     const rows = filtered.map((request) => [request.id, request.title, request.projectType.name, request.deliverables.map((item) => item.name).join('; '), request.requiredSkills.map((item) => item.name).join('; '), request.requestSource, request.status, request.priority, request.neededBy]);
-    const csv = [headers, ...rows].map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(',')).join('\n');
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
-    link.download = 'ai-pod-staffing-requests.csv';
-    link.click();
-    URL.revokeObjectURL(link.href);
-    notify('Export created', `${rows.length} scoped request${rows.length === 1 ? '' : 's'} exported.`);
+    setExporting(true);
+    try {
+      await downloadExcelWorkbook({
+        fileName: `ai-pod-staffing-requests-${new Date().toISOString().slice(0, 10)}.xlsx`,
+        sheetName: 'Staffing Requests',
+        headers,
+        rows,
+      });
+      notify('Excel export created', `${rows.length} scoped request${rows.length === 1 ? '' : 's'} exported.`);
+    } catch {
+      notify('Export unavailable', 'The Excel workbook could not be created. Please try again.');
+    } finally {
+      setExporting(false);
+    }
   }
 
   return (
@@ -51,7 +63,7 @@ export function RequestsScreen() {
             <SelectField value={filters.projectTypeId} onChange={(event) => dispatch({ type: 'set-request-filter', key: 'projectTypeId', value: event.target.value })}><option value="">All project types</option>{data.catalog.projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</SelectField>
             <SelectField value={filters.deliverableId} onChange={(event) => dispatch({ type: 'set-request-filter', key: 'deliverableId', value: event.target.value })}><option value="">All deliverables</option>{data.catalog.projects.flatMap((project) => project.deliverables).map((deliverable) => <option key={deliverable.id} value={deliverable.id}>{deliverable.name}</option>)}</SelectField>
           </div>
-          {!isMember ? <Button size="small" onClick={exportCsv}>Export CSV</Button> : null}
+          {!isMember ? <Button size="small" disabled={exporting} onClick={() => void exportExcel()}>{exporting ? 'Exporting…' : 'Export Excel'}</Button> : null}
         </div>
         <div className="staffing-table-wrap"><table className="staffing-request-table"><thead><tr><th>Request</th><th>Project type</th><th>Key deliverables / required capabilities</th><th>Request source</th><th>Status</th><th>Needed by date</th><th /></tr></thead><tbody>{filtered.map((request) => <tr key={request.id}><td><b>{request.title}</b><small>{request.id} • {request.estimatedHours} hours</small></td><td>{request.projectType.name}</td><td><b>{request.deliverables.map((item) => item.name).join(', ')}</b><div className="staffing-tag-row">{request.requiredSkills.map((skill) => <span key={skill.id}>{skill.name}</span>)}</div></td><td>{request.requestSource}</td><td><Pill tone={statusTone(request.status)}>{request.status}</Pill></td><td>{formatDate(request.neededBy)}</td><td><Button size="small" onClick={() => dispatch({ type: 'open-drawer', drawer: { id: 'request-details', title: request.title, payload: { requestId: request.id } } })}>Open</Button></td></tr>)}</tbody></table>{filtered.length === 0 ? <div className="staffing-empty">No requests match the selected filters.</div> : null}</div>
       </Card>

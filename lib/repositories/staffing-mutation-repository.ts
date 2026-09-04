@@ -84,6 +84,15 @@ export async function createStaffingRequest(
     `, { projectTypeId: input.projectTypeId }))[0];
     if (!project) throw validationError('The selected project type is no longer available.');
 
+    const requestSourcePerson = (await rows(connection, `
+      SELECT person_id, full_name
+        FROM people
+       WHERE person_id = :personId
+         AND active_flag = 'Y'
+    `, { personId: input.requestSourcePersonId }))[0];
+    if (!requestSourcePerson) throw validationError('The selected request source is no longer available.');
+    const requestSourceName = text(requestSourcePerson, 'full_name');
+
     const mappedDeliverables = input.deliverables.filter((item) => !item.custom);
     const mappedDeliverableIds = [...new Set(mappedDeliverables.map((item) => item.id))];
     let catalogueDeliverables: Row[] = [];
@@ -151,7 +160,7 @@ export async function createStaffingRequest(
     await connection.execute(`
       INSERT INTO requests (
         request_id, title, project_type_id, project_type, deliverable_id, deliverable,
-        deliverables_json, skills_type_of_work, owner_name, request_source,
+        deliverables_json, skills_type_of_work, owner_name, request_source, request_source_person_id,
         project_description, needed_by, estimated_start_date, estimated_completion_date,
         estimated_effort_value, estimated_effort_unit, estimated_hours,
         requested_lead_count, requested_contributor_count, priority, status,
@@ -159,7 +168,7 @@ export async function createStaffingRequest(
         created_by, updated_by
       ) VALUES (
         :requestId, :title, :projectTypeId, :projectType, :deliverableId, :deliverable,
-        :deliverablesJson, :skills, :ownerName, :requestSource,
+        :deliverablesJson, :skills, :ownerName, :requestSource, :requestSourcePersonId,
         :projectDescription, TO_DATE(:neededBy, 'YYYY-MM-DD'),
         TO_DATE(:startDate, 'YYYY-MM-DD'),
         TO_DATE(:completionDate, 'YYYY-MM-DD'),
@@ -177,8 +186,9 @@ export async function createStaffingRequest(
       deliverable: firstDeliverable?.name ?? null,
       deliverablesJson: JSON.stringify(storedDeliverables),
       skills,
-      ownerName: input.requestSource,
-      requestSource: input.requestSource,
+      ownerName: requestSourceName,
+      requestSource: requestSourceName,
+      requestSourcePersonId: input.requestSourcePersonId,
       projectDescription: input.projectDescription || text(project, 'project_description'),
       neededBy: input.neededBy,
       startDate: input.estimatedStartDate || null,

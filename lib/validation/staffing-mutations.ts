@@ -1,4 +1,5 @@
 import { validationError } from '@/lib/errors/staffing-api-error';
+import { isBeforeRequestBusinessDate, requestBusinessDate } from '@/lib/request-date-policy';
 import type { CreateAvailabilityPayload, CreateRequestPayload } from '@/types/mutations';
 import type { EffortUnit, RequestDeliverable, RequiredCapability } from '@/types/staffing';
 
@@ -95,6 +96,16 @@ export function validateCreateRequestPayload(value: unknown): CreateRequestPaylo
   const neededBy = dateText(input.neededBy, 'Needed by date', true);
   const estimatedStartDate = dateText(input.estimatedStartDate, 'Estimated start date');
   const estimatedCompletionDate = dateText(input.estimatedCompletionDate, 'Estimated completion date');
+  const today = requestBusinessDate();
+  if (isBeforeRequestBusinessDate(neededBy, today)) {
+    throw validationError('Needed by date cannot be earlier than today.');
+  }
+  if (isBeforeRequestBusinessDate(estimatedStartDate, today)) {
+    throw validationError('Estimated start date cannot be earlier than today.');
+  }
+  if (isBeforeRequestBusinessDate(estimatedCompletionDate, today)) {
+    throw validationError('Estimated completion date cannot be earlier than today.');
+  }
   if (estimatedStartDate && estimatedCompletionDate && estimatedCompletionDate < estimatedStartDate) {
     throw validationError('Estimated completion date cannot be before the estimated start date.');
   }
@@ -111,7 +122,7 @@ export function validateCreateRequestPayload(value: unknown): CreateRequestPaylo
   return {
     title: requiredText(input.title, 'Request title', 500),
     projectTypeId: requiredText(input.projectTypeId, 'Project type', 30),
-    requestSource: requiredText(input.requestSource, 'Request source', 250),
+    requestSourcePersonId: requiredText(input.requestSourcePersonId, 'Request source', 30),
     projectDescription: optionalText(input.projectDescription, 'Project description', 4000),
     deliverables: deliverables(input.deliverables),
     priority,

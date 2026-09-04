@@ -97,6 +97,7 @@ export async function readOracleStaffingSnapshot(): Promise<OracleStaffingSnapsh
     requests: await rows(connection, `
       SELECT request_id, title, project_type_id, project_type, deliverable_id, deliverable,
              deliverables_json, skills_type_of_work, owner_name, request_source,
+             request_source_person_id,
              project_description,
              TO_CHAR(needed_by, 'YYYY-MM-DD') AS needed_by,
              TO_CHAR(estimated_start_date, 'YYYY-MM-DD') AS estimated_start_date,

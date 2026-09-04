@@ -199,6 +199,7 @@ CREATE TABLE REQUESTS (
   skills_type_of_work          VARCHAR2(1000),
   owner_name                   VARCHAR2(250)  NOT NULL,
   request_source               VARCHAR2(250)  NOT NULL,
+  request_source_person_id     VARCHAR2(30),
   project_description          VARCHAR2(4000) NOT NULL,
   needed_by                    DATE           NOT NULL,
   estimated_start_date         DATE,
@@ -223,6 +224,8 @@ CREATE TABLE REQUESTS (
     REFERENCES PROJECT_TYPES (project_type_id),
   CONSTRAINT fk_req_deliverable FOREIGN KEY (deliverable_id)
     REFERENCES DELIVERABLES (deliverable_id),
+  CONSTRAINT fk_req_source_person FOREIGN KEY (request_source_person_id)
+    REFERENCES PEOPLE (person_id),
   CONSTRAINT ck_req_deliverables_json CHECK (deliverables_json IS JSON),
   CONSTRAINT ck_req_effort CHECK (estimated_effort_value >= 0 AND estimated_hours >= 0),
   CONSTRAINT ck_req_effort_unit CHECK (estimated_effort_unit IN ('HOURS', 'DAYS', 'WEEKS', 'MONTHS')),
@@ -358,6 +361,7 @@ CREATE INDEX idx_avail_person_dates ON AVAILABILITY (person_id, starts_on, ends_
 CREATE INDEX idx_req_project ON REQUESTS (project_type_id);
 CREATE INDEX idx_req_status_priority ON REQUESTS (status, priority);
 CREATE INDEX idx_req_needed_by ON REQUESTS (needed_by);
+CREATE INDEX idx_req_source_person ON REQUESTS (request_source_person_id);
 CREATE INDEX idx_rq_request ON REQUIREMENTS (request_id);
 CREATE INDEX idx_rq_interest ON REQUIREMENTS (interest_id);
 CREATE INDEX idx_rec_request_score ON RECOMMENDATIONS (request_id, score DESC);

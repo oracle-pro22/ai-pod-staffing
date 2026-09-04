@@ -53,9 +53,9 @@ export function CommandCenter() {
             <div className="staffing-list">
               {activeRequests.slice(0, 5).map((request) => (
                 <div className="staffing-list-row" key={request.id}>
-                  <div><div className="staffing-row-title">{request.title}</div><div className="staffing-row-sub">{request.id} • {request.projectType.name} • {request.deliverable.name}</div></div>
-                  <Pill tone={statusTone(request.status)}>{request.status}</Pill>
-                  <div><b>{formatShortDate(request.neededBy)}</b><div className="staffing-row-sub">{request.priority}</div></div>
+                  <div className="staffing-list-request"><div className="staffing-row-title">{request.title}</div><div className="staffing-row-sub">{request.id} • {request.projectType.name} • {request.deliverable.name}</div></div>
+                  <Pill className="staffing-list-status" tone={statusTone(request.status)}>{request.status}</Pill>
+                  <div className="staffing-list-date"><b>{formatShortDate(request.neededBy)}</b><div className="staffing-row-sub">{request.priority}</div></div>
                   <Button size="small" onClick={() => openRequest(request.id)}>Review</Button>
                 </div>
               ))}

@@ -6,7 +6,9 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/Button';
 import { FormGroup, SelectField, TextArea, TextField } from '@/components/ui/FormControls';
 import { Modal } from '@/components/ui/Modal';
+import { PersonCombobox } from '@/components/ui/PersonCombobox';
 import { useStaffingApp } from '@/context/StaffingAppProvider';
+import { requestBusinessDate } from '@/lib/request-date-policy';
 import type {
   CatalogDeliverable,
   RequestDeliverable,
@@ -27,6 +29,11 @@ export function CreateRequestModal() {
   const [capabilityChoice, setCapabilityChoice] = useState('');
   const [customDeliverable, setCustomDeliverable] = useState('');
   const [customCapability, setCustomCapability] = useState('');
+  const [requestSourcePersonId, setRequestSourcePersonId] = useState('');
+  const [minimumDate, setMinimumDate] = useState(() => requestBusinessDate());
+  const [neededBy, setNeededBy] = useState(() => requestBusinessDate());
+  const [estimatedStartDate, setEstimatedStartDate] = useState(() => requestBusinessDate());
+  const [estimatedCompletionDate, setEstimatedCompletionDate] = useState(() => requestBusinessDate());
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -39,6 +46,16 @@ export function CreateRequestModal() {
     setCustomDeliverable('');
     setCustomCapability('');
   }, [open, projectId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!open) return;
+    const today = requestBusinessDate();
+    setMinimumDate(today);
+    setNeededBy(today);
+    setEstimatedStartDate(today);
+    setEstimatedCompletionDate(today);
+    setRequestSourcePersonId('');
+  }, [open]);
 
   const availableDeliverables = project?.deliverables.filter((item) => !deliverables.some((selected) => selected.id === item.id)) ?? [];
   const notes = useMemo(() => deliverables.map((item) => item.note).filter(Boolean), [deliverables]);
@@ -73,10 +90,21 @@ export function CreateRequestModal() {
     setCapabilityChoice('');
   }
 
+  function changeEstimatedStartDate(value: string) {
+    setEstimatedStartDate(value);
+    if (value && (!estimatedCompletionDate || estimatedCompletionDate < value)) {
+      setEstimatedCompletionDate(value);
+    }
+  }
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!project || deliverables.length === 0 || capabilities.length === 0) {
       notify('Request incomplete', 'Add at least one deliverable and required capability.');
+      return;
+    }
+    if (!requestSourcePersonId) {
+      notify('Request incomplete', 'Select a request source from the people list.');
       return;
     }
     const formElement = event.currentTarget;
@@ -92,7 +120,7 @@ export function CreateRequestModal() {
         body: JSON.stringify({
           title: String(form.get('title') || ''),
           projectTypeId: project.id,
-          requestSource: String(form.get('requestSource') || ''),
+          requestSourcePersonId,
           projectDescription: String(form.get('projectDescription') || ''),
           deliverables,
           priority: String(form.get('priority') || ''),
@@ -139,7 +167,7 @@ export function CreateRequestModal() {
         <CreateSection title="Request overview" description="Core request information">
           <div className="staffing-create-grid">
             <FormGroup label="Request title" className="wide"><TextField name="title" required placeholder="Enter request title" /></FormGroup>
-            <FormGroup label="Request source" className="third"><TextField name="requestSource" required defaultValue="Indranie B." placeholder="Person or team requesting the work" /></FormGroup>
+            <FormGroup label="Request source" className="third"><PersonCombobox people={data.people} value={requestSourcePersonId} onChange={setRequestSourcePersonId} disabled={saving} required /></FormGroup>
             <FormGroup label="Project type" className="third"><SelectField value={projectId} onChange={(event) => setProjectId(event.target.value)}>{data.catalog.projects.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</SelectField></FormGroup>
             <FormGroup label="Project description" className="wide"><TextArea key={project?.id} name="projectDescription" defaultValue={project?.description} placeholder="Describe the project and the work being requested" /></FormGroup>
           </div>
@@ -174,10 +202,10 @@ export function CreateRequestModal() {
         <CreateSection title="Schedule and staffing" description="Timing, effort and requested pod">
           <div className="staffing-create-grid">
             <FormGroup label="Priority" className="third"><SelectField name="priority" defaultValue="Medium"><option>Low</option><option>Medium</option><option>High</option></SelectField></FormGroup>
-            <FormGroup label="Needed by date" className="third"><TextField name="neededBy" required type="date" defaultValue="2026-08-21" /></FormGroup>
+            <FormGroup label="Needed by date" className="third"><TextField name="neededBy" required type="date" min={minimumDate} value={neededBy} onChange={(event) => setNeededBy(event.target.value)} /></FormGroup>
             <FormGroup label="Requested pod size" className="third"><SelectField name="podSize"><option>1 lead + 2 contributors</option><option>1 lead + 1 contributor</option><option>1 lead + 3 contributors</option></SelectField></FormGroup>
-            <FormGroup label="Estimated start date" className="third"><TextField name="startDate" type="date" defaultValue="2026-08-17" /></FormGroup>
-            <FormGroup label="Estimated completion date" className="third"><TextField name="completionDate" type="date" defaultValue="2026-08-21" /></FormGroup>
+            <FormGroup label="Estimated start date" className="third"><TextField name="startDate" type="date" min={minimumDate} value={estimatedStartDate} onChange={(event) => changeEstimatedStartDate(event.target.value)} /></FormGroup>
+            <FormGroup label="Estimated completion date" className="third"><TextField name="completionDate" type="date" min={estimatedStartDate || minimumDate} value={estimatedCompletionDate} onChange={(event) => setEstimatedCompletionDate(event.target.value)} /></FormGroup>
             <FormGroup label="Estimated effort" className="third"><div className="staffing-effort-control"><TextField aria-label="Estimated effort value" name="effortValue" type="number" min="1" defaultValue="5" /><SelectField aria-label="Estimated effort unit" name="effortUnit"><option value="days">Days</option><option value="weeks">Weeks</option><option value="months">Months</option></SelectField></div></FormGroup>
           </div>
         </CreateSection>

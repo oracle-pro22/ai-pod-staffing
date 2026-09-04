@@ -362,6 +362,7 @@ export function buildStaffingViewModel(snapshot: StaffingSnapshot): StaffingView
       deliverables: [primaryDeliverable],
       requiredSkills: requirements,
       ownerName,
+      requestSourcePersonId: null,
       requestSource: ownerName,
       neededBy: textValue(row, 'needed_by'),
       estimatedHours,
