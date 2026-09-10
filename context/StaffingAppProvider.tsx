@@ -71,6 +71,7 @@ function staffingAppReducer(state: StaffingAppState, action: StaffingAppAction, 
     case 'close-drawer':
       return { ...state, drawer: null };
     case 'open-modal':
+      if (action.modal.id === 'add-person' && (state.role !== 'Administrator' || !canPerform(state.role, 'TEAM_SKILLS', 'canCreate', authorization))) return state;
       if (action.modal.id === 'create-request' && !canPerform(state.role, 'REQUESTS', 'canCreate', authorization)) return state;
       if (action.modal.id === 'approve-pod' && !canPerform(state.role, 'AI_FITMENT', 'canApprove', authorization)) return state;
       return { ...state, modal: action.modal };

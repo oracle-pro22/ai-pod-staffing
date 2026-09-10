@@ -3,6 +3,7 @@
 import { type ReactNode, useEffect, useState } from 'react';
 
 import { AskAiPod } from '@/components/chat/AskAiPod';
+import { AddPersonModal } from '@/components/overlays/AddPersonModal';
 import { RequestOverlays } from '@/components/overlays/RequestOverlays';
 import { WorkspaceOverlays } from '@/components/overlays/WorkspaceOverlays';
 import { ToastHost } from '@/components/ui/ToastHost';
@@ -36,6 +37,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <AskAiPod key={state.role} />
       <NotificationDrawer />
       <RequestOverlays />
+      <AddPersonModal key={state.role} />
       <WorkspaceOverlays />
       <ToastHost />
     </div>

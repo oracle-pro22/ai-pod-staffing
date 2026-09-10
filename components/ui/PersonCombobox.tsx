@@ -13,7 +13,7 @@ import {
 import type { StaffingPerson } from '@/types/staffing';
 
 type PersonComboboxProps = {
-  people: StaffingPerson[];
+  people: Pick<StaffingPerson, 'id' | 'name'>[];
   value: string;
   onChange: (personId: string) => void;
   disabled?: boolean;
@@ -52,7 +52,7 @@ export function PersonCombobox({
     setActiveIndex((current) => Math.min(current, Math.max(matches.length - 1, 0)));
   }, [matches.length]);
 
-  function selectPerson(person: StaffingPerson) {
+  function selectPerson(person: Pick<StaffingPerson, 'id' | 'name'>) {
     onChange(person.id);
     setQuery(person.name);
     setOpen(false);

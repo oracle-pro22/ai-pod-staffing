@@ -37,6 +37,8 @@ const { selectVisibleRequests, selectVisiblePeople, selectIdentityPerson, select
 const { staffingRequestContext } = require('../lib/auth/staffing-request-context.ts');
 const { createStaffingRequest, createAvailabilityEvent } = require('../lib/repositories/staffing-mutation-repository.ts');
 const { requireStaffingPermission } = require('../lib/auth/staffing-authorization.ts');
+const { validateCreatePerson } = require('../lib/validation/people.ts');
+const { createPerson, listActivePeopleNames } = require('../lib/repositories/people-repository.ts');
 const { resolveFitmentRecommendations } = require('../lib/demo-fitment.ts');
 const { readOracleStaffingSnapshot } = require('../lib/repositories/staffing-repository.ts');
 
@@ -249,6 +251,112 @@ test('retired or wrong-project deliverable submission fails before inserting any
   const writes = mockSave(true);
   await assert.rejects(createStaffingRequest(input, { role: 'POD Captain', actor: 'test' }), { status: 400 });
   assert.equal(writes.length, 0);
+});
+
+
+
+test('Administrator migration and recovery explicitly avoid parallel DML sibling locks', () => {
+  for (const filename of ['admin_people.sql', 'rollback_admin_people.sql']) {
+    const script = fs.readFileSync(path.join(root, 'sql/oracle', filename), 'utf8');
+    assert.match(script, /ALTER SESSION DISABLE PARALLEL DML/);
+    assert.match(script, /ALTER SESSION DISABLE PARALLEL QUERY/);
+    assert.match(script, /UPDATE \/\*\+ DISABLE_PARALLEL_DML NO_PARALLEL \*\//);
+    assert.doesNotMatch(script, /ALTER SYSTEM|DROP TABLE|DROP SEQUENCE/i);
+  }
+  const script = fs.readFileSync(path.join(root, 'sql/oracle/admin_people.sql'), 'utf8');
+  assert.equal([...script.matchAll(/UPDATE \/\*\+/g)].length, 1);
+  assert.match(script, /can_create=CASE WHEN resource_code='TEAM_SKILLS' THEN 'Y' ELSE can_create END/);
+  assert.match(script, /IF SQL%ROWCOUNT<>12/);
+  assert.match(script, /EXCEPTION WHEN OTHERS THEN ROLLBACK; RAISE/);
+});
+
+function adminFixture() {
+  const data = fixture();
+  const admin = data.authorization.roles.find((role) => role.code === 'SYSTEM_ADMINISTRATOR');
+  admin.permissions.forEach((item) => {
+    item.canView = true; item.accessScope = 'full';
+    if (item.resourceCode === 'TEAM_SKILLS') item.canCreate = true;
+  });
+  return data;
+}
+const personInput = { fullName: '  New  Person ', jobTitle: 'Engineer', location: 'Bengaluru', email: 'NEW@example.COM', allocationPct: 0, activePods: 0 };
+test('person validation normalizes names/email but rejects invalid and missing required data', () => {
+  assert.deepEqual(validateCreatePerson(personInput), { ...personInput, fullName: 'New Person', email: 'new@example.com' });
+  for (const input of [null, {}, {...personInput, allocationPct: -1}, {...personInput, allocationPct: 101},
+    {...personInput, allocationPct: 1.111}, {...personInput, activePods: 1.5}, {...personInput, jobTitle: ''},
+    {...personInput, location: ''}, {...personInput, fullName: 'a'.repeat(251)}, {...personInput, email: 'invalid'}]) {
+    assert.throws(() => validateCreatePerson(input), { status: 400 });
+  }
+  assert.equal(validateCreatePerson({...personInput, email: ''}).email, '');
+});
+test('expanded Administrator can open every screen without gaining Captain-only writes', () => {
+  const data = adminFixture();
+  const { NAVIGATION_ITEMS } = require('../lib/role-policy.ts');
+  for (const item of NAVIGATION_ITEMS) assert.equal(canAccessScreen('Administrator', item.id, data.authorization), true, item.id);
+  assert.equal(selectVisibleRequests(data, 'Administrator').length, data.requests.length);
+  assert.equal(selectRoleViewModel(data, 'Administrator').requests[0].recommendations.length, 3);
+  assert.equal(canPerform('Administrator', 'REQUESTS', 'canCreate', data.authorization), false);
+  assert.equal(canPerform('Administrator', 'AI_FITMENT', 'canApprove', data.authorization), false);
+  assert.match(renderProfile('Administrator', 'requests', data), /REQ-1/);
+  assert.match(renderProfile('Administrator', 'interests', data), /Add person/);
+  assert.match(renderProfile('Administrator', 'availability', data), /People availability/);
+});
+test('create-person rejects every non-admin and an admin without the DB permission', async () => {
+  let queries = 0;
+  execute = async () => { queries++; return { rows: [] }; };
+  for (const role of ['POD Captain','POD Lead','POD Member']) await assert.rejects(createPerson(validateCreatePerson(personInput), { role }), { status: 403 });
+  assert.equal(queries, 0);
+  await assert.rejects(createPerson(validateCreatePerson(personInput), { role: 'Administrator' }), { status: 403 });
+  assert.equal(queries, 1);
+});
+function personQueryMock({ emailExists = false, insertError, sequenceError, personNumber = '12' } = {}) {
+  const inserts = [];
+  execute = async (statement, binds) => {
+    if (/FROM app_roles/i.test(statement)) {
+      assert.equal(binds.roleCode, 'SYSTEM_ADMINISTRATOR');
+      assert.equal(binds.resourceCode, 'TEAM_SKILLS');
+      return { rows: [{ CAN_VIEW: 'Y', CAN_CREATE: 'Y', ACCESS_SCOPE: 'FULL' }] };
+    }
+    if (/LOWER\(TRIM\(email_address\)\)/i.test(statement)) return { rows: emailExists ? [{ PERSON_ID: 'P-009' }] : [] };
+    if (/person_id_seq.NEXTVAL/i.test(statement)) {
+      if (sequenceError) throw sequenceError;
+      return { rows: [{ PERSON_NUMBER: personNumber }] };
+    }
+    if (/INSERT INTO people/i.test(statement)) {
+      if (insertError) throw insertError;
+      inserts.push({ statement, binds });
+      return { rowsAffected: 1 };
+    }
+    throw new Error('Unexpected SQL');
+  };
+  return inserts;
+}
+test('person save inserts one active real row using numeric ID and no role/skills/assignment writes', async () => {
+  const inserts = personQueryMock();
+  const result = await createPerson(validateCreatePerson(personInput), { role: 'Administrator' });
+  assert.deepEqual(result, { personId: 'P-012', fullName: 'New Person' });
+  assert.equal(inserts.length, 1);
+  assert.equal(inserts[0].binds.initials, 'NP');
+  assert.equal(inserts[0].binds.email, 'new@example.com');
+  assert.match(inserts[0].statement, /'Y'/);
+  personQueryMock({ personNumber: '1001' });
+  assert.equal((await createPerson(validateCreatePerson(personInput), { role: 'Administrator' })).personId, 'P-1001');
+});
+test('duplicate emails, concurrent unique violations and missing sequence fail with actionable errors', async () => {
+  const inserts = personQueryMock({ emailExists: true });
+  await assert.rejects(createPerson(validateCreatePerson(personInput), { role: 'Administrator' }), { status: 409 });
+  assert.equal(inserts.length, 0);
+  personQueryMock({ insertError: { errorNum: 1 } });
+  await assert.rejects(createPerson(validateCreatePerson(personInput), { role: 'Administrator' }), { status: 409 });
+  personQueryMock({ sequenceError: { errorNum: 2289 } });
+  await assert.rejects(createPerson(validateCreatePerson(personInput), { role: 'Administrator' }), { status: 503, code: 'PEOPLE_SETUP_REQUIRED' });
+});
+test('request-source lookup queries active people and returns ID/name only', async () => {
+  execute = async (statement) => {
+    assert.match(statement, /active_flag = 'Y'/);
+    return { rows: [{ PERSON_ID: 'P-012', FULL_NAME: 'New Person', LOCATION: 'Not exposed' }] };
+  };
+  assert.deepEqual(await listActivePeopleNames(), [{ id: 'P-012', name: 'New Person' }]);
 });
 
 function renderProfile(role, screen, data = fixture()) {

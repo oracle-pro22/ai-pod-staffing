@@ -24,7 +24,23 @@ export function CreateRequestModal() {
   const { data, state, dispatch, notify } = useStaffingApp();
   const router = useRouter();
   const canCreate = canPerform(state.role, 'REQUESTS', 'canCreate', data.authorization);
+  const [sourcePeople, setSourcePeople] = useState<{ id: string; name: string }[]>(data.people);
+  const [sourcePeopleLoading, setSourcePeopleLoading] = useState(false);
   const open = state.modal?.id === 'create-request' && canCreate;
+  useEffect(() => {
+    if (!open) return;
+    const controller = new AbortController();
+    setSourcePeopleLoading(true);
+    fetch('/api/people', { headers: { 'x-staffing-role': state.role }, cache: 'no-store', signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error('Lookup unavailable');
+        const result = await response.json() as { data: { id: string; name: string }[] };
+        if (!controller.signal.aborted) setSourcePeople(result.data);
+      }).catch(() => {
+        if (!controller.signal.aborted) { setSourcePeople([]); notify('People lookup unavailable', 'Close and reopen the form to retry.'); }
+      }).finally(() => { if (!controller.signal.aborted) setSourcePeopleLoading(false); });
+    return () => controller.abort();
+  }, [open, state.role]); // notify is context-backed; fetching is scoped to each opening/profile.
   const firstProject = data.catalog.projects[0];
   const [projectId, setProjectId] = useState(firstProject?.id ?? '');
   const project = data.catalog.projects.find((item) => item.id === projectId) ?? firstProject;
@@ -198,7 +214,7 @@ export function CreateRequestModal() {
         <CreateSection title="Request overview" description="Core request information">
           <div className="staffing-create-grid">
             <FormGroup label="Request title" className="wide"><TextField name="title" required value={requestTitle} onChange={(event) => setRequestTitle(event.target.value)} placeholder="Enter request title" /></FormGroup>
-            <FormGroup label="Request source" className="third"><PersonCombobox people={data.people} value={requestSourcePersonId} onChange={setRequestSourcePersonId} disabled={saving} required /></FormGroup>
+            <FormGroup label="Request source" className="third"><PersonCombobox people={sourcePeople} value={requestSourcePersonId} onChange={setRequestSourcePersonId} disabled={saving || sourcePeopleLoading} placeholder={sourcePeopleLoading ? 'Loading people…' : 'Search people by name'} required /></FormGroup>
             <FormGroup label="Project type" className="third"><DropdownField value={projectId} onChange={setProjectId} options={data.catalog.projects.map((item) => ({ value: item.id, label: item.name }))} /></FormGroup>
             <FormGroup label="Project description" className="wide"><TextArea name="projectDescription" value={projectDescription} onChange={(event) => setProjectDescription(event.target.value)} placeholder="Describe the project and the work being requested" /></FormGroup>
           </div>

@@ -65,7 +65,8 @@ export function selectScopedRecommendations(
 ): StaffingRecommendation[] {
   if (!request) return [];
   if (!selectVisibleRequests(data, role).some((item) => item.id === request.id)) return [];
-  if (role === 'POD Captain') return request.recommendations;
+  if (rolePermission(role, 'AI_FITMENT', data.authorization)?.accessScope === 'full'
+    && canAccessScreen(role, 'fitment', data.authorization)) return request.recommendations;
   if (role === 'POD Lead') return request.recommendations.filter(isApprovedAssignment);
   const identity = selectIdentityPerson(data, role);
   return request.recommendations.filter((item) => item.personId === identity?.id && isApprovedAssignment(item));
