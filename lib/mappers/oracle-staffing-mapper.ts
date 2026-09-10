@@ -129,9 +129,9 @@ function factors(row: DatabaseRow): RecommendationFactor[] {
 
 function permission(row: DatabaseRow): StaffingPermission {
   const rawScope = text(row, 'access_scope').toLowerCase();
-  const accessScope: PermissionAccessScope = rawScope === 'scoped' || rawScope === 'own' || rawScope === 'locked'
+  const accessScope: PermissionAccessScope = rawScope === 'scoped' || rawScope === 'own' || rawScope === 'full'
     ? rawScope
-    : 'full';
+    : 'locked';
   return {
     resourceCode: text(row, 'resource_code'),
     accessScope,
@@ -186,7 +186,7 @@ export function buildOracleStaffingViewModel(snapshot: OracleStaffingSnapshot): 
       description: text(row, 'project_description'),
       sourceRow: nullableNumber(row, 'source_row'),
       deliverables: snapshot.deliverables
-        .filter((deliverable) => text(deliverable, 'project_type_id') === id)
+        .filter((deliverable) => text(deliverable, 'project_type_id') === id && yes(deliverable, 'active_flag'))
         .map((deliverable) => deliverableCatalogue.get(text(deliverable, 'deliverable_id')))
         .filter((deliverable): deliverable is CatalogDeliverable => Boolean(deliverable)),
     };
@@ -265,7 +265,7 @@ export function buildOracleStaffingViewModel(snapshot: OracleStaffingSnapshot): 
       projectType: {
         id: text(row, 'project_type_id'),
         name: text(row, 'project_type') || (project ? text(project, 'project_name') : ''),
-        description: project ? text(project, 'project_description') : '',
+        description: text(row, 'project_description') || (project ? text(project, 'project_description') : ''),
       },
       deliverable: primaryDeliverable,
       deliverables,
@@ -295,6 +295,7 @@ export function buildOracleStaffingViewModel(snapshot: OracleStaffingSnapshot): 
           score: number(recommendation, 'score'),
           rationale: text(recommendation, 'rationale'),
           decisionStatus: text(recommendation, 'decision_status'),
+          selected: yes(recommendation, 'selected_flag'),
           source: text(recommendation, 'source'),
           matchingSkills: json<string[]>(recommendation, 'matching_capabilities_json', []),
           factors: factors(recommendation),
@@ -326,7 +327,7 @@ export function buildOracleStaffingViewModel(snapshot: OracleStaffingSnapshot): 
     metrics: {
       people: people.length,
       projectTypes: projects.length,
-      deliverables: snapshot.deliverables.length,
+      deliverables: projects.reduce((count, project) => count + project.deliverables.length, 0),
       skills: skills.length,
       requests: requests.length,
       openRequests: requests.filter((request) => request.status.toLowerCase() !== 'closed').length,
@@ -336,9 +337,12 @@ export function buildOracleStaffingViewModel(snapshot: OracleStaffingSnapshot): 
       pendingRecommendations: requests.flatMap((request) => request.recommendations)
         .filter((recommendation) => recommendation.decisionStatus.toLowerCase().includes('pending')).length,
     },
-    demoIdentity: { podMemberPersonId: 'P-001', podLeadPersonId: 'P-006' },
+    demoIdentity: {
+      podCaptainPersonId: people.find((person) => person.name.toLowerCase() === 'indranie balkaran')?.id,
+      podMemberPersonId: 'P-001', podLeadPersonId: 'P-006',
+    },
     authorization: {
-      roles: snapshot.roles.map((role) => ({
+      roles: snapshot.roles.filter((role) => yes(role, 'active_flag')).map((role) => ({
         code: text(role, 'role_code'),
         name: text(role, 'role_name'),
         description: text(role, 'role_description'),

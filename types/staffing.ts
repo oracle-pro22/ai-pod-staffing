@@ -76,6 +76,8 @@ export type StaffingRecommendation = {
   score: number;
   rationale: string;
   decisionStatus: string;
+  /** A selected recommendation is not assigned until its decision is approved. */
+  selected?: boolean;
   source: string;
   matchingSkills: string[];
   factors: RecommendationFactor[];
@@ -177,6 +179,7 @@ export type StaffingViewModel = {
   requests: StaffingRequest[];
   metrics: StaffingMetrics;
   demoIdentity: {
+    podCaptainPersonId?: string;
     podMemberPersonId: string;
     podLeadPersonId: string;
   };

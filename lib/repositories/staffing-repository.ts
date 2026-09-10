@@ -67,11 +67,12 @@ export async function readOracleStaffingSnapshot(): Promise<OracleStaffingSnapsh
       SELECT projects, project_description, deliverables, skills_type_of_work, note,
              source_version, source_row, customer_controlled
         FROM customer_mapping
+       WHERE source_version IN (SELECT DISTINCT source_version FROM project_types)
        ORDER BY source_version, source_row
     `),
     deliverables: await rows(connection, `
       SELECT deliverable_id, project_type_id, project_name, deliverable_name, skills_raw,
-             customer_note, source_version, source_row
+             customer_note, source_version, source_row, active_flag
         FROM deliverables
        ORDER BY source_row, deliverable_id
     `),

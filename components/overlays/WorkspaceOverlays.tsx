@@ -11,6 +11,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Notice } from '@/components/ui/Notice';
 import { Pill } from '@/components/ui/Pill';
 import { useStaffingApp } from '@/context/StaffingAppProvider';
+import { canPerform } from '@/lib/role-policy';
 import { selectIdentityPerson, selectVisiblePeople, selectVisibleRequests } from '@/lib/selectors';
 
 export function WorkspaceOverlays() {
@@ -19,7 +20,7 @@ export function WorkspaceOverlays() {
 
 function QuickAllocationDrawer() {
   const { data, state, dispatch, notify } = useStaffingApp();
-  const open = state.drawer?.id === 'quick-allocation';
+  const open = state.drawer?.id === 'quick-allocation' && canPerform(state.role, 'ALLOCATION_CALENDAR', 'canCreate', data.authorization);
   const people = useMemo(() => [...selectVisiblePeople(data, state.role)].sort((a, b) => b.allocationPct - a.allocationPct), [data, state.role]);
   const requests = selectVisibleRequests(data, state.role);
   const close = () => dispatch({ type: 'close-drawer' });
@@ -35,7 +36,7 @@ function QuickAllocationDrawer() {
     const hasConflict = person.availability.some((item) => date >= item.startsOn.slice(0, 10) && date <= item.endsOn.slice(0, 10));
     if (hasConflict) { notify('Allocation blocked', `${person.name} has a recorded availability conflict on this date.`); return; }
     close();
-    notify('Integration in progress', 'This workflow will be available in a future release.');
+    notify('Feature in progress', 'This workflow will be available in a future release.');
   }
 
   return <Drawer open={open} title="Quick allocation" onClose={close} footer={<><Button type="button" onClick={close}>Cancel</Button><Button type="submit" form="quickAllocationForm" variant="primary">Save allocation</Button></>}><form id="quickAllocationForm" onSubmit={save}><div className="staffing-form-grid"><FormGroup label="Person" full><SelectField name="personId">{people.map((person) => <option key={person.id} value={person.id}>{person.name} • {person.allocationPct}%</option>)}</SelectField></FormGroup><FormGroup label="Request" full><SelectField name="requestId">{requests.map((request) => <option key={request.id} value={request.id}>{request.id} • {request.title}</option>)}</SelectField></FormGroup><FormGroup label="Date"><TextField type="date" name="date" defaultValue="2026-07-27" /></FormGroup><FormGroup label="Hours"><TextField type="number" name="hours" min="1" max="8" defaultValue="4" /></FormGroup></div><Notice icon="♢" title="Allocation workflow integration is in progress">Existing database availability remains visible while assignment persistence is being added.</Notice></form></Drawer>;
@@ -63,7 +64,7 @@ function AvailabilityDrawer() {
   const { data, state, dispatch, notify } = useStaffingApp();
   const router = useRouter();
   const [saving, setSaving] = useState(false);
-  const open = state.drawer?.id === 'add-availability';
+  const open = state.drawer?.id === 'add-availability' && canPerform(state.role, 'MY_AVAILABILITY', 'canCreate', data.authorization);
   const person = selectIdentityPerson(data, state.role);
   const close = () => dispatch({ type: 'close-drawer' });
   async function save(event: FormEvent<HTMLFormElement>) {

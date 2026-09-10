@@ -10,6 +10,7 @@ import { Pill } from '@/components/ui/Pill';
 import { useStaffingApp } from '@/context/StaffingAppProvider';
 import { resolveFitmentRecommendations } from '@/lib/demo-fitment';
 import { formatDate, requestEffortLabel } from '@/lib/formatting';
+import { canAccessScreen, canPerform } from '@/lib/role-policy';
 import {
   selectActiveRequest,
   selectScopedRecommendations,
@@ -22,13 +23,13 @@ export function RequestOverlays() {
 }
 
 function RequestDetailsDrawer() {
-  const { data, state, dispatch } = useStaffingApp();
+  const { data, state, dispatch, notify } = useStaffingApp();
   const open = state.drawer?.id === 'request-details';
   const requestId = typeof state.drawer?.payload?.requestId === 'string' ? state.drawer.payload.requestId : null;
   const request = selectVisibleRequests(data, state.role).find((item) => item.id === requestId) ?? null;
   const close = () => dispatch({ type: 'close-drawer' });
   return (
-    <Drawer open={open} title={request?.title ?? 'Request details'} onClose={close} footer={<><Button onClick={close}>Close</Button>{request ? <Button variant="primary" onClick={() => { dispatch({ type: 'set-active-request', requestId: request.id }); close(); dispatch({ type: 'set-screen', screen: 'fitment' }); }}>Open fitment</Button> : null}</>}>
+    <Drawer open={open} title={request?.title ?? 'Request details'} onClose={close} footer={<><Button onClick={close}>Close</Button>{request && canAccessScreen(state.role, 'fitment', data.authorization) ? <Button variant="primary" onClick={() => { dispatch({ type: 'set-active-request', requestId: request.id }); close(); dispatch({ type: 'set-screen', screen: 'fitment' }); }}>Open fitment</Button> : null}{request && request.status.toLowerCase() !== 'closed' && canPerform(state.role, 'PROJECT_CLOSURE', 'canUpdate', data.authorization) ? <Button onClick={() => notify('Feature in progress', 'Project closure will be available in a future release.')}>Close project</Button> : null}</>}>
       {request ? <>
         <Pill tone="blue">{request.id}</Pill><h3>{request.projectType.name}</h3>
         <dl className="staffing-summary-list">
@@ -53,7 +54,7 @@ function RequestDetailsDrawer() {
 
 function ApprovalModal() {
   const { data, state, dispatch, notify } = useStaffingApp();
-  const open = state.modal?.id === 'approve-pod';
+  const open = state.modal?.id === 'approve-pod' && canPerform(state.role, 'AI_FITMENT', 'canApprove', data.authorization);
   const requestId = typeof state.modal?.payload?.requestId === 'string' ? state.modal.payload.requestId : null;
   const request = selectActiveRequest(data, state.role, requestId);
   const storedRecommendations = selectScopedRecommendations(request, data, state.role);
@@ -66,7 +67,7 @@ function ApprovalModal() {
   const selectedNames = selectedIds.map((id) => data.people.find((person) => person.id === id)?.name).filter(Boolean);
   const suggested = recommendations.slice(0, 3).map((item) => item.personName);
   const close = () => dispatch({ type: 'close-modal' });
-  return <Modal open={open} title="Approve proposed pod" onClose={close} footer={<><Button onClick={close}>Cancel</Button><Button variant="primary" onClick={() => { close(); notify('Integration in progress', 'This workflow will be available in a future release.'); }}>Approve & notify</Button></>}>
+  return <Modal open={open} title="Approve proposed pod" onClose={close} footer={<><Button onClick={close}>Cancel</Button><Button variant="primary" onClick={() => { close(); notify('Feature in progress', 'This workflow will be available in a future release.'); }}>Approve & notify</Button></>}>
     <Notice icon="✓" title="Human approval required">You are reviewing the proposed staffing pod for {request?.id ?? 'this request'}. {isDemo ? 'These candidates are simulated for demonstration and will not be saved.' : 'No assignment is made without this decision.'}</Notice>
     <div className="staffing-approval-summary"><b>{request?.title}</b><p>{(selectedNames.length ? selectedNames : suggested).join(', ') || 'No candidates selected'}</p></div>
     <FormGroup label="Approval comment" full><TextArea defaultValue="Approved based on fit, delivery history, and protected capacity." /></FormGroup>

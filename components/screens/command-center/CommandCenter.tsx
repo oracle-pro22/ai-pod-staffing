@@ -9,7 +9,7 @@ import { Pill } from '@/components/ui/Pill';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { useStaffingApp } from '@/context/StaffingAppProvider';
 import { allocationTone, formatShortDate, statusTone } from '@/lib/formatting';
-import { isScopedRole } from '@/lib/role-policy';
+import { canAccessScreen, canPerform } from '@/lib/role-policy';
 import { selectDashboardMetrics, selectIdentityPerson, selectScopedRecommendations, selectVisiblePeople, selectVisibleRequests } from '@/lib/selectors';
 
 export function CommandCenter() {
@@ -19,7 +19,7 @@ export function CommandCenter() {
   const identity = selectIdentityPerson(data, state.role);
   const metrics = selectDashboardMetrics(data, state.role);
   const isMember = state.role === 'POD Member';
-  const greetingName = isScopedRole(state.role) ? identity?.name.split(' ')[0] ?? 'there' : 'Indranie';
+  const greetingName = identity?.name.split(' ')[0] ?? 'there';
   const activeRequests = requests.filter((request) => request.status.toLowerCase() !== 'closed');
   const demand = activeRequests.slice(0, 5);
   const demandWeeks = buildDemandWeeks(activeRequests.map((request) => request.neededBy));
@@ -33,7 +33,7 @@ export function CommandCenter() {
     <section className="staffing-screen">
       <PageHeader
         title={`Good morning, ${greetingName}`}
-        actions={!isMember ? <Button variant="primary" onClick={() => dispatch({ type: 'open-modal', modal: { id: 'create-request', title: 'Create staffing request' } })}>＋ New request</Button> : undefined}
+        actions={canPerform(state.role, 'REQUESTS', 'canCreate', data.authorization) ? <Button variant="primary" onClick={() => dispatch({ type: 'open-modal', modal: { id: 'create-request', title: 'Create staffing request' } })}>＋ New request</Button> : undefined}
       />
 
       <div className="staffing-grid staffing-kpi-grid">
@@ -51,6 +51,7 @@ export function CommandCenter() {
               <Button size="small" onClick={() => dispatch({ type: 'set-screen', screen: 'requests' })}>View all</Button>
             </CardHeader>
             <div className="staffing-list">
+              {activeRequests.length === 0 ? <div className="staffing-empty compact">No active projects are assigned in this access scope.</div> : null}
               {activeRequests.slice(0, 5).map((request) => (
                 <div className="staffing-list-row" key={request.id}>
                   <div className="staffing-list-request"><div className="staffing-row-title">{request.title}</div><div className="staffing-row-sub">{request.id} • {request.projectType.name} • {request.deliverable.name}</div></div>
@@ -69,7 +70,7 @@ export function CommandCenter() {
             <Pill tone="amber">Human approval</Pill>
           </CardHeader>
           <CardBody>
-            {capacityPeople.slice(0, isMember ? 1 : capacityPeople.length).map((person) => (
+            {(isMember ? (identity ? [identity] : []) : capacityPeople).map((person) => (
               <div className="staffing-capacity-row" key={person.id}>
                 <Avatar initials={person.initials} />
                 <div>
@@ -95,9 +96,9 @@ export function CommandCenter() {
               </div>
             </CardBody>
           </Card>
-          <Card className="staffing-audit-card">
+          {canAccessScreen(state.role, 'admin', data.authorization) ? <Card className="staffing-audit-card">
             <CardHeader><div><h3>Audit trail</h3><p>Stored recommendations awaiting review</p></div><Button size="small" onClick={() => dispatch({ type: 'set-screen', screen: 'admin' })}>Open audit trail</Button></CardHeader>
-          </Card>
+          </Card> : null}
         </div>
       ) : null}
     </section>
@@ -110,12 +111,12 @@ function MyFitmentPreview() {
   const recommendation = request ? selectScopedRecommendations(request, data, state.role)[0] : null;
   return (
     <Card>
-      <CardHeader><div><h3>My AI fitment preview</h3><p>Your proposed assignment and stored evidence</p></div><Pill tone="teal">Database</Pill></CardHeader>
+      <CardHeader><div><h3>My POD assignment</h3><p>Your approved team and project</p></div><Pill tone="teal">Database</Pill></CardHeader>
       <CardBody>
         {request && recommendation ? <>
           <div className="staffing-preview-score"><span><b>{request.title}</b><small>{request.id} • {recommendation.roleInPod}</small></span><strong>{recommendation.score}</strong></div>
           <p className="staffing-muted">{recommendation.rationale}</p>
-          <Button size="small" onClick={() => { dispatch({ type: 'set-active-request', requestId: request.id }); dispatch({ type: 'set-screen', screen: 'fitment' }); }}>Open my fitment</Button>
+          <Button size="small" onClick={() => { dispatch({ type: 'set-active-request', requestId: request.id }); dispatch({ type: 'open-drawer', drawer: { id: 'request-details', title: request.title, payload: { requestId: request.id } } }); }}>Open my project</Button>
         </> : <div className="staffing-empty compact">No assigned recommendation is available.</div>}
       </CardBody>
     </Card>

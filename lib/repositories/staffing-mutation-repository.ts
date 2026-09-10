@@ -4,6 +4,7 @@ import oracledb, { type Connection } from 'oracledb';
 
 import { withOracleTransaction } from '@/lib/db/oracle';
 import { conflictError, forbiddenError, validationError } from '@/lib/errors/staffing-api-error';
+import { ROLE_CODES } from '@/types/roles';
 import type {
   AvailabilityCreatedResult,
   CreateAvailabilityPayload,
@@ -37,16 +38,17 @@ async function authorizeCreate(
   resourceCode: 'REQUESTS' | 'MY_AVAILABILITY',
 ): Promise<'FULL' | 'SCOPED' | 'OWN'> {
   const permission = (await rows(connection, `
-    SELECT rp.access_scope, rp.can_create
+    SELECT rp.access_scope, rp.can_view, rp.can_create
       FROM app_roles ar
       JOIN role_permissions rp ON rp.role_code = ar.role_code
      WHERE ar.role_name = :roleName
+       AND ar.role_code = :roleCode
        AND ar.active_flag = 'Y'
        AND rp.resource_code = :resourceCode
-  `, { roleName: context.role, resourceCode }))[0];
+  `, { roleName: context.role, roleCode: ROLE_CODES[context.role], resourceCode }))[0];
 
   const scope = text(permission ?? {}, 'access_scope');
-  if (text(permission ?? {}, 'can_create') !== 'Y' || scope === 'LOCKED') throw forbiddenError();
+  if (text(permission ?? {}, 'can_view') !== 'Y' || text(permission ?? {}, 'can_create') !== 'Y' || !['FULL', 'SCOPED', 'OWN'].includes(scope)) throw forbiddenError();
   return scope === 'FULL' || scope === 'SCOPED' ? scope : 'OWN';
 }
 
@@ -102,10 +104,11 @@ export async function createStaffingRequest(
         SELECT deliverable_id, deliverable_name, customer_note
           FROM deliverables
          WHERE project_type_id = :projectTypeId
+           AND active_flag = 'Y'
            AND deliverable_id IN (${selected.sql})
       `, { projectTypeId: input.projectTypeId, ...selected.binds });
       if (catalogueDeliverables.length !== mappedDeliverableIds.length) {
-        throw validationError('One or more selected deliverables do not belong to this project type.');
+        throw validationError('A selected deliverable has been retired or does not belong to this project type. Refresh the catalogue and select it again.');
       }
     }
     const catalogueDeliverablesById = new Map(catalogueDeliverables.map((row) => [text(row, 'deliverable_id'), row]));
@@ -154,7 +157,7 @@ export async function createStaffingRequest(
     const counts = podCounts(input.requestedPodSize);
     const firstMapped = storedDeliverables.find((item) => !item.custom);
     const firstDeliverable = storedDeliverables[0];
-    const skills = input.requiredCapabilities.map((item) => item.name).join(', ');
+    const skills = input.requiredCapabilities.map((item) => item.custom ? item.name : text(catalogueCapabilitiesById.get(item.id) ?? {}, 'interest_name')).join(', ');
     if (skills.length > 1000) throw validationError('The combined capability names are too long.');
 
     await connection.execute(`

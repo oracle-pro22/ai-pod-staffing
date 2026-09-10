@@ -11,16 +11,16 @@ import {
   useRef,
 } from 'react';
 
-import { canAccessScreen } from '@/lib/role-policy';
+import { canAccessScreen, canPerform, defaultScreen } from '@/lib/role-policy';
 import type { StaffingRole } from '@/types/roles';
-import { isStaffingRole } from '@/types/roles';
+import { migratePreviewRole } from '@/types/roles';
 import type { StaffingViewModel } from '@/types/staffing';
 import type { StaffingAppAction, StaffingAppState } from '@/types/ui';
 
 const ROLE_STORAGE_KEY = 'ai-pod-staffing-preview-role';
 
 const initialState: StaffingAppState = {
-  role: 'Operations Lead',
+  role: 'POD Captain',
   activeScreen: 'dashboard',
   activeRequestId: null,
   weekOffset: 0,
@@ -45,10 +45,14 @@ function staffingAppReducer(state: StaffingAppState, action: StaffingAppAction, 
       return {
         ...state,
         role: action.role,
-        activeScreen: canAccessScreen(action.role, state.activeScreen, authorization) ? state.activeScreen : 'dashboard',
+        activeScreen: canAccessScreen(action.role, state.activeScreen, authorization) ? state.activeScreen : defaultScreen(action.role, authorization),
         activeRequestId: null,
         drawer: null,
         modal: null,
+        selectedCandidatesByRequest: {},
+        agentRunning: false,
+        requestFilters: initialState.requestFilters,
+        toasts: [],
       };
     case 'set-screen':
       return canAccessScreen(state.role, action.screen, authorization)
@@ -61,10 +65,14 @@ function staffingAppReducer(state: StaffingAppState, action: StaffingAppAction, 
     case 'set-request-filter':
       return { ...state, requestFilters: { ...state.requestFilters, [action.key]: action.value } };
     case 'open-drawer':
+      if (action.drawer.id === 'add-availability' && !canPerform(state.role, 'MY_AVAILABILITY', 'canCreate', authorization)) return state;
+      if (action.drawer.id === 'quick-allocation' && !canPerform(state.role, 'ALLOCATION_CALENDAR', 'canCreate', authorization)) return state;
       return { ...state, drawer: action.drawer };
     case 'close-drawer':
       return { ...state, drawer: null };
     case 'open-modal':
+      if (action.modal.id === 'create-request' && !canPerform(state.role, 'REQUESTS', 'canCreate', authorization)) return state;
+      if (action.modal.id === 'approve-pod' && !canPerform(state.role, 'AI_FITMENT', 'canApprove', authorization)) return state;
       return { ...state, modal: action.modal };
     case 'close-modal':
       return { ...state, modal: null };
@@ -73,6 +81,7 @@ function staffingAppReducer(state: StaffingAppState, action: StaffingAppAction, 
     case 'remove-toast':
       return { ...state, toasts: state.toasts.filter((toast) => toast.id !== action.id) };
     case 'toggle-candidate': {
+      if (!canPerform(state.role, 'AI_FITMENT', 'canUpdate', authorization)) return state;
       const selected = state.selectedCandidatesByRequest[action.requestId] ?? [];
       return {
         ...state,
@@ -85,6 +94,7 @@ function staffingAppReducer(state: StaffingAppState, action: StaffingAppAction, 
       };
     }
     case 'set-candidates':
+      if (!canPerform(state.role, 'AI_FITMENT', 'canUpdate', authorization)) return state;
       return {
         ...state,
         selectedCandidatesByRequest: {
@@ -95,6 +105,7 @@ function staffingAppReducer(state: StaffingAppState, action: StaffingAppAction, 
     case 'set-admin-tab':
       return { ...state, adminTab: action.tab };
     case 'set-agent-running':
+      if (action.running && !canPerform(state.role, 'AGENT_EXECUTION', 'canCreate', authorization)) return state;
       return { ...state, agentRunning: action.running };
     default:
       return state;
@@ -127,7 +138,7 @@ export function StaffingAppProvider({
 
   useEffect(() => {
     const storedRole = window.sessionStorage.getItem(ROLE_STORAGE_KEY);
-    if (isStaffingRole(storedRole)) dispatch({ type: 'set-role', role: storedRole });
+    dispatch({ type: 'set-role', role: migratePreviewRole(storedRole) });
     storageReady.current = true;
   }, []);
 

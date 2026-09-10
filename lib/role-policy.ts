@@ -1,5 +1,6 @@
 import type { NavigationItem, ScreenAccess, ScreenId, StaffingRole } from '@/types/roles';
 import type { StaffingViewModel } from '@/types/staffing';
+import { ROLE_CODES } from '@/types/roles';
 
 export const NAVIGATION_ITEMS: readonly NavigationItem[] = [
   { id: 'dashboard', icon: 'home', label: 'Command Center', route: '/' },
@@ -13,8 +14,7 @@ export const NAVIGATION_ITEMS: readonly NavigationItem[] = [
   { id: 'admin', icon: 'settings', label: 'Administration', route: '/administration' },
 ] as const;
 
-const SCOPED_ROLES = new Set<StaffingRole>(['Pod Lead', 'POD Member']);
-const RESTRICTED_SCREENS = new Set<ScreenId>(['calendar', 'agent', 'reports', 'admin']);
+const SCOPED_ROLES = new Set<StaffingRole>(['POD Lead', 'POD Member']);
 
 const SCREEN_RESOURCE: Record<ScreenId, string> = {
   dashboard: 'DASHBOARD',
@@ -34,33 +34,37 @@ export function isScopedRole(role: StaffingRole): boolean {
   return SCOPED_ROLES.has(role);
 }
 
-function databasePermission(role: StaffingRole, screen: ScreenId, authorization?: Authorization) {
-  if (!authorization?.roles.length) return undefined;
-  return authorization.roles
-    .find((item) => item.name === role && item.active)
-    ?.permissions.find((permission) => permission.resourceCode === SCREEN_RESOURCE[screen]);
+export function rolePermission(role: StaffingRole, resource: string, authorization?: Authorization) {
+  return authorization?.roles
+    .find((item) => item.code === ROLE_CODES[role] && item.name === role && item.active)
+    ?.permissions.find((permission) => permission.resourceCode === resource);
+}
+
+export type PermissionAction = 'canView' | 'canCreate' | 'canUpdate' | 'canApprove' | 'canExport' | 'canAdminister';
+
+export function canPerform(role: StaffingRole, resource: string, action: PermissionAction, authorization?: Authorization): boolean {
+  const permission = rolePermission(role, resource, authorization);
+  return Boolean(permission && permission.accessScope !== 'locked' && permission.canView && permission[action]);
+}
+
+export function defaultScreen(role: StaffingRole, authorization?: Authorization): ScreenId {
+  return NAVIGATION_ITEMS.find((item) => canAccessScreen(role, item.id, authorization))?.id ?? 'dashboard';
 }
 
 export function canAccessScreen(role: StaffingRole, screen: ScreenId, authorization?: Authorization): boolean {
-  const permission = databasePermission(role, screen, authorization);
-  if (permission) return permission.canView && permission.accessScope !== 'locked';
-  return !(isScopedRole(role) && RESTRICTED_SCREENS.has(screen));
+  return canPerform(role, SCREEN_RESOURCE[screen], 'canView', authorization);
 }
 
 export function getScreenAccess(role: StaffingRole, screen: ScreenId, authorization?: Authorization): ScreenAccess {
-  const permission = databasePermission(role, screen, authorization);
-  if (permission) return permission.canView ? permission.accessScope : 'locked';
-  if (!canAccessScreen(role, screen, authorization)) return 'locked';
-  if (role === 'POD Member' && (screen === 'interests' || screen === 'availability')) return 'own';
-  if (isScopedRole(role) && (screen === 'dashboard' || screen === 'requests' || screen === 'fitment' || screen === 'interests' || screen === 'availability')) return 'scoped';
-  return 'full';
+  const permission = rolePermission(role, SCREEN_RESOURCE[screen], authorization);
+  return permission?.canView ? permission.accessScope : 'locked';
 }
 
 export function identityPersonId(
   role: StaffingRole,
   demoIdentity: { podMemberPersonId: string; podLeadPersonId: string },
 ): string {
-  return role === 'Pod Lead' ? demoIdentity.podLeadPersonId : demoIdentity.podMemberPersonId;
+  return role === 'POD Lead' ? demoIdentity.podLeadPersonId : demoIdentity.podMemberPersonId;
 }
 
 export function screenLabel(screen: ScreenId): string {

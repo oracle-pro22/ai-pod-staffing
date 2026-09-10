@@ -13,6 +13,7 @@ export function Modal({
   footer,
   footerNote,
   size = 'default',
+  className = '',
   onClose,
 }: {
   open: boolean;
@@ -22,13 +23,14 @@ export function Modal({
   footer?: ReactNode;
   footerNote?: ReactNode;
   size?: 'default' | 'large';
+  className?: string;
   onClose: () => void;
 }) {
   const modalRef = useOverlayFocus<HTMLElement>(open, onClose);
   if (!open) return null;
   return (
     <div className={`staffing-modal-wrap open${size === 'large' ? ' large' : ''}`} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <section ref={modalRef} className={`staffing-modal${size === 'large' ? ' large' : ''}`} role="dialog" aria-modal="true" aria-label={title} tabIndex={-1}>
+      <section ref={modalRef} className={`staffing-modal${size === 'large' ? ' large' : ''}${className ? ` ${className}` : ''}`} role="dialog" aria-modal="true" aria-label={title} tabIndex={-1}>
         <div className="staffing-modal-head"><div><h3>{title}</h3>{description ? <p>{description}</p> : null}</div><button className="staffing-icon-btn" onClick={onClose} aria-label="Close dialog">×</button></div>
         <div className="staffing-modal-body">{children}</div>
         <div className={`staffing-modal-foot${footerNote ? ' split' : ''}`}>

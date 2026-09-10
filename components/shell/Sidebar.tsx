@@ -10,9 +10,8 @@ import { Navigation } from './Navigation';
 export function Sidebar({ mobileOpen, onNavigate }: { mobileOpen: boolean; onNavigate: () => void }) {
   const { data, state } = useStaffingApp();
   const scopedIdentity = selectIdentityPerson(data, state.role);
-  const isScoped = state.role === 'Pod Lead' || state.role === 'POD Member';
-  const displayName = isScoped ? scopedIdentity?.name ?? 'Team member' : 'Indranie B.';
-  const initials = isScoped ? scopedIdentity?.initials ?? 'TM' : 'IB';
+  const displayName = scopedIdentity?.name ?? `${state.role} preview`;
+  const initials = scopedIdentity?.initials ?? (state.role === 'Administrator' ? 'AD' : 'PP');
 
   return (
     <aside className={`staffing-sidebar${mobileOpen ? ' open' : ''}`}>

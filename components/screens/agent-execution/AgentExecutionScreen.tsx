@@ -10,6 +10,7 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { Pill } from '@/components/ui/Pill';
 import { useStaffingApp } from '@/context/StaffingAppProvider';
 import { resolveFitmentRecommendations } from '@/lib/demo-fitment';
+import { canPerform } from '@/lib/role-policy';
 import {
   selectActiveRequest,
   selectScopedRecommendations,
@@ -106,7 +107,7 @@ export function AgentExecutionScreen() {
   }
 
   function runFitment() {
-    if (!request || state.agentRunning) return;
+    if (!request || state.agentRunning || !canPerform(state.role, 'AGENT_EXECUTION', 'canCreate', data.authorization)) return;
     dispatch({ type: 'set-active-request', requestId: request.id });
     dispatch({ type: 'set-agent-running', running: true });
   }
@@ -129,7 +130,7 @@ export function AgentExecutionScreen() {
             </SelectField>
             <Button
               variant="primary"
-              disabled={state.agentRunning || !request}
+              disabled={state.agentRunning || !request || !canPerform(state.role, 'AGENT_EXECUTION', 'canCreate', data.authorization)}
               onClick={runFitment}
             >
               ▶ {state.agentRunning ? 'Running…' : 'Run fitment'}

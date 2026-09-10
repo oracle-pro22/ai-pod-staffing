@@ -1,32 +1,31 @@
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
+import { rephraseText } from '@/backend/ai/rephrase/service';
+import { validateAiRephrasePayload } from '@/backend/ai/rephrase/validation';
 import { staffingApiErrorResponse } from '@/lib/api/staffing-api-response';
 import { staffingRequestContext } from '@/lib/auth/staffing-request-context';
+import { requireStaffingPermission } from '@/lib/auth/staffing-authorization';
 import { StaffingApiError } from '@/lib/errors/staffing-api-error';
-import { createStaffingRequest } from '@/lib/repositories/staffing-mutation-repository';
-import { validateCreateRequestPayload } from '@/lib/validation/staffing-mutations';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
   try {
-    if ((process.env.STAFFING_DATA_SOURCE ?? 'oracle').trim().toLowerCase() !== 'oracle') {
-      throw new StaffingApiError('Request saving requires the Oracle data source.', 503, 'ORACLE_REQUIRED');
-    }
     const context = staffingRequestContext(request);
+    await requireStaffingPermission(context, 'REQUESTS', 'canCreate');
     const body = await request.json().catch(() => {
       throw new StaffingApiError('The request body is not valid JSON.', 400, 'INVALID_JSON');
     });
-    const input = validateCreateRequestPayload(body);
-    const result = await createStaffingRequest(input, context);
+    const input = validateAiRephrasePayload(body);
+    const result = await rephraseText(input, context);
     return NextResponse.json(
       { data: result },
-      { status: 201, headers: { 'Cache-Control': 'no-store' } },
+      { status: 200, headers: { 'Cache-Control': 'no-store' } },
     );
   } catch (error) {
-    if (!(error instanceof StaffingApiError)) console.error('Unable to create staffing request.', error);
+    if (!(error instanceof StaffingApiError)) console.error('Unable to rephrase request text.', error);
     return staffingApiErrorResponse(error);
   }
 }

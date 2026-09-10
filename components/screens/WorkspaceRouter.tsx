@@ -10,6 +10,7 @@ import { ReportsScreen } from '@/components/screens/reports/ReportsScreen';
 import { RequestsScreen } from '@/components/screens/requests/RequestsScreen';
 import { TeamSkillsScreen } from '@/components/screens/team/TeamSkillsScreen';
 import { useStaffingApp } from '@/context/StaffingAppProvider';
+import { canAccessScreen, defaultScreen } from '@/lib/role-policy';
 
 const SCREENS = {
   dashboard: CommandCenter,
@@ -24,7 +25,12 @@ const SCREENS = {
 } as const;
 
 export function WorkspaceRouter() {
-  const { state } = useStaffingApp();
-  const Screen = SCREENS[state.activeScreen];
+  const { state, data } = useStaffingApp();
+  const screen = canAccessScreen(state.role, state.activeScreen, data.authorization)
+    ? state.activeScreen : defaultScreen(state.role, data.authorization);
+  if (!canAccessScreen(state.role, screen, data.authorization)) {
+    return <div className="staffing-empty">No workspace access is configured for this profile. Contact your administrator.</div>;
+  }
+  const Screen = SCREENS[screen];
   return <Screen />;
 }

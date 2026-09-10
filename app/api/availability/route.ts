@@ -12,7 +12,7 @@ export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
   try {
-    if ((process.env.STAFFING_DATA_SOURCE ?? '').trim().toLowerCase() !== 'oracle') {
+    if ((process.env.STAFFING_DATA_SOURCE ?? 'oracle').trim().toLowerCase() !== 'oracle') {
       throw new StaffingApiError('Availability saving requires the Oracle data source.', 503, 'ORACLE_REQUIRED');
     }
     const context = staffingRequestContext(request);

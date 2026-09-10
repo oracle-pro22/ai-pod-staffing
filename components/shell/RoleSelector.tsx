@@ -1,10 +1,10 @@
 'use client';
 
 import { useStaffingApp } from '@/context/StaffingAppProvider';
-import { STAFFING_ROLES, type StaffingRole } from '@/types/roles';
+import { ROLE_CODES, STAFFING_ROLES, type StaffingRole } from '@/types/roles';
 
 export function RoleSelector() {
-  const { state, setRole, notify } = useStaffingApp();
+  const { data, state, setRole, notify } = useStaffingApp();
   return (
     <select
       className="staffing-role-select"
@@ -16,7 +16,7 @@ export function RoleSelector() {
         notify('Role changed', `Viewing the application as ${role}.`);
       }}
     >
-      {STAFFING_ROLES.map((role) => <option key={role}>{role}</option>)}
+      {STAFFING_ROLES.map((role) => <option key={role} disabled={!data.authorization.roles.some((item) => item.code === ROLE_CODES[role] && item.name === role && item.active)}>{role}</option>)}
     </select>
   );
 }

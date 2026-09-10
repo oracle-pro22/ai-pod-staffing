@@ -3,16 +3,17 @@
 import { type KeyboardEvent, useState } from 'react';
 
 import { useStaffingApp } from '@/context/StaffingAppProvider';
-import { screenLabel } from '@/lib/role-policy';
+import { canAccessScreen, screenLabel } from '@/lib/role-policy';
 
 import { RoleSelector } from './RoleSelector';
 
 export function Topbar({ onMenu }: { onMenu: () => void }) {
-  const { state, dispatch, notify } = useStaffingApp();
+  const { data, state, dispatch, notify } = useStaffingApp();
   const [search, setSearch] = useState('');
 
   function runSearch(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key !== 'Enter' || !search.trim()) return;
+    if (!canAccessScreen(state.role, 'requests', data.authorization)) return;
     dispatch({ type: 'set-request-filter', key: 'search', value: search.trim() });
     dispatch({ type: 'set-screen', screen: 'requests' });
     notify('Search', `Showing matches for “${search.trim()}”.`);
@@ -26,6 +27,7 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
         <label className="staffing-searchbox">
           <span aria-hidden="true">⌕</span>
           <input
+            disabled={!canAccessScreen(state.role, 'requests', data.authorization)}
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             onKeyDown={runSearch}

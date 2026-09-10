@@ -1,37 +1,24 @@
-import { NextResponse } from 'next/server';
+import { type NextRequest, NextResponse } from 'next/server';
 import { dataSource } from '@/lib/staffing-data-source';
-import type { StaffingViewModel } from '@/types/staffing';
+import { staffingRequestContext } from '@/lib/auth/staffing-request-context';
+import { staffingApiErrorResponse } from '@/lib/api/staffing-api-response';
+import { validationError } from '@/lib/errors/staffing-api-error';
+import { selectRoleViewModel } from '@/lib/selectors';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-function requestsForRole(data: StaffingViewModel, role: string) {
-  if (role === 'POD Member') {
-    return data.requests.filter((request) =>
-      request.recommendations.some((recommendation) => recommendation.personId === data.demoIdentity.podMemberPersonId),
-    );
+export async function POST(request: NextRequest) {
+  try {
+  const { role } = staffingRequestContext(request);
+  const body = await request.json().catch(() => { throw validationError('The request body is not valid JSON.'); });
+  if (!body || typeof body.message !== 'string' || !body.message.trim() || body.message.length > 4000) {
+    throw validationError('Enter a question of up to 4,000 characters.');
   }
-  if (role === 'Pod Lead') {
-    return data.requests.filter((request) =>
-      request.recommendations.some((recommendation) => recommendation.personId === data.demoIdentity.podLeadPersonId),
-    );
-  }
-  return data.requests;
-}
-
-export async function POST(request: Request) {
-  const body = await request.json();
-  const message = String(body.message ?? '').trim();
-  const role = String(body.role ?? 'Operations Lead');
-  const query = message.toLowerCase();
-  const data = await dataSource.getViewModel();
-  const visibleRequests = requestsForRole(data, role);
-  const visiblePersonIds = new Set(visibleRequests.flatMap((item) => item.recommendations.map((item) => item.personId)));
-  const visiblePeople = role === 'POD Member'
-    ? data.people.filter((person) => person.id === data.demoIdentity.podMemberPersonId)
-    : role === 'Pod Lead'
-      ? data.people.filter((person) => visiblePersonIds.has(person.id))
-      : data.people;
+  const query = body.message.trim().toLowerCase();
+  const data = selectRoleViewModel(await dataSource.getViewModel(), role);
+  const visibleRequests = data.requests;
+  const visiblePeople = data.people;
 
   const matchedPerson = visiblePeople.find((person) => query.includes(person.name.toLowerCase()));
   const matchedRequest = visibleRequests.find((item) => query.includes(item.id.toLowerCase()) || query.includes(item.title.toLowerCase()));
@@ -72,5 +59,9 @@ export async function POST(request: Request) {
     answer = `Your ${role} view contains ${visibleRequests.length} staffing request${visibleRequests.length === 1 ? '' : 's'} backed by customer mapping version ${data.source.version}. Ask about a request, person, capacity, project type, deliverable, or required skill.`;
   }
 
-  return NextResponse.json({ answer, source: data.source.provider, role, mappingVersion: data.source.version });
+  return NextResponse.json({ answer, source: data.source.provider, role, mappingVersion: data.source.version },
+    { headers: { 'Cache-Control': 'no-store' } });
+  } catch (error) {
+    return staffingApiErrorResponse(error);
+  }
 }

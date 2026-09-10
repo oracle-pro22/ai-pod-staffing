@@ -14,8 +14,10 @@ export function AskAiPod() {
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const controllerRef = useRef<AbortController | null>(null);
+  useEffect(() => () => controllerRef.current?.abort(), []);
   const [messages, setMessages] = useState<Message[]>([
-    { id: 1, role: 'ai', text: 'I answer from the staffing database and respect the selected persona.' },
+    { id: 1, role: 'ai', text: 'I answer from the staffing database within the selected profile’s preview scope.' },
   ]);
 
   async function send(question: string) {
@@ -26,11 +28,14 @@ export function AskAiPod() {
     setMessages((current) => [...current, { id: userId, role: 'me', text: trimmed }, { id: waitingId, role: 'ai', text: 'Checking the staffing database…' }]);
     setInput('');
     setSending(true);
+    const controller = new AbortController();
+    controllerRef.current = controller;
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: trimmed, role: state.role }),
+        headers: { 'Content-Type': 'application/json', 'x-staffing-role': state.role },
+        body: JSON.stringify({ message: trimmed }),
+        signal: controller.signal,
       });
       if (!response.ok) throw new Error(`Chat request failed (${response.status})`);
       const result = await response.json() as { answer?: string };
