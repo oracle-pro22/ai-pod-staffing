@@ -73,6 +73,7 @@ export function DropdownField({
       selectOption(activeIndex);
     } else if (event.key === 'Escape') {
       event.preventDefault();
+      if (open) event.stopPropagation();
       setOpen(false);
     }
   }

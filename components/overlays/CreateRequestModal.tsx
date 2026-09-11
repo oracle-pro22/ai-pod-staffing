@@ -55,7 +55,7 @@ export function CreateRequestModal() {
   const [requestSourcePersonId, setRequestSourcePersonId] = useState('');
   const [businessObjectives, setBusinessObjectives] = useState('');
   const [expectedOutcomes, setExpectedOutcomes] = useState('');
-  const [rephrasing, setRephrasing] = useState<Record<AiRephraseField, boolean>>({
+  const [rephrasing, setRephrasing] = useState<Partial<Record<AiRephraseField, boolean>>>({
     businessObjectives: false,
     expectedOutcomes: false,
   });

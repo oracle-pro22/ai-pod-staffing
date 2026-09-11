@@ -1,6 +1,6 @@
 'use client';
 
-import { type TextareaHTMLAttributes, useEffect, useRef, useState } from 'react';
+import { type TextareaHTMLAttributes, useEffect, useId, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/Button';
 import { TextArea } from '@/components/ui/FormControls';
@@ -41,12 +41,15 @@ export function AiRephraseTextarea({
   const [previousText, setPreviousText] = useState<string | null>(null);
   const requestNumber = useRef(0);
   const controller = useRef<AbortController | null>(null);
+  const statusId = useId();
+  const busyCallback = useRef(onBusyChange);
+  busyCallback.current = onBusyChange;
 
   useEffect(() => () => {
     requestNumber.current += 1;
     controller.current?.abort();
-    onBusyChange?.(field, false);
-  }, [field, onBusyChange]);
+    busyCallback.current?.(field, false);
+  }, [field]);
 
   function changeText(nextValue: string) {
     if (previousText !== null) setPreviousText(null);
@@ -61,14 +64,14 @@ export function AiRephraseTextarea({
 
   async function rephrase() {
     const sourceText = value.trim();
-    if (sourceText.length < 10 || loading || disabled) return;
+    if (sourceText.length < 10 || sourceText.length > 6000 || loading || disabled) return;
 
     controller.current?.abort();
     const activeController = new AbortController();
     controller.current = activeController;
     const activeRequest = ++requestNumber.current;
     setLoading(true);
-    onBusyChange?.(field, true);
+    busyCallback.current?.(field, true);
 
     try {
       const response = await fetch('/api/ai/rephrase', {
@@ -88,6 +91,10 @@ export function AiRephraseTextarea({
         return;
       }
 
+      if (typeof result.data.suggestion !== 'string' || (textareaProps.maxLength && result.data.suggestion.length > textareaProps.maxLength)) {
+        notify('Text not rephrased', 'The suggestion is too long for this field. Your original text has been kept.');
+        return;
+      }
       setPreviousText(value);
       onChange(result.data.suggestion);
     } catch (error) {
@@ -98,13 +105,12 @@ export function AiRephraseTextarea({
     } finally {
       if (activeRequest === requestNumber.current) {
         setLoading(false);
-        onBusyChange?.(field, false);
+        busyCallback.current?.(field, false);
       }
     }
   }
 
-  const canRephrase = value.trim().length >= 10 && !loading && !disabled;
-  const statusId = `${field}-ai-rephrase-status`;
+  const canRephrase = value.trim().length >= 10 && value.trim().length <= 6000 && !loading && !disabled;
 
   return (
     <div className="staffing-ai-rephrase-field">
@@ -119,9 +125,9 @@ export function AiRephraseTextarea({
       />
       <div className="staffing-ai-rephrase-actions">
         <span id={statusId} className="staffing-ai-rephrase-status" aria-live="polite">
-          {loading ? 'Improving your text…' : previousText !== null ? 'Rephrased by AI' : ''}
+          {loading ? 'Improving your text…' : previousText !== null ? 'Rephrased by AI' : value.trim().length > 6000 ? 'Shorten to 6,000 characters to rephrase.' : ''}
           {previousText !== null && !loading ? (
-            <button type="button" className="staffing-ai-rephrase-undo" onClick={undo}>Undo</button>
+            <button type="button" className="staffing-ai-rephrase-undo" disabled={disabled} onClick={undo}>Undo</button>
           ) : null}
         </span>
         <Button

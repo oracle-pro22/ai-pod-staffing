@@ -1,4 +1,4 @@
-export const AI_REPHRASE_FIELDS = ['businessObjectives', 'expectedOutcomes'] as const;
+export const AI_REPHRASE_FIELDS = ['businessObjectives', 'expectedOutcomes', 'deliverableExperience'] as const;
 
 export type AiRephraseField = (typeof AI_REPHRASE_FIELDS)[number];
 

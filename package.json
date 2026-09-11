@@ -6,6 +6,7 @@
     "dev": "next dev -p 3001",
     "build": "next build",
     "test:application": "node --test scripts/test-application-model.cjs",
+    "test:skills": "node --test scripts/test-self-skills.cjs",
     "start": "next start -p 3001"
   },
   "dependencies": {

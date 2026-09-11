@@ -38,7 +38,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <NotificationDrawer />
       <RequestOverlays />
       <AddPersonModal key={state.role} />
-      <WorkspaceOverlays />
+      <WorkspaceOverlays key={state.role} />
       <ToastHost />
     </div>
   );

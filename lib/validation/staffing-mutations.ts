@@ -143,6 +143,7 @@ export function validateCreateAvailabilityPayload(value: unknown): CreateAvailab
   if (!AVAILABILITY_TYPES.has(eventType)) throw validationError('Event type is not valid.');
   const startsOn = dateText(input.startsOn, 'Start date', true);
   const endsOn = dateText(input.endsOn, 'End date', true);
+  if (isBeforeRequestBusinessDate(startsOn)) throw validationError('Start date cannot be earlier than today.');
   if (endsOn < startsOn) throw validationError('End date cannot be before the start date.');
 
   const start = new Date(`${startsOn}T00:00:00Z`);

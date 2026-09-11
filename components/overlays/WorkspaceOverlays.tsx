@@ -1,6 +1,6 @@
 'use client';
 
-import { type FormEvent, useMemo, useState } from 'react';
+import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 import { Avatar } from '@/components/ui/Avatar';
@@ -13,6 +13,7 @@ import { Pill } from '@/components/ui/Pill';
 import { useStaffingApp } from '@/context/StaffingAppProvider';
 import { canPerform } from '@/lib/role-policy';
 import { selectIdentityPerson, selectVisiblePeople, selectVisibleRequests } from '@/lib/selectors';
+import { requestBusinessDate } from '@/lib/request-date-policy';
 
 export function WorkspaceOverlays() {
   return <><QuickAllocationDrawer /><AllocationGuardrailModal /><PersonDetailsDrawer /><AvailabilityDrawer /></>;
@@ -64,16 +65,23 @@ function AvailabilityDrawer() {
   const { data, state, dispatch, notify } = useStaffingApp();
   const router = useRouter();
   const [saving, setSaving] = useState(false);
+  const busy = useRef(false);
+  const alive = useRef(true);
+  const [startsOn, setStartsOn] = useState(requestBusinessDate);
+  const [endsOn, setEndsOn] = useState(requestBusinessDate);
   const open = state.drawer?.id === 'add-availability' && canPerform(state.role, 'MY_AVAILABILITY', 'canCreate', data.authorization);
   const person = selectIdentityPerson(data, state.role);
-  const close = () => dispatch({ type: 'close-drawer' });
+  const close = () => { if (!busy.current) dispatch({ type: 'close-drawer' }); };
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  useEffect(() => { if (open) { setStartsOn(requestBusinessDate()); setEndsOn(requestBusinessDate()); } }, [open]);
   async function save(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); if (!person) return;
+    event.preventDefault(); if (!person || !open || busy.current) return;
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
     const startsOn = String(form.get('startsOn') || '');
     const endsOn = String(form.get('endsOn') || '');
-    if (!startsOn || !endsOn || endsOn < startsOn) { notify('Dates need attention', 'Choose a valid start and end date.'); return; }
+    if (!startsOn || !endsOn || startsOn < requestBusinessDate() || endsOn < startsOn) { notify('Dates need attention', 'Choose today or a future start date, and an end date on or after the start.'); return; }
+    busy.current = true;
     setSaving(true);
     try {
       const response = await fetch('/api/availability', {
@@ -92,19 +100,29 @@ function AvailabilityDrawer() {
         }),
       });
       const result = await response.json().catch(() => ({})) as { data?: unknown; error?: string };
+      if (!alive.current) return;
       if (!response.ok || !result.data) {
         notify('Event not saved', result.error || 'The availability event could not be saved. Please try again.');
         return;
       }
       formElement.reset();
-      close();
+      dispatch({ type: 'close-drawer' });
       router.refresh();
       notify('Availability saved', 'The event is now available to staffing recommendations.');
     } catch {
-      notify('Event not saved', 'The database could not be reached. Please try again.');
+      if (alive.current) notify('Save status unknown', 'Refresh your availability to check whether the event saved before retrying.');
     } finally {
-      setSaving(false);
+      busy.current = false;
+      if (alive.current) setSaving(false);
     }
   }
-  return <Drawer open={open} title="Add availability event" onClose={close} footer={<><Button type="button" onClick={close} disabled={saving}>Cancel</Button><Button type="submit" form="availabilityForm" variant="primary" disabled={saving}>{saving ? 'Saving…' : 'Save event'}</Button></>}><form id="availabilityForm" onSubmit={save}><div className="staffing-readonly-note">Saved events are used when staffing recommendations evaluate capacity.</div><div className="staffing-form-grid staffing-section-gap"><FormGroup label="Event type" full><SelectField name="eventType"><option>OOO</option><option>Leave</option><option>Travel</option><option>Training</option><option>Reduced hours</option></SelectField></FormGroup><FormGroup label="Start date"><TextField required type="date" name="startsOn" defaultValue="2026-08-17" /></FormGroup><FormGroup label="End date"><TextField required type="date" name="endsOn" defaultValue="2026-08-18" /></FormGroup><FormGroup label="Title" full><TextField name="title" placeholder="What should schedulers see?" /></FormGroup><FormGroup label="Allocated hours" full><TextField type="number" min="0" name="hours" defaultValue="8" /></FormGroup></div></form></Drawer>;
+  return <Drawer open={open} title="Add non-availability" onClose={close} footer={<><Button type="button" onClick={close} disabled={saving}>Cancel</Button><Button type="submit" form="availabilityForm" variant="primary" disabled={saving}>{saving ? 'Saving…' : 'Save event'}</Button></>}>
+    <form id="availabilityForm" onSubmit={save}><div className="staffing-form-grid">
+      <FormGroup label="Event type" full><SelectField name="eventType" disabled={saving}><option>OOO</option><option>Leave</option><option>Travel</option><option>Training</option><option>Reduced hours</option></SelectField></FormGroup>
+      <FormGroup label="Start date"><TextField required disabled={saving} type="date" name="startsOn" min={requestBusinessDate()} value={startsOn} onChange={(event) => { const date = event.target.value; setStartsOn(date); if (endsOn < date) setEndsOn(date); }} /></FormGroup>
+      <FormGroup label="End date"><TextField required disabled={saving} type="date" name="endsOn" min={startsOn || requestBusinessDate()} value={endsOn} onChange={(event) => setEndsOn(event.target.value)} /></FormGroup>
+      <FormGroup label="Title" full><TextField disabled={saving} name="title" maxLength={500} placeholder="What should schedulers see?" /></FormGroup>
+      <FormGroup label="Unavailable hours (total)" full><TextField disabled={saving} required type="number" min="0" step="0.5" name="hours" defaultValue="8" /></FormGroup>
+    </div></form>
+  </Drawer>;
 }

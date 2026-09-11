@@ -5,6 +5,7 @@ import oracledb, { type Connection } from 'oracledb';
 import { withOracleTransaction } from '@/lib/db/oracle';
 import { conflictError, forbiddenError, validationError } from '@/lib/errors/staffing-api-error';
 import { ROLE_CODES } from '@/types/roles';
+import { PREVIEW_PERSON_IDS } from '@/lib/preview-person-ids';
 import type {
   AvailabilityCreatedResult,
   CreateAvailabilityPayload,
@@ -249,7 +250,11 @@ export async function createAvailabilityEvent(
   context: StaffingMutationContext,
 ): Promise<AvailabilityCreatedResult> {
   return withOracleTransaction(async (connection) => {
-    await authorizeCreate(connection, context, 'MY_AVAILABILITY');
+    const scope = await authorizeCreate(connection, context, 'MY_AVAILABILITY');
+    if (scope !== 'OWN' || !['POD Lead', 'POD Member'].includes(context.role)
+      || context.actor !== `PREVIEW:${context.role.toUpperCase().replaceAll(' ', '_')}`) throw forbiddenError();
+    const ownPersonId = context.role === 'POD Lead' ? PREVIEW_PERSON_IDS.podLeadPersonId : PREVIEW_PERSON_IDS.podMemberPersonId;
+    if (input.personId !== ownPersonId) throw forbiddenError('You can only add non-availability for your own profile.');
     const person = (await rows(connection, `
       SELECT person_id
         FROM people

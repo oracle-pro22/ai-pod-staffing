@@ -15,6 +15,8 @@ Return only the rewritten content as one coherent paragraph of one to three sent
 Do not include a heading, label, bullet, markdown, commentary, explanation, quotation marks, or introductory phrase such as "Rephrased version".`;
 
 const FIELD_INSTRUCTIONS: Record<AiRephraseRequest['field'], string> = {
+  deliverableExperience:
+    'Polish the employee\'s description of their deliverable experience. Preserve first-person voice when supplied. Preserve whether they contributed to part of the work or owned it end-to-end, and any need for support. Never turn an interest or learning goal into claimed experience. Do not invent projects, clients, results, proficiency, leadership, or verified expertise.',
   businessObjectives:
     'Present the objective as a clear, action-oriented statement. Organize the business purpose, intended audience, and reason for the request in a logical order when those details are present.',
   expectedOutcomes:

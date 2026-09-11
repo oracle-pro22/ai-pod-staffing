@@ -20,6 +20,8 @@ npm run start -- -H 0.0.0.0 -p 8005
 
 ## Application routes
 
+Employee skills/interests backend setup and safe testing: [Phase 1 runbook](docs/self-skills-phase1.md). Apply `sql/oracle/self_skills.sql` before running the matching Oracle-backed application. The interface is available under Team & Skills; see the [Phase 2 usage guide](docs/self-skills-phase2.md).
+
 - `/` — primary React/Next.js application.
 - `/react-preview` — compatibility route that redirects to `/`.
 - `/prototype.html` — preserved legacy HTML rollback reference.
@@ -43,3 +45,6 @@ npm run start -- -H 0.0.0.0 -p 8005
 The workbook is read only on the server; it is not downloaded into the browser. The current API and data-source boundary can later be replaced by Oracle Database 26ai services without rewriting the screen components. `sql/001_ai_pod_staffing.sql` contains the initial relational schema and load templates.
 
 Migration evidence and acceptance records are under `docs/migration/`.
+# Deliverable experience update
+
+For catalogue-based deliverable experience and in-field OCI AI rephrasing, run the additive `sql/oracle/deliverable_experience.sql` migration before deploying this update. See [setup and verification](docs/deliverable-experience.md). Existing tables and skill ratings are retained.

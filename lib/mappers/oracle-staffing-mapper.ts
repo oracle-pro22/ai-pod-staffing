@@ -1,4 +1,5 @@
 import 'server-only';
+import { PREVIEW_PERSON_IDS } from '@/lib/preview-person-ids';
 
 import type { DatabaseRow, OracleStaffingSnapshot } from '@/lib/repositories/staffing-repository';
 import type {
@@ -200,6 +201,8 @@ export function buildOracleStaffingViewModel(snapshot: OracleStaffingSnapshot): 
   }
   const interestsByPerson = new Map<string, DatabaseRow[]>();
   for (const row of snapshot.personInterests) {
+    const catalogueSkill = interestRows.get(text(row, 'interest_id'));
+    if (nullableNumber(row, 'strength') === null || text(catalogueSkill ?? {}, 'assessment_type') === 'ROLE_DERIVED') continue;
     const id = text(row, 'person_id');
     interestsByPerson.set(id, [...(interestsByPerson.get(id) ?? []), row]);
   }
@@ -339,7 +342,7 @@ export function buildOracleStaffingViewModel(snapshot: OracleStaffingSnapshot): 
     },
     demoIdentity: {
       podCaptainPersonId: people.find((person) => person.name.toLowerCase() === 'indranie balkaran')?.id,
-      podMemberPersonId: 'P-001', podLeadPersonId: 'P-006',
+      ...PREVIEW_PERSON_IDS,
     },
     authorization: {
       roles: snapshot.roles.filter((role) => yes(role, 'active_flag')).map((role) => ({

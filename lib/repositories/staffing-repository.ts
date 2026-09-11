@@ -52,7 +52,7 @@ export async function readOracleStaffingSnapshot(): Promise<OracleStaffingSnapsh
        ORDER BY source_row, project_type_id
     `),
     interests: await rows(connection, `
-      SELECT interest_id, interest_name, category, source, source_version, customer_controlled
+      SELECT interest_id, interest_name, category, source, source_version, customer_controlled, assessment_type
         FROM interests
        ORDER BY interest_id
     `),

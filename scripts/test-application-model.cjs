@@ -405,3 +405,53 @@ test('empty assignments have a usable Lead view, and new capability appears in t
   assert.match(html, /No default capabilities supplied/);
   assert.doesNotMatch(html, /Retired item/);
 });
+
+test('restored OWN availability permissions show the Add button only for Lead and Member', () => {
+  const data = fixture();
+  for (const role of data.authorization.roles) {
+    if (['POD_LEAD', 'POD_MEMBER'].includes(role.code)) role.permissions.find((item) => item.resourceCode === 'MY_AVAILABILITY').canCreate = true;
+  }
+  assert.match(renderProfile('POD Lead', 'availability', data), /Add availability event/);
+  assert.match(renderProfile('POD Member', 'availability', data), /Add availability event/);
+  assert.doesNotMatch(renderProfile('POD Captain', 'availability', data), /Add availability event/);
+  assert.doesNotMatch(renderProfile('Administrator', 'availability', adminFixture()), /Add availability event/);
+  const migration = fs.readFileSync(path.join(root, 'sql/oracle/availability_access.sql'), 'utf8');
+  assert.match(migration, /SESSION_USER/);
+  assert.match(migration, /ALTER SESSION DISABLE PARALLEL DML/);
+  assert.match(migration, /SET can_create = 'Y'/);
+  assert.match(migration, /resource_code = 'MY_AVAILABILITY' AND role_code IN \('POD_LEAD', 'POD_MEMBER'\)/);
+});
+
+test('availability save inserts for the own profile and rejects another person, wrong scope, or revoked access', async () => {
+  const insertions = [];
+  let scope = 'OWN', allowed = 'Y';
+  execute = async (statement, binds = {}) => {
+    if (/FROM app_roles/.test(statement)) return { rows: [{ ACCESS_SCOPE: scope, CAN_VIEW: 'Y', CAN_CREATE: allowed }] };
+    if (/FROM people/.test(statement)) return { rows: [{ PERSON_ID: binds.personId }] };
+    if (/INSERT INTO availability/.test(statement)) { insertions.push({ statement, binds }); return { rowsAffected: 1 }; }
+    throw new Error('Unexpected query');
+  };
+  const event = { personId: 'P-001', eventType: 'Leave', startsOn: '2099-12-01', endsOn: '2099-12-02', title: 'Planned leave', allocatedHours: 16 };
+  for (const [role, personId] of [['POD Member', 'P-001'], ['POD Lead', 'P-006']]) {
+    const context = { role, actor: `PREVIEW:${role.toUpperCase().replaceAll(' ', '_')}` };
+    assert.deepEqual(await createAvailabilityEvent({ ...event, personId }, context), { ...event, personId });
+    await assert.rejects(createAvailabilityEvent({ ...event, personId: 'P-010' }, context), { status: 403 });
+  }
+  scope = 'FULL';
+  await assert.rejects(createAvailabilityEvent(event, { role: 'POD Member', actor: 'PREVIEW:POD_MEMBER' }), { status: 403 });
+  scope = 'OWN'; allowed = 'N';
+  await assert.rejects(createAvailabilityEvent(event, { role: 'POD Member', actor: 'PREVIEW:POD_MEMBER' }), { status: 403 });
+  assert.equal(insertions.length, 2);
+  assert.deepEqual(insertions.map((item) => item.binds.personId), ['P-001', 'P-006']);
+});
+
+test('availability dates reject backdating, reversed intervals, invalid types and excessive hours', () => {
+  const { validateCreateAvailabilityPayload } = require('../lib/validation/staffing-mutations.ts');
+  const { requestBusinessDate } = require('../lib/request-date-policy.ts');
+  const today = requestBusinessDate();
+  const event = { personId: 'P-001', eventType: 'OOO', startsOn: today, endsOn: today, title: '', allocatedHours: 8 };
+  assert.equal(validateCreateAvailabilityPayload(event).title, 'OOO');
+  for (const invalid of [{ startsOn: '2000-01-01' }, { endsOn: '2000-01-01' }, { eventType: 'Invalid' }, { allocatedHours: 25 }]) {
+    assert.throws(() => validateCreateAvailabilityPayload({ ...event, ...invalid }), { status: 400 });
+  }
+});
