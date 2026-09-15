@@ -1132,6 +1132,46 @@
   margin-block: 16px;
 }
 .staffing-skills-edit-card .staffing-skills-interest { margin-block: 16px; }
+
+/* Live data uses the established cards, pipeline and calendar, not a second UI. */
+.staffing-live-review .staffing-page-head > div:first-child { min-width: 0; }
+.staffing-fit-review-actions { display: grid; gap: 10px; width: min(560px, 45vw); }
+.staffing-fit-review-actions .staffing-fitment-picker { min-width: 0; width: 100%; }
+.staffing-execution-actions { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 10px; }
+.staffing-execution-actions .staffing-fitment-picker { min-width: 0; width: min(400px, 35vw); }
+.staffing-live-review .staffing-inline-actions { flex-wrap: wrap; }
+.staffing-live-review .staffing-agent-shell { grid-template-columns: minmax(280px, .52fr) minmax(0, 1fr); }
+.staffing-live-review .staffing-agent-shell > .staffing-card { align-self: start; }
+.staffing-live-review .staffing-factor { grid-template-columns: minmax(125px, .5fr) minmax(80px, 1fr) 68px; }
+.staffing-live-review .staffing-candidate-foot { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.staffing-persona-current-role { display: inline-flex; align-items: center; padding: 12px 16px; border: 1px solid var(--staffing-border); border-radius: 14px; background: white; font-weight: 600; white-space: nowrap; }
+.staffing-live-review .staffing-candidate:last-child { margin-bottom: 0; }
+.staffing-live-review .staffing-candidate-name, .staffing-live-review .staffing-rationale { overflow-wrap: anywhere; }
+.staffing-live-console { min-height: 290px; max-height: 440px; overflow-wrap: anywhere; }
+.staffing-live-console > div { margin-bottom: 8px; }
+.staffing-live-review .staffing-step.active .staffing-step-icon { animation: staffing-stage-pulse 1.5s ease-in-out infinite; }
+.staffing-live-schedule .staffing-cell:not(.head) { min-height: 90px; padding-bottom: 25px; }
+.staffing-live-schedule .staffing-booking { white-space: normal; overflow-wrap: anywhere; }
+.staffing-calendar-toolbar-card .staffing-toolbar { flex-wrap: wrap; }
+.staffing-capacity-unknown { background: repeating-linear-gradient(135deg, #eeeae4, #eeeae4 5px, #f8f6f3 5px, #f8f6f3 10px); }
+.staffing-capacity-watch-body { max-height: 430px; overflow-y: auto; }
+.staffing-topbar form { flex-shrink: 0; }
+.staffing-topbar form .staffing-btn { white-space: nowrap; }
+@keyframes staffing-stage-pulse { 50% { box-shadow: 0 0 0 7px var(--staffing-red-soft); } }
+@media (prefers-reduced-motion: reduce) { .staffing-live-review .staffing-step.active .staffing-step-icon { animation: none; } }
+@media (max-width: 1050px) {
+  .staffing-live-review .staffing-page-head { flex-direction: column; }
+  .staffing-live-review .staffing-page-head > .staffing-actions { width: 100%; }
+  .staffing-live-review .staffing-fit-layout { grid-template-columns: minmax(0, 1fr); }
+  .staffing-live-review .staffing-request-summary { position: static; }
+  .staffing-fit-review-actions { width: 100%; }
+  .staffing-live-review .staffing-agent-shell { grid-template-columns: minmax(0, 1fr); }
+  .staffing-execution-actions .staffing-fitment-picker { width: min(400px, 100%); }
+}
+@media (max-width: 640px) {
+  .staffing-live-review .staffing-factor { grid-template-columns: minmax(100px, .8fr) minmax(50px, 1fr) 60px; }
+  .staffing-live-review .staffing-request-summary { position: static; }
+}
 .staffing-self-skill-row > div { min-width: 0; overflow-wrap: anywhere; }
 .staffing-self-skill-row small { display: block; }
 @media (max-width: 760px) {

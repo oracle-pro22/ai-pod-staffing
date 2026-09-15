@@ -11,7 +11,7 @@ import {
   useRef,
 } from 'react';
 
-import { canAccessScreen, canPerform, defaultScreen } from '@/lib/role-policy';
+import { canAccessScreen, canPerform, defaultScreen, personaLandingScreen } from '@/lib/role-policy';
 import type { StaffingRole } from '@/types/roles';
 import { migratePreviewRole } from '@/types/roles';
 import type { StaffingViewModel } from '@/types/staffing';
@@ -134,14 +134,17 @@ export function StaffingAppProvider({
     () => (state: StaffingAppState, action: StaffingAppAction) => staffingAppReducer(state, action, data.authorization),
     [data.authorization],
   );
-  const [state, dispatch] = useReducer(reducer, initialState);
+  const [state, dispatch] = useReducer(reducer, { ...initialState, role: data.identity?.role ?? initialState.role,
+    activeScreen: data.identity?.sessionMode === 'persona'
+      ? personaLandingScreen(data.identity.role, data.authorization) : initialState.activeScreen });
   const storageReady = useRef(false);
 
   useEffect(() => {
+    if (data.identity) return;
     const storedRole = window.sessionStorage.getItem(ROLE_STORAGE_KEY);
     dispatch({ type: 'set-role', role: migratePreviewRole(storedRole) });
     storageReady.current = true;
-  }, []);
+  }, [data.identity]);
 
   useEffect(() => {
     if (storageReady.current) window.sessionStorage.setItem(ROLE_STORAGE_KEY, state.role);
@@ -151,7 +154,7 @@ export function StaffingAppProvider({
     data,
     state,
     dispatch,
-    setRole: (role) => dispatch({ type: 'set-role', role }),
+    setRole: (role) => { if (!data.identity) dispatch({ type: 'set-role', role }); },
     notify: (title, message) => dispatch({
       type: 'add-toast',
       toast: { id: window.crypto.randomUUID(), title, message },

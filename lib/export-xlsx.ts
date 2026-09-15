@@ -11,6 +11,7 @@ const XLSX_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.spreadshee
 
 function escapeXml(value: WorkbookCell): string {
   return String(value ?? '')
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -35,10 +36,13 @@ function safeSheetName(value: string): string {
 
 function inlineStringCell(value: WorkbookCell, reference: string, styleId = 0): string {
   const style = styleId ? ` s="${styleId}"` : '';
+  if (typeof value === 'number' && Number.isFinite(value)) return `<c r="${reference}"${style}><v>${value}</v></c>`;
+  if (typeof value === 'boolean') return `<c r="${reference}" t="b"${style}><v>${value ? 1 : 0}</v></c>`;
+  // Text remains inline text: names beginning with =,+,-,@ never become formulas.
   return `<c r="${reference}" t="inlineStr"${style}><is><t xml:space="preserve">${escapeXml(value)}</t></is></c>`;
 }
 
-export async function downloadExcelWorkbook({ fileName, sheetName, headers, rows }: WorkbookExport): Promise<void> {
+export async function buildExcelWorkbook({ sheetName, headers, rows }: Omit<WorkbookExport, 'fileName'>): Promise<Blob> {
   const { default: JSZip } = await import('jszip');
   const zip = new JSZip();
   const safeName = safeSheetName(sheetName);
@@ -102,11 +106,15 @@ export async function downloadExcelWorkbook({ fileName, sheetName, headers, rows
   <autoFilter ref="${range}"/>
 </worksheet>`);
 
-  const blob = await zip.generateAsync({ type: 'blob', mimeType: XLSX_MIME_TYPE, compression: 'DEFLATE' });
+  return zip.generateAsync({ type: 'blob', mimeType: XLSX_MIME_TYPE, compression: 'DEFLATE' });
+}
+
+export async function downloadExcelWorkbook(options: WorkbookExport): Promise<void> {
+  const blob = await buildExcelWorkbook(options);
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = fileName.toLowerCase().endsWith('.xlsx') ? fileName : `${fileName}.xlsx`;
+  link.download = options.fileName.toLowerCase().endsWith('.xlsx') ? options.fileName : `${options.fileName}.xlsx`;
   document.body.appendChild(link);
   link.click();
   link.remove();

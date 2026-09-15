@@ -1,4 +1,5 @@
 'use client';
+import { staffingFetch } from '@/lib/staffing-fetch';
 
 import { type FormEvent, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -27,7 +28,7 @@ export function AddPersonModal() {
     busy.current = true;
     setSaving(true);
     try {
-      const response = await fetch('/api/people', {
+      const response = await staffingFetch('/api/people', {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'x-staffing-role': state.role },
         body: JSON.stringify({ fullName: form.get('fullName'), jobTitle: form.get('jobTitle'), location: form.get('location'),
           email: form.get('email'), allocationPct: Number(form.get('allocationPct')), activePods: Number(form.get('activePods')) }),

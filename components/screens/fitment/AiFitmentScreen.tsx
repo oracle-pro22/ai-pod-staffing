@@ -21,10 +21,18 @@ import {
 } from '@/lib/selectors';
 import type { StaffingRecommendation } from '@/types/staffing';
 import type { Tone } from '@/types/ui';
+import { LiveStaffingReview } from './LiveStaffingReview';
+import { RequestsScreen } from '../requests/RequestsScreen';
 
 const FACTOR_TONES: Tone[] = ['teal', 'blue', 'teal', 'amber', 'red'];
 
 export function AiFitmentScreen() {
+  const { data } = useStaffingApp();
+  if (data.identity && ['POD Lead', 'POD Member'].includes(data.identity.role)) return <RequestsScreen />;
+  return process.env.NEXT_PUBLIC_STAFFING_AGENTIC_ENABLED === 'true' ? <LiveStaffingReview /> : <PreviewFitmentScreen />;
+}
+
+function PreviewFitmentScreen() {
   const { data, state, dispatch, notify } = useStaffingApp();
   const requests = selectVisibleRequests(data, state.role);
   const request = selectActiveRequest(data, state.role, state.activeRequestId);

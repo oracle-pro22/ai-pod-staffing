@@ -132,9 +132,10 @@ test('assigned scopes exclude pending, declined, unselected and other-person rec
   assert.deepEqual(selectVisibleRequests(data, 'POD Lead').map((item) => item.id), ['REQ-1']);
   assert.deepEqual(selectVisibleRequests(data, 'POD Member').map((item) => item.id), ['REQ-1']);
   assert.deepEqual(selectVisibleRequests(data, 'Administrator'), []);
-  for (const role of ['POD Lead', 'POD Member']) {
-    assert.deepEqual(selectVisiblePeople(data, role).map((item) => item.id), ['P-001', 'P-006']);
-  }
+  assert.deepEqual(selectVisiblePeople(data, 'POD Member').map((item) => item.id), ['P-001']);
+  assert.deepEqual(selectVisiblePeople(data, 'POD Lead').map((item) => item.id), ['P-006']);
+  data.requests[0].status = 'Staffed';
+  assert.deepEqual(selectVisiblePeople(data, 'POD Lead').map((item) => item.id), ['P-001', 'P-006']);
   assert.equal(selectIdentityPerson(data, 'POD Captain').id, 'P-009');
   data.people = data.people.filter((person) => person.id !== 'P-006');
   assert.equal(selectIdentityPerson(data, 'POD Lead'), null);
@@ -147,12 +148,31 @@ test('API projection removes unrelated people, recommendation candidates and ide
   assert.equal(member.requests[0].recommendations.length, 1);
   assert.equal(member.requests[0].recommendations[0].personId, 'P-001');
   assert.deepEqual(member.authorization.userRoles, []);
-  assert.equal(member.metrics.people, 2);
+  assert.equal(member.metrics.people, 1);
   const admin = selectRoleViewModel(data, 'Administrator');
   assert.deepEqual(admin.people, []);
   assert.deepEqual(admin.requests, []);
   assert.equal(admin.metrics.requests, 0);
   assert.equal(admin.catalog.projects.length, 1);
+});
+
+test('Member profile scope is always own; Lead scope ends at closure and does not follow a Member slot', () => {
+  const data=fixture();
+  const memberPermission=data.authorization.roles.find(r=>r.code==='POD_MEMBER').permissions.find(p=>p.resourceCode==='TEAM_SKILLS');
+  for(const scope of ['own','scoped','full']) {
+    memberPermission.accessScope=scope;
+    assert.deepEqual(selectVisiblePeople(data,'POD Member').map(p=>p.id),['P-001']);
+    data.identity={personId:'P-001',role:'POD Member'};
+    assert.deepEqual(selectVisiblePeople(data,'POD Member').map(p=>p.id),['P-001']);
+    delete data.identity;
+  }
+  data.requests[0].status='Staffed';
+  assert.deepEqual(selectVisiblePeople(data,'POD Lead').map(p=>p.id),['P-001','P-006']);
+  data.requests[0].status='Closed';
+  assert.deepEqual(selectVisiblePeople(data,'POD Lead').map(p=>p.id),['P-006']);
+  data.requests[0].status='Staffed';
+  data.requests[0].recommendations.find(p=>p.personId==='P-006').roleInPod='POD Member';
+  assert.deepEqual(selectVisiblePeople(data,'POD Lead').map(p=>p.id),['P-006']);
 });
 test('Captain demo suggestions still work for a new request without stored recommendations', () => {
   const data = fixture();
@@ -160,15 +180,15 @@ test('Captain demo suggestions still work for a new request without stored recom
   assert.equal(result.isDemo, true);
   assert.ok(result.recommendations.length > 0);
 });
-test('API preview context accepts only official names and fails closed outside preview mode', () => {
+test('API preview context accepts only official names and fails closed outside preview mode', async () => {
   const previous = process.env.STAFFING_AUTH_MODE;
   try {
     process.env.STAFFING_AUTH_MODE = 'preview';
-    for (const role of STAFFING_ROLES) assert.equal(staffingRequestContext({ headers: new Headers({ 'x-staffing-role': role }) }).role, role);
-    assert.throws(() => staffingRequestContext({ headers: new Headers() }), { status: 401 });
-    assert.throws(() => staffingRequestContext({ headers: new Headers({ 'x-staffing-role': 'Operations Lead' }) }), { status: 401 });
+    for (const role of STAFFING_ROLES) assert.equal((await staffingRequestContext({ headers: new Headers({ 'x-staffing-role': role }) })).role, role);
+    await assert.rejects(staffingRequestContext({ headers: new Headers() }), { status: 401 });
+    await assert.rejects(staffingRequestContext({ headers: new Headers({ 'x-staffing-role': 'Operations Lead' }) }), { status: 401 });
     process.env.STAFFING_AUTH_MODE = 'oci';
-    assert.throws(() => staffingRequestContext({ headers: new Headers({ 'x-staffing-role': 'Administrator' }) }), { status: 503 });
+    await assert.rejects(staffingRequestContext({ headers: new Headers({ 'x-staffing-role': 'Administrator' }) }), { status: 503 });
   } finally {
     if (previous === undefined) delete process.env.STAFFING_AUTH_MODE; else process.env.STAFFING_AUTH_MODE = previous;
   }
@@ -359,6 +379,50 @@ test('request-source lookup queries active people and returns ID/name only', asy
   assert.deepEqual(await listActivePeopleNames(), [{ id: 'P-012', name: 'New Person' }]);
 });
 
+test('employee directory predicate excludes only effective standalone administrators, never fixed IDs', () => {
+  const { EMPLOYEE_SCOPE_SQL } = require('../lib/repositories/employee-scope.ts');
+  assert.match(EMPLOYEE_SCOPE_SQL, /NOT EXISTS[\s\S]+SYSTEM_ADMINISTRATOR[\s\S]+\) OR EXISTS/);
+  assert.match(EMPLOYEE_SCOPE_SQL, /IN \('POD_CAPTAIN', 'POD_LEAD', 'POD_MEMBER'\)/);
+  for (const alias of ['employee_admin_role', 'employee_staff_role']) {
+    assert.ok(EMPLOYEE_SCOPE_SQL.includes(`${alias}.active_flag = 'Y'`));
+    assert.ok(EMPLOYEE_SCOPE_SQL.includes(`${alias}.effective_from <= TRUNC(SYSDATE)`));
+    assert.ok(EMPLOYEE_SCOPE_SQL.includes(`${alias}.effective_to >= TRUNC(SYSDATE)`));
+  }
+  assert.doesNotMatch(EMPLOYEE_SCOPE_SQL, /P-012|full_name|demo:d1/);
+});
+
+test('request-source list and staffing snapshot reuse the same employee-only scope', async () => {
+  const { EMPLOYEE_SCOPE_SQL } = require('../lib/repositories/employee-scope.ts');
+  const statements = [];
+  execute = async (statement) => { statements.push(statement); return { rows: [] }; };
+  await listActivePeopleNames();
+  await readOracleStaffingSnapshot();
+  const employeeQueries = statements.filter(statement => /FROM people p/.test(statement));
+  assert.equal(employeeQueries.length, 2);
+  assert.ok(employeeQueries.every(statement => statement.includes(EMPLOYEE_SCOPE_SQL)));
+});
+
+test('a standalone administrator cannot be submitted directly as Request source', async () => {
+  const { EMPLOYEE_SCOPE_SQL } = require('../lib/repositories/employee-scope.ts');
+  let writes = 0, sourceChecked = false;
+  execute = async (statement, binds = {}) => {
+    if (/FROM app_roles ar/.test(statement)) return { rows: permissionQuery(binds) };
+    if (/FROM project_types/.test(statement)) return { rows: [{ PROJECT_NAME: 'Special Projects/ Ad Hoc' }] };
+    if (/FROM people p/.test(statement)) {
+      sourceChecked = true;
+      assert.ok(statement.includes(EMPLOYEE_SCOPE_SQL));
+      assert.equal(binds.personId, 'P-standalone-admin');
+      return { rows: [] }; // Oracle's effective-role predicate excludes this identity.
+    }
+    writes += 1;
+    throw new Error('No mutation should follow an invalid employee selection');
+  };
+  await assert.rejects(createStaffingRequest({ ...input, requestSourcePersonId: 'P-standalone-admin' },
+    { role: 'POD Captain', actor: 'test' }), { status: 400 });
+  assert.equal(sourceChecked, true);
+  assert.equal(writes, 0);
+});
+
 function renderProfile(role, screen, data = fixture()) {
   appContext = {
     data,
@@ -379,7 +443,8 @@ test('screen rendering offers Captain actions but not Lead or Member mutations',
   assert.doesNotMatch(renderProfile('POD Lead', 'fitment'), /Approve pod|>Re-run</);
   assert.doesNotMatch(renderProfile('POD Member', 'requests'), /New request|Export Excel/);
   assert.match(renderProfile('POD Member', 'interests'), /Member One/);
-  assert.match(renderProfile('POD Member', 'interests'), /Lead Six/);
+  assert.doesNotMatch(renderProfile('POD Member', 'interests'), /Lead Six|Team directory|Sort by|Find a team member|>View</);
+  assert.match(renderProfile('POD Lead', 'interests'), /My active POD team/);
   assert.doesNotMatch(renderProfile('POD Member', 'interests'), /Unassigned Person/);
 });
 test('Administrator lands on administration rather than operational data; revoked profile fails closed', () => {

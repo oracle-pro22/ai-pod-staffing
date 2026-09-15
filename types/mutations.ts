@@ -15,10 +15,14 @@ export type CreateAvailabilityPayload = {
 export type StaffingMutationContext = {
   role: StaffingRole;
   actor: string;
+  responsibleCaptainId?: string;
+  personId?: string;
+  authenticated?: boolean;
 };
 
 export type RequestCreatedResult = {
   requestId: string;
+  agentPending?: boolean;
 };
 
 export type AvailabilityCreatedResult = CreateAvailabilityPayload;

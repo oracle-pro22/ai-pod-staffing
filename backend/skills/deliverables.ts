@@ -4,7 +4,12 @@ import { StaffingApiError, validationError } from '@/lib/errors/staffing-api-err
 import { deliverableExperienceError } from '@/lib/deliverable-experience';
 import type { DeliverableExperienceInput, SelfSkillsPatch } from '@/types/self-skills';
 
-type StoredExperience = DeliverableExperienceInput & { name: string; projectName: string; updatedAt: string; updatedBy: string; source: string };
+// Python/imported profiles store canonical evidence without UI label caches or
+// self-service audit metadata. Preserve that evidence as-is; never manufacture
+// an author/date/source merely to make a profile readable.
+type StoredExperience = DeliverableExperienceInput & Partial<{
+  name: string; projectName: string; updatedAt: string; updatedBy: string; source: string;
+}>;
 type Row = Record<string, unknown>;
 const options = { outFormat: oracledb.OUT_FORMAT_OBJECT } as const;
 
@@ -12,14 +17,14 @@ const options = { outFormat: oracledb.OUT_FORMAT_OBJECT } as const;
 export function readDeliverableExperience(value: unknown): StoredExperience[] {
   if (value == null) return [];
   try {
-    if (typeof value !== 'string') throw new Error();
-    const rows: unknown = JSON.parse(value);
+    // Oracle can return JSON CLOBs either as text or as native JSON arrays.
+    const rows: unknown = typeof value === 'string' ? JSON.parse(value) : value;
     if (!Array.isArray(rows) || rows.length > 100) throw new Error();
     const ids = new Set<string>();
     for (const row of rows) {
       if (!row || typeof row !== 'object' || typeof row.deliverableId !== 'string' || !/^[A-Za-z0-9_-]{1,30}$/.test(row.deliverableId)
         || ids.has(row.deliverableId) || deliverableExperienceError(row)
-        || !['name', 'projectName', 'updatedAt', 'updatedBy', 'source'].every((key) => typeof row[key] === 'string')) throw new Error();
+        || !['name', 'projectName', 'updatedAt', 'updatedBy', 'source'].every((key) => !Object.hasOwn(row, key) || typeof row[key] === 'string')) throw new Error();
       ids.add(row.deliverableId);
     }
     return rows as StoredExperience[];
@@ -49,7 +54,9 @@ export async function saveDeliverableExperience(connection: Connection, personId
     const result = await connection.execute<Row>(`SELECT deliverable_name, project_name, active_flag FROM deliverables WHERE deliverable_id = :deliverableId`, binds, options);
     const catalogue = result.rows?.[0];
     if (!catalogue || catalogue.ACTIVE_FLAG !== 'Y') throw validationError('Choose an active catalogue deliverable. Retired entries can only be kept or removed.');
-    entries.set(row.deliverableId, { ...row, name: String(catalogue.DELIVERABLE_NAME), projectName: String(catalogue.PROJECT_NAME ?? ''),
+    // Keep any imported provenance/extension fields. Only the user's touched
+    // evidence and its current self-service metadata are replaced.
+    entries.set(row.deliverableId, { ...entries.get(row.deliverableId), ...row, name: String(catalogue.DELIVERABLE_NAME), projectName: String(catalogue.PROJECT_NAME ?? ''),
       source: 'Self-assessment', updatedAt: new Date().toISOString(), updatedBy: actor });
   }
   for (const id of removals) {

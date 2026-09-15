@@ -36,7 +36,7 @@ export function MySkillsPanel() {
     </CardHeader><CardBody>
       {loading ? <p role="status">Loading your skills…</p> : error ? <div role="alert"><p>{error}</p><Button onClick={() => void load()}>Retry</Button></div> : profile ? <>
         {!profile.skills.length ? <p>No skills or interests added yet. Select Manage my skills to get started.</p> : profile.skills.map((row) => <div className="staffing-self-skill-row" key={row.skillId}>
-          <div><b>{row.name}</b><p>{row.evidence || 'No evidence note recorded.'}</p><small>{row.source}</small></div>
+          <div><b>{row.name}</b><p>{row.evidence || 'No evidence note recorded.'}</p></div>
           <div className="staffing-self-skill-labels"><span>{row.strength === null ? 'Not rated' : `${row.strength} / 5`}</span>{row.interested ? <span>Interested</span> : null}</div>
         </div>)}
         <h4>Deliverables & experience</h4>

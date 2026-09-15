@@ -1,4 +1,5 @@
 import type { SkillAssessmentInput, SelfSkillsPatch, SelfSkillsProfile } from '@/types/self-skills';
+import { staffingFetch } from '@/lib/staffing-fetch';
 import type { StaffingRole } from '@/types/roles';
 
 export class SkillsClientError extends Error {
@@ -8,7 +9,7 @@ export class SkillsClientError extends Error {
 async function skillsRequest<T>(role: StaffingRole, init: RequestInit = {}): Promise<T> {
   let response: Response;
   try {
-    response = await fetch('/api/me/skills', { ...init, cache: 'no-store', headers: { 'Content-Type': 'application/json', 'x-staffing-role': role } });
+    response = await staffingFetch('/api/me/skills', { ...init, cache: 'no-store', headers: { 'Content-Type': 'application/json', 'x-staffing-role': role } });
   } catch {
     throw new SkillsClientError(init.method === 'PATCH' ? 'Save status is unknown. Reload saved skills before trying again.' : 'Skills could not be loaded. Check your connection and retry.');
   }

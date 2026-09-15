@@ -1,0 +1,35 @@
+.staffing-reports { --staffing-muted:var(--staffing-ink-3); }
+.staffing-reports .staffing-kpi-top { min-height:44px; align-items:flex-start; }
+.staffing-reports .staffing-two-col { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.staffing-reports .staffing-report-controls { display:flex; justify-content:space-between; align-items:center; gap:24px; padding:22px 26px; margin-bottom:24px; }
+.staffing-report-controls h3 { margin:5px 0; font-size:19px; }
+.staffing-report-controls p { margin:0; font-size:13px; color:var(--staffing-muted); }
+.staffing-report-eyebrow { text-transform:uppercase; letter-spacing:.08em; font-size:11px; font-weight:700; color:var(--staffing-muted); }
+.staffing-report-date { display:flex; flex-direction:column; gap:5px; font-size:12px; color:var(--staffing-ink-2); }
+.staffing-report-tabs { display:flex; gap:6px; flex-wrap:wrap; border-bottom:1px solid var(--staffing-border); margin:8px 0 16px; }
+.staffing-report-tabs button { border:0; border-bottom:3px solid transparent; background:transparent; padding:16px 22px; font:inherit; font-weight:650; color:var(--staffing-ink-2); cursor:pointer; }
+.staffing-report-tabs button.active { color:#c74634; border-bottom-color:#c74634; }
+.staffing-report-tabs button:focus-visible { outline:2px solid #c74634; outline-offset:-3px; }
+.staffing-report-scope { display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:20px; color:var(--staffing-muted); font-size:13px; }
+.staffing-report-pipeline { margin-bottom:24px; }
+.staffing-report-pipeline > div:first-child { display:flex; justify-content:space-between; margin-bottom:10px; font-size:15px; }
+.staffing-report-callouts { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; border-top:1px solid var(--staffing-border); padding-top:22px; margin-top:24px; }
+.staffing-report-callouts > div { display:flex; flex-direction:column; gap:6px; }
+.staffing-report-callouts b { font-size:25px; }.staffing-report-callouts span { color:var(--staffing-muted); font-size:13px; }
+.staffing-reports .staffing-muted { line-height:1.6; }
+.staffing-reports .staffing-capacity-row { grid-template-columns:44px minmax(0,1fr) auto; }
+.staffing-reports .staffing-cap-name { gap:12px; }.staffing-reports .staffing-cap-name b { overflow-wrap:anywhere; }
+.staffing-report-table-wrap { width:100%; overflow-x:auto; }
+.staffing-report-table { width:100%; border-collapse:collapse; text-align:left; font-size:14px; }
+.staffing-report-table th { background:#faf8f5; border-block:1px solid var(--staffing-border); color:var(--staffing-ink-2); padding:17px 20px; font-size:11px; letter-spacing:.04em; text-transform:uppercase; white-space:nowrap; }
+.staffing-report-table td { padding:19px 20px; border-bottom:1px solid var(--staffing-border); vertical-align:middle; }
+.staffing-report-table tr:last-child td { border-bottom:0; }.staffing-report-table tbody tr:hover { background:#fcfaf7; }
+.staffing-report-table td:first-child { min-width:190px; max-width:370px; }.staffing-report-table small { display:block; color:var(--staffing-muted); margin-top:6px; }
+.staffing-report-table .staffing-progress { margin-top:8px; min-width:105px; }.staffing-report-table td:not(:first-child) { font-variant-numeric:tabular-nums; }
+.staffing-report-search { width:250px; max-width:100%; }.staffing-reports .staffing-card-head { flex-wrap:wrap; gap:16px; }
+.staffing-report-export-intro { margin-bottom:22px; }.staffing-report-export-intro p { color:var(--staffing-muted); line-height:1.6; }
+.staffing-report-export-card { display:flex; align-items:flex-start; flex-direction:column; gap:12px; }.staffing-report-export-card h3,.staffing-report-export-card p { margin:0; }
+.staffing-report-export-card p { color:var(--staffing-muted); line-height:1.6; flex:1; }.staffing-report-export-card button { margin-top:8px; }
+@media(max-width:1100px) { .staffing-reports .staffing-report-controls { align-items:flex-start; flex-direction:column; }.staffing-reports .staffing-inline-actions { flex-wrap:wrap; } }
+@media(max-width:950px) { .staffing-reports .staffing-two-col { grid-template-columns:1fr; } }
+@media(max-width:650px) { .staffing-report-tabs button { padding:12px; }.staffing-report-table td,.staffing-report-table th { padding:14px; }.staffing-report-callouts { grid-template-columns:1fr; }.staffing-reports .staffing-capacity-row { grid-template-columns:36px minmax(0,1fr); }.staffing-reports .staffing-capacity-row > .staffing-pill { grid-column:2; } }

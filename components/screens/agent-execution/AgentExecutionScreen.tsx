@@ -11,6 +11,8 @@ import { Pill } from '@/components/ui/Pill';
 import { useStaffingApp } from '@/context/StaffingAppProvider';
 import { resolveFitmentRecommendations } from '@/lib/demo-fitment';
 import { canPerform } from '@/lib/role-policy';
+import { LiveStaffingReview } from '@/components/screens/fitment/LiveStaffingReview';
+import { RequestsScreen } from '../requests/RequestsScreen';
 import {
   selectActiveRequest,
   selectScopedRecommendations,
@@ -30,6 +32,12 @@ const STAGES = [
 const STEP_DELAY_MS = 650;
 
 export function AgentExecutionScreen() {
+  const { data } = useStaffingApp();
+  if (data.identity && ['POD Lead', 'POD Member'].includes(data.identity.role)) return <RequestsScreen />;
+  return process.env.NEXT_PUBLIC_STAFFING_AGENTIC_ENABLED === 'true' ? <LiveStaffingReview executionView /> : <PreviewExecutionScreen />;
+}
+
+function PreviewExecutionScreen() {
   const { data, state, dispatch, notify } = useStaffingApp();
   const requests = selectVisibleRequests(data, state.role);
   const request = selectActiveRequest(data, state.role, state.activeRequestId) ?? requests[0];

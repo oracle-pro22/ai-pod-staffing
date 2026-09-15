@@ -3,6 +3,7 @@ import 'server-only';
 import oracledb, { type Connection } from 'oracledb';
 
 import { withOracleConnection } from '@/lib/db/oracle';
+import { EMPLOYEE_SCOPE_SQL } from '@/lib/repositories/employee-scope';
 
 export type DatabaseRow = Record<string, unknown>;
 
@@ -59,8 +60,8 @@ export async function readOracleStaffingSnapshot(): Promise<OracleStaffingSnapsh
     people: await rows(connection, `
       SELECT person_id, full_name, initials, job_title, location, allocation_pct, active_pods,
              external_identity_subject, email_address, active_flag, created_at, updated_at
-        FROM people
-       WHERE active_flag = 'Y'
+        FROM people p
+       WHERE active_flag = 'Y' AND ${EMPLOYEE_SCOPE_SQL}
        ORDER BY full_name, person_id
     `),
     customerMapping: await rows(connection, `

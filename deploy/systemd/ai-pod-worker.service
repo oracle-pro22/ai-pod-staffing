@@ -1,0 +1,17 @@
+[Unit]
+Description=AI Pod Staffing agent worker
+After=network-online.target ai-pod-api.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/opc/AIML_INTERNAL_INITIATIVES/AI_POD_STAFFING/backend/python
+EnvironmentFile=/home/opc/AIML_INTERNAL_INITIATIVES/AI_POD_STAFFING/backend/python/.env
+ExecStart=/home/opc/AIML_INTERNAL_INITIATIVES/AI_POD_STAFFING/backend/python/.venv/bin/python -m app.worker
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=90
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

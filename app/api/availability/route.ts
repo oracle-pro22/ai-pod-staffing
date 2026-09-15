@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
     if ((process.env.STAFFING_DATA_SOURCE ?? 'oracle').trim().toLowerCase() !== 'oracle') {
       throw new StaffingApiError('Availability saving requires the Oracle data source.', 503, 'ORACLE_REQUIRED');
     }
-    const context = staffingRequestContext(request);
+    const context = await staffingRequestContext(request);
     const body = await request.json().catch(() => {
       throw new StaffingApiError('The request body is not valid JSON.', 400, 'INVALID_JSON');
     });

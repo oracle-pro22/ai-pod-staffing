@@ -1,4 +1,5 @@
 import 'server-only';
+import { EMPLOYEE_SCOPE_SQL } from '@/lib/repositories/employee-scope';
 
 import oracledb, { type Connection } from 'oracledb';
 
@@ -6,6 +7,7 @@ import { withOracleTransaction } from '@/lib/db/oracle';
 import { conflictError, forbiddenError, validationError } from '@/lib/errors/staffing-api-error';
 import { ROLE_CODES } from '@/types/roles';
 import { PREVIEW_PERSON_IDS } from '@/lib/preview-person-ids';
+import { assertIdentityMapping } from '@/lib/auth/identity-mapping';
 import type {
   AvailabilityCreatedResult,
   CreateAvailabilityPayload,
@@ -38,6 +40,7 @@ async function authorizeCreate(
   context: StaffingMutationContext,
   resourceCode: 'REQUESTS' | 'MY_AVAILABILITY',
 ): Promise<'FULL' | 'SCOPED' | 'OWN'> {
+  await assertIdentityMapping(connection, context);
   const permission = (await rows(connection, `
     SELECT rp.access_scope, rp.can_view, rp.can_create
       FROM app_roles ar
@@ -79,6 +82,20 @@ export async function createStaffingRequest(
 ): Promise<RequestCreatedResult> {
   return withOracleTransaction(async (connection) => {
     await authorizeCreate(connection, context, 'REQUESTS');
+    if (context.responsibleCaptainId) {
+      await connection.execute('ALTER SESSION DISABLE PARALLEL DML');
+      await connection.execute('ALTER SESSION DISABLE PARALLEL QUERY');
+      const schema = (await rows(connection, `SELECT USER AS schema_user, SYS_CONTEXT('USERENV','CURRENT_SCHEMA') AS current_schema FROM dual`))[0];
+      if (text(schema ?? {}, 'schema_user') !== 'AI_POD_STAFFING' || text(schema ?? {}, 'current_schema') !== 'AI_POD_STAFFING') throw forbiddenError('Unexpected database schema.');
+      const linked = await rows(connection, `SELECT ur.person_id FROM app_user_roles ur
+        JOIN people p ON p.person_id=ur.person_id AND p.active_flag='Y'
+        WHERE ur.identity_subject=:identitySubject AND ur.person_id=:personId AND ur.role_code='POD_CAPTAIN'
+        AND ur.active_flag='Y' AND ur.effective_from<=TRUNC(SYSDATE)
+        AND (ur.effective_to IS NULL OR ur.effective_to>=TRUNC(SYSDATE))`,
+        { identitySubject: context.actor, personId: context.responsibleCaptainId });
+      if (linked.length !== 1 || context.role !== 'POD Captain') throw forbiddenError();
+      if (!input.estimatedStartDate || !input.estimatedCompletionDate) throw validationError('Provide both planned start and completion dates for staffing.');
+    }
 
     const project = (await rows(connection, `
       SELECT project_type_id, project_name, project_description, source_version
@@ -89,9 +106,10 @@ export async function createStaffingRequest(
 
     const requestSourcePerson = (await rows(connection, `
       SELECT person_id, full_name
-        FROM people
+        FROM people p
        WHERE person_id = :personId
          AND active_flag = 'Y'
+         AND ${EMPLOYEE_SCOPE_SQL}
     `, { personId: input.requestSourcePersonId }))[0];
     if (!requestSourcePerson) throw validationError('The selected request source is no longer available.');
     const requestSourceName = text(requestSourcePerson, 'full_name');
@@ -241,6 +259,12 @@ export async function createStaffingRequest(
       });
     }
 
+    if (context.responsibleCaptainId) {
+      // Saved with requirements in the SAME transaction. The worker reconciles this durable intent after commit.
+      await connection.execute(`UPDATE requests SET responsible_captain_id=:captainId,agent_enabled='Y'
+        WHERE request_id=:requestId`, { captainId: context.responsibleCaptainId, requestId });
+      return { requestId, agentPending: true };
+    }
     return { requestId };
   });
 }
@@ -252,8 +276,8 @@ export async function createAvailabilityEvent(
   return withOracleTransaction(async (connection) => {
     const scope = await authorizeCreate(connection, context, 'MY_AVAILABILITY');
     if (scope !== 'OWN' || !['POD Lead', 'POD Member'].includes(context.role)
-      || context.actor !== `PREVIEW:${context.role.toUpperCase().replaceAll(' ', '_')}`) throw forbiddenError();
-    const ownPersonId = context.role === 'POD Lead' ? PREVIEW_PERSON_IDS.podLeadPersonId : PREVIEW_PERSON_IDS.podMemberPersonId;
+      || (!context.authenticated && context.actor !== `PREVIEW:${context.role.toUpperCase().replaceAll(' ', '_')}`)) throw forbiddenError();
+    const ownPersonId = context.authenticated ? context.personId : context.role === 'POD Lead' ? PREVIEW_PERSON_IDS.podLeadPersonId : PREVIEW_PERSON_IDS.podMemberPersonId;
     if (input.personId !== ownPersonId) throw forbiddenError('You can only add non-availability for your own profile.');
     const person = (await rows(connection, `
       SELECT person_id
@@ -263,13 +287,19 @@ export async function createAvailabilityEvent(
     `, { personId: input.personId }))[0];
     if (!person) throw validationError('The selected person is no longer available.');
 
+    if (context.authenticated) {
+      await connection.execute('ALTER SESSION DISABLE PARALLEL DML');
+      await connection.execute('ALTER SESSION DISABLE PARALLEL QUERY');
+      await connection.execute('SELECT person_id FROM people WHERE person_id=:personId FOR UPDATE WAIT 5', { personId: ownPersonId });
+    }
+
     try {
       await connection.execute(`
         INSERT INTO availability (
-          person_id, event_type, starts_on, ends_on, title, allocated_hours, created_by
+            person_id, event_type, starts_on, ends_on, title, allocated_hours, created_by${context.authenticated ? ', capacity_kind' : ''}
         ) VALUES (
           :personId, :eventType, TO_DATE(:startsOn, 'YYYY-MM-DD'),
-          TO_DATE(:endsOn, 'YYYY-MM-DD'), :title, :allocatedHours, :createdBy
+            TO_DATE(:endsOn, 'YYYY-MM-DD'), :title, :allocatedHours, :createdBy${context.authenticated ? ", 'NON_AVAILABILITY'" : ''}
         )
       `, { ...input, createdBy: context.actor });
     } catch (error) {

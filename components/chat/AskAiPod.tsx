@@ -1,4 +1,5 @@
 'use client';
+import { staffingFetch } from '@/lib/staffing-fetch';
 
 import { type KeyboardEvent, useEffect, useRef, useState } from 'react';
 
@@ -31,7 +32,7 @@ export function AskAiPod() {
     const controller = new AbortController();
     controllerRef.current = controller;
     try {
-      const response = await fetch('/api/chat', {
+      const response = await staffingFetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-staffing-role': state.role },
         body: JSON.stringify({ message: trimmed }),

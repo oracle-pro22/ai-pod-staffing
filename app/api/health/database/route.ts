@@ -1,4 +1,5 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, type NextRequest } from 'next/server';
+import { agenticEnabled, staffingBackend, type BackendIdentity } from '@/backend/staffing/bridge';
 import oracledb from 'oracledb';
 
 import { publicOracleError, withOracleConnection } from '@/lib/db/oracle';
@@ -12,8 +13,12 @@ type HealthRow = {
   DATABASE_TIME: Date | string;
 };
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    if (agenticEnabled()) {
+      const identity = await staffingBackend(request, '/v1/me') as BackendIdentity;
+      if (!identity.roles.includes('SYSTEM_ADMINISTRATOR')) return NextResponse.json({ error: 'Forbidden' }, { status: 403, headers: { 'Cache-Control': 'no-store' } });
+    }
     const health = await withOracleConnection(async (connection) => {
       const result = await connection.execute<HealthRow>(`
         SELECT USER AS database_user,

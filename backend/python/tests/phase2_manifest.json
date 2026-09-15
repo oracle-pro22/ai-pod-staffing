@@ -1,0 +1,263 @@
+{
+  "migration": "AIPS_BACKEND_P2_V1",
+  "baseline": [
+    "PROJECT_TYPES",
+    "INTERESTS",
+    "PEOPLE",
+    "CUSTOMER_MAPPING",
+    "DELIVERABLES",
+    "DELIVERABLE_SKILLS",
+    "PERSON_INTERESTS",
+    "AVAILABILITY",
+    "REQUESTS",
+    "REQUIREMENTS",
+    "RECOMMENDATIONS",
+    "APP_ROLES",
+    "ROLE_PERMISSIONS",
+    "APP_USER_ROLES"
+  ],
+  "tables": [
+    "STAFFING_POLICIES",
+    "ELIGIBILITY_RULES",
+    "LOAD_GUARDRAILS",
+    "SCORING_WEIGHTS",
+    "AGENT_EXECUTIONS",
+    "AGENT_EXECUTION_EVENTS",
+    "POD_PROPOSALS",
+    "POD_PROPOSAL_MEMBERS",
+    "APPROVAL_DECISIONS",
+    "POD_ASSIGNMENTS",
+    "ASSIGNMENT_DAYS",
+    "PERSON_CAPACITY_DAYS",
+    "AUDIT_EVENTS",
+    "NOTIFICATION_OUTBOX",
+    "STAFFING_RUNTIME"
+  ],
+  "steps": [
+    {
+      "key": "ALTER_PEOPLE",
+      "kind": "TABLE",
+      "name": "PEOPLE"
+    },
+    {
+      "key": "ALTER_REQUESTS",
+      "kind": "TABLE",
+      "name": "REQUESTS"
+    },
+    {
+      "key": "ALTER_REQUIREMENTS",
+      "kind": "TABLE",
+      "name": "REQUIREMENTS"
+    },
+    {
+      "key": "ALTER_AVAILABILITY",
+      "kind": "TABLE",
+      "name": "AVAILABILITY"
+    },
+    {
+      "key": "STAFFING_POLICIES",
+      "kind": "TABLE",
+      "name": "STAFFING_POLICIES"
+    },
+    {
+      "key": "ELIGIBILITY_RULES",
+      "kind": "TABLE",
+      "name": "ELIGIBILITY_RULES"
+    },
+    {
+      "key": "LOAD_GUARDRAILS",
+      "kind": "TABLE",
+      "name": "LOAD_GUARDRAILS"
+    },
+    {
+      "key": "SCORING_WEIGHTS",
+      "kind": "TABLE",
+      "name": "SCORING_WEIGHTS"
+    },
+    {
+      "key": "AGENT_EXECUTIONS",
+      "kind": "TABLE",
+      "name": "AGENT_EXECUTIONS"
+    },
+    {
+      "key": "AGENT_EXECUTION_EVENTS",
+      "kind": "TABLE",
+      "name": "AGENT_EXECUTION_EVENTS"
+    },
+    {
+      "key": "POD_PROPOSALS",
+      "kind": "TABLE",
+      "name": "POD_PROPOSALS"
+    },
+    {
+      "key": "POD_PROPOSAL_MEMBERS",
+      "kind": "TABLE",
+      "name": "POD_PROPOSAL_MEMBERS"
+    },
+    {
+      "key": "APPROVAL_DECISIONS",
+      "kind": "TABLE",
+      "name": "APPROVAL_DECISIONS"
+    },
+    {
+      "key": "POD_ASSIGNMENTS",
+      "kind": "TABLE",
+      "name": "POD_ASSIGNMENTS"
+    },
+    {
+      "key": "ASSIGNMENT_DAYS",
+      "kind": "TABLE",
+      "name": "ASSIGNMENT_DAYS"
+    },
+    {
+      "key": "PERSON_CAPACITY_DAYS",
+      "kind": "TABLE",
+      "name": "PERSON_CAPACITY_DAYS"
+    },
+    {
+      "key": "AUDIT_EVENTS",
+      "kind": "TABLE",
+      "name": "AUDIT_EVENTS"
+    },
+    {
+      "key": "NOTIFICATION_OUTBOX",
+      "kind": "TABLE",
+      "name": "NOTIFICATION_OUTBOX"
+    },
+    {
+      "key": "STAFFING_RUNTIME",
+      "kind": "TABLE",
+      "name": "STAFFING_RUNTIME"
+    },
+    {
+      "key": "P2_EXEC_QUEUE",
+      "kind": "INDEX",
+      "name": "P2_EXEC_QUEUE"
+    },
+    {
+      "key": "P2_EXEC_REQUEST",
+      "kind": "INDEX",
+      "name": "P2_EXEC_REQUEST"
+    },
+    {
+      "key": "P2_EXEC_ACTIVE",
+      "kind": "INDEX",
+      "name": "P2_EXEC_ACTIVE"
+    },
+    {
+      "key": "P2_PROP_REVIEW",
+      "kind": "INDEX",
+      "name": "P2_PROP_REVIEW"
+    },
+    {
+      "key": "P2_ASSIGN_ACTIVE",
+      "kind": "INDEX",
+      "name": "P2_ASSIGN_ACTIVE"
+    },
+    {
+      "key": "P2_ASSIGN_PERSON",
+      "kind": "INDEX",
+      "name": "P2_ASSIGN_PERSON"
+    },
+    {
+      "key": "P2_ASSIGN_DATES",
+      "kind": "INDEX",
+      "name": "P2_ASSIGN_DATES"
+    },
+    {
+      "key": "P2_OUTBOX_PENDING",
+      "kind": "INDEX",
+      "name": "P2_OUTBOX_PENDING"
+    },
+    {
+      "key": "P2_AUDIT_ENTITY",
+      "kind": "INDEX",
+      "name": "P2_AUDIT_ENTITY"
+    },
+    {
+      "key": "P2_CAPTAIN_REQUEST",
+      "kind": "INDEX",
+      "name": "P2_CAPTAIN_REQUEST"
+    },
+    {
+      "key": "P2_AUDIT_APPEND",
+      "kind": "TRIGGER",
+      "name": "P2_AUDIT_APPEND"
+    },
+    {
+      "key": "P2_DECISION_APPEND",
+      "kind": "TRIGGER",
+      "name": "P2_DECISION_APPEND"
+    },
+    {
+      "key": "P2_EVENT_APPEND",
+      "kind": "TRIGGER",
+      "name": "P2_EVENT_APPEND"
+    },
+    {
+      "key": "P2_RULE_FREEZE",
+      "kind": "TRIGGER",
+      "name": "P2_RULE_FREEZE"
+    },
+    {
+      "key": "P2_LOAD_FREEZE",
+      "kind": "TRIGGER",
+      "name": "P2_LOAD_FREEZE"
+    },
+    {
+      "key": "P2_WEIGHT_FREEZE",
+      "kind": "TRIGGER",
+      "name": "P2_WEIGHT_FREEZE"
+    },
+    {
+      "key": "P2_POLICY_FREEZE",
+      "kind": "TRIGGER",
+      "name": "P2_POLICY_FREEZE"
+    },
+    {
+      "key": "P2_MEMBER_FREEZE",
+      "kind": "TRIGGER",
+      "name": "P2_MEMBER_FREEZE"
+    },
+    {
+      "key": "P2_REQUEST_REVISION",
+      "kind": "TRIGGER",
+      "name": "P2_REQUEST_REVISION"
+    },
+    {
+      "key": "P2_AVAIL_VERSION",
+      "kind": "TRIGGER",
+      "name": "P2_AVAIL_VERSION"
+    },
+    {
+      "key": "P2_CAPACITY_VERSION",
+      "kind": "TRIGGER",
+      "name": "P2_CAPACITY_VERSION"
+    },
+    {
+      "key": "P2_DAY_VERSION",
+      "kind": "TRIGGER",
+      "name": "P2_DAY_VERSION"
+    },
+    {
+      "key": "P2_ASSIGN_VERSION",
+      "kind": "TRIGGER",
+      "name": "P2_ASSIGN_VERSION"
+    },
+    {
+      "key": "P2_PROPOSAL_FREEZE",
+      "kind": "TRIGGER",
+      "name": "P2_PROPOSAL_FREEZE"
+    },
+    {
+      "key": "P2_DECISION_REVIEW",
+      "kind": "TRIGGER",
+      "name": "P2_DECISION_REVIEW"
+    },
+    {
+      "key": "P2_DAY_BOUNDS",
+      "kind": "TRIGGER",
+      "name": "P2_DAY_BOUNDS"
+    }
+  ]
+}

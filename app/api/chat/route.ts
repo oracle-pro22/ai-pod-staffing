@@ -4,19 +4,22 @@ import { staffingRequestContext } from '@/lib/auth/staffing-request-context';
 import { staffingApiErrorResponse } from '@/lib/api/staffing-api-response';
 import { validationError } from '@/lib/errors/staffing-api-error';
 import { selectRoleViewModel } from '@/lib/selectors';
+import { agenticEnabled } from '@/backend/staffing/bridge';
+import { authenticatedViewModel } from '@/backend/staffing/view-model';
+import { personAllocationLabel } from '@/lib/formatting';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
   try {
-  const { role } = staffingRequestContext(request);
+  const { role } = await staffingRequestContext(request);
   const body = await request.json().catch(() => { throw validationError('The request body is not valid JSON.'); });
   if (!body || typeof body.message !== 'string' || !body.message.trim() || body.message.length > 4000) {
     throw validationError('Enter a question of up to 4,000 characters.');
   }
   const query = body.message.trim().toLowerCase();
-  const data = selectRoleViewModel(await dataSource.getViewModel(), role);
+  const data = agenticEnabled() ? await authenticatedViewModel(request) : selectRoleViewModel(await dataSource.getViewModel(), role);
   const visibleRequests = data.requests;
   const visiblePeople = data.people;
 
@@ -27,7 +30,7 @@ export async function POST(request: NextRequest) {
   if (matchedPerson) {
     const strongest = matchedPerson.skills.slice(0, 3).map((skill) => `${skill.name} (${skill.strength}/5)`).join(', ') || 'no mapped skills';
     const events = matchedPerson.availability.map((event) => `${event.title}, ${event.startsOn} to ${event.endsOn}`).join('; ') || 'no recorded availability events';
-    answer = `${matchedPerson.name} is ${matchedPerson.allocationPct}% allocated across ${matchedPerson.activePods} active pods. Strongest customer skills: ${strongest}. Availability: ${events}.`;
+    answer = `${matchedPerson.name}: allocation ${personAllocationLabel(matchedPerson)} across ${matchedPerson.activePods} active pods. Strongest customer skills: ${strongest}. Availability: ${events}.`;
   } else if (matchedRequest) {
     const skills = matchedRequest.requiredSkills.map((skill) => skill.name).join(', ');
     const scopedRecommendations = role === 'POD Member'
@@ -38,6 +41,7 @@ export async function POST(request: NextRequest) {
     answer = `${matchedRequest.id} is a ${matchedRequest.projectType.name} request for ${matchedRequest.deliverable.name}. Required skills: ${skills}. Status: ${matchedRequest.status}. ${recommendationLabel}: ${pod}.`;
   } else if (/available|capacity|headroom|allocation/.test(query)) {
     const available = [...visiblePeople]
+      .filter(person => !person.capacityStatus || person.capacityStatus === 'CURRENT')
       .sort((a, b) => a.allocationPct - b.allocationPct)
       .slice(0, 4)
       .map((person) => `${person.name} (${person.allocationPct}%)`)

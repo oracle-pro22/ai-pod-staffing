@@ -1,4 +1,5 @@
 'use client';
+import { formatDate, personAllocationLabel } from '@/lib/formatting';
 
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
@@ -22,7 +23,7 @@ export function CommandCenter() {
   const greetingName = identity?.name.split(' ')[0] ?? 'there';
   const activeRequests = requests.filter((request) => request.status.toLowerCase() !== 'closed');
   const demand = activeRequests.slice(0, 5);
-  const demandWeeks = buildDemandWeeks(activeRequests.map((request) => request.neededBy));
+  const demandWeeks = buildDemandWeeks(activeRequests.map((request) => request.neededBy), Boolean(data.identity));
   const capacityPeople = [...people].sort((a, b) => b.allocationPct - a.allocationPct);
 
   function openRequest(requestId: string) {
@@ -38,7 +39,7 @@ export function CommandCenter() {
 
       <div className="staffing-grid staffing-kpi-grid">
         <KpiCard label="Open requests" value={metrics.openRequests} badge={`${metrics.highPriorityRequests} high priority`} tone="red" />
-        <KpiCard label="Team allocation" value={`${metrics.averageAllocationPct}%`} badge={`${metrics.constrainedPeople} constrained`} tone="amber" />
+        <KpiCard label="Team allocation" value={data.identity && !people.some(p => p.capacityStatus === 'CURRENT') ? 'Needs refresh' : `${metrics.averageAllocationPct}%`} badge={`${metrics.constrainedPeople} constrained`} tone="amber" />
         <KpiCard label="Staffing progress" value={`${metrics.staffingProgressPct}%`} badge={`${metrics.staffedRequests} of ${metrics.openRequests} staffed`} tone="teal" />
         <KpiCard label="Pending recommendations" value={metrics.pendingRecommendations} badge="Advisory" tone="purple" />
       </div>
@@ -66,16 +67,16 @@ export function CommandCenter() {
 
         <Card>
           <CardHeader>
-            <div><h3>{isMember ? 'My Capacity' : 'Capacity watch'}</h3><p>{isMember ? 'Your current allocation and pod commitments' : 'Current allocation from People'}</p></div>
+            <div><h3>{isMember ? 'My Capacity' : 'Capacity watch'}</h3><p>{data.allocationPeriod ? `Planned allocation: ${formatDate(data.allocationPeriod.start)} – ${formatDate(data.allocationPeriod.end)}` : isMember ? 'Your current allocation and pod commitments' : data.identity ? 'Current weekly allocation and confirmed PODs' : 'Current allocation from People'}</p></div>
             <Pill tone="amber">Human approval</Pill>
           </CardHeader>
-          <CardBody>
+          <CardBody className="staffing-capacity-watch-body">
             {(isMember ? (identity ? [identity] : []) : capacityPeople).map((person) => (
               <div className="staffing-capacity-row" key={person.id}>
                 <Avatar initials={person.initials} />
                 <div>
-                  <div className="staffing-cap-name"><b>{person.name}</b><span>{person.allocationPct}%</span></div>
-                  <ProgressBar value={person.allocationPct} tone={allocationTone(person.allocationPct)} />
+                  <div className="staffing-cap-name"><b>{person.name}</b><span>{personAllocationLabel(person)}</span></div>
+                  {data.identity && person.capacityStatus !== 'CURRENT' ? <div className="staffing-progress staffing-capacity-unknown" aria-label="Capacity needs refresh" /> : <ProgressBar value={person.allocationPct} tone={allocationTone(person.allocationPct)} />}
                 </div>
                 <Pill tone={allocationTone(person.allocationPct)}>{person.activePods} pods</Pill>
               </div>
@@ -114,7 +115,7 @@ function MyFitmentPreview() {
       <CardHeader><div><h3>My POD assignment</h3><p>Your approved team and project</p></div><Pill tone="teal">Database</Pill></CardHeader>
       <CardBody>
         {request && recommendation ? <>
-          <div className="staffing-preview-score"><span><b>{request.title}</b><small>{request.id} • {recommendation.roleInPod}</small></span><strong>{recommendation.score}</strong></div>
+          <div className="staffing-preview-score"><span><b>{request.title}</b><small>{request.id} • {recommendation.roleInPod}</small></span>{!data.identity && <strong>{recommendation.score}</strong>}</div>
           <p className="staffing-muted">{recommendation.rationale}</p>
           <Button size="small" onClick={() => { dispatch({ type: 'set-active-request', requestId: request.id }); dispatch({ type: 'open-drawer', drawer: { id: 'request-details', title: request.title, payload: { requestId: request.id } } }); }}>Open my project</Button>
         </> : <div className="staffing-empty compact">No assigned recommendation is available.</div>}
@@ -123,8 +124,9 @@ function MyFitmentPreview() {
   );
 }
 
-function buildDemandWeeks(neededByDates: string[]) {
-  const base = new Date(Date.UTC(2026, 6, 20));
+function buildDemandWeeks(neededByDates: string[], live = false) {
+  const base = live ? new Date() : new Date(Date.UTC(2026, 6, 20));
+  if (live) base.setUTCDate(base.getUTCDate() - (base.getUTCDay() + 6) % 7);
   const weeks = Array.from({ length: 5 }, (_, index) => {
     const start = new Date(base);
     start.setUTCDate(base.getUTCDate() + index * 7);

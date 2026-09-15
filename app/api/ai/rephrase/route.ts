@@ -14,7 +14,7 @@ export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
   try {
-    const context = staffingRequestContext(request);
+    const context = await staffingRequestContext(request);
     const body = await request.json().catch(() => {
       throw new StaffingApiError('The request body is not valid JSON.', 400, 'INVALID_JSON');
     });

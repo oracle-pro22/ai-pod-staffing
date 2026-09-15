@@ -1,4 +1,5 @@
 'use client';
+import { staffingFetch } from '@/lib/staffing-fetch';
 
 import { type FormEvent, type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -31,7 +32,7 @@ export function CreateRequestModal() {
     if (!open) return;
     const controller = new AbortController();
     setSourcePeopleLoading(true);
-    fetch('/api/people', { headers: { 'x-staffing-role': state.role }, cache: 'no-store', signal: controller.signal })
+    staffingFetch('/api/people', { headers: { 'x-staffing-role': state.role }, cache: 'no-store', signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) throw new Error('Lookup unavailable');
         const result = await response.json() as { data: { id: string; name: string }[] };
@@ -158,7 +159,7 @@ export function CreateRequestModal() {
     const form = new FormData(formElement);
     setSaving(true);
     try {
-      const response = await fetch('/api/requests', {
+      const response = await staffingFetch('/api/requests', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -192,7 +193,13 @@ export function CreateRequestModal() {
       formElement.reset();
       close();
       router.refresh();
-      notify('Request saved', `${result.data.requestId} was created successfully.`);
+      notify('Request saved', result.data.agentPending
+        ? `${result.data.requestId} is ready for automatic staffing.`
+        : `${result.data.requestId} was created successfully.`);
+      if (result.data.agentPending) {
+        dispatch({ type: 'set-active-request', requestId: result.data.requestId });
+        dispatch({ type: 'set-screen', screen: 'agent' });
+      }
     } catch {
       notify('Request not saved', 'The database could not be reached. Please try again.');
     } finally {
@@ -252,8 +259,8 @@ export function CreateRequestModal() {
             <FormGroup label="Priority" className="third"><DropdownField name="priority" value={priority} onChange={setPriority} options={[{ value: 'Low', label: 'Low' }, { value: 'Medium', label: 'Medium' }, { value: 'High', label: 'High' }]} /></FormGroup>
             <FormGroup label="Needed by date" className="third"><TextField name="neededBy" required type="date" min={minimumDate} value={neededBy} onChange={(event) => setNeededBy(event.target.value)} /></FormGroup>
             <FormGroup label="Requested pod size" className="third"><DropdownField name="podSize" value={requestedPodSize} onChange={setRequestedPodSize} options={[{ value: '1 lead + 2 contributors', label: '1 lead + 2 contributors' }, { value: '1 lead + 1 contributor', label: '1 lead + 1 contributor' }, { value: '1 lead + 3 contributors', label: '1 lead + 3 contributors' }]} /></FormGroup>
-            <FormGroup label="Estimated start date" className="third"><TextField name="startDate" type="date" min={minimumDate} value={estimatedStartDate} onChange={(event) => changeEstimatedStartDate(event.target.value)} /></FormGroup>
-            <FormGroup label="Estimated completion date" className="third"><TextField name="completionDate" type="date" min={estimatedStartDate || minimumDate} value={estimatedCompletionDate} onChange={(event) => setEstimatedCompletionDate(event.target.value)} /></FormGroup>
+            <FormGroup label="Estimated start date" className="third"><TextField name="startDate" type="date" required={process.env.NEXT_PUBLIC_STAFFING_AGENTIC_ENABLED === 'true'} min={minimumDate} value={estimatedStartDate} onChange={(event) => changeEstimatedStartDate(event.target.value)} /></FormGroup>
+            <FormGroup label="Estimated completion date" className="third"><TextField name="completionDate" type="date" required={process.env.NEXT_PUBLIC_STAFFING_AGENTIC_ENABLED === 'true'} min={estimatedStartDate || minimumDate} value={estimatedCompletionDate} onChange={(event) => setEstimatedCompletionDate(event.target.value)} /></FormGroup>
             <FormGroup label="Estimated effort" className="third"><div className="staffing-effort-control"><TextField aria-label="Estimated effort value" name="effortValue" type="number" min="1" defaultValue="5" /><DropdownField aria-label="Estimated effort unit" name="effortUnit" value={effortUnit} onChange={setEffortUnit} options={[{ value: 'days', label: 'Days' }, { value: 'weeks', label: 'Weeks' }, { value: 'months', label: 'Months' }]} /></div></FormGroup>
           </div>
         </CreateSection>

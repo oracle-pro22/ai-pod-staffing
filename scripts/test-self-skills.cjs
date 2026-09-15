@@ -382,6 +382,70 @@ test('old skill-only clients preserve saved experience; deliverable removals pre
   assert.deepEqual(database.assessments, skills);
 });
 
+test('canonical Python/imported experience is readable as text or native JSON without adding audit metadata', async () => {
+  for (const native of [false, true]) {
+    reset();
+    const canonical = [{ ...experience }];
+    const raw = native ? canonical : JSON.stringify(canonical);
+    database.people['P-006'].DELIVERABLE_EXPERIENCE_JSON = structuredClone(raw);
+    const profile = await getSelfSkills(lead);
+    assert.equal(profile.deliverables.length, 1);
+    assert.deepEqual(profile.deliverables[0], { ...experience, name: 'Launch communication', projectName: 'Service Launch', active: true });
+    assert.deepEqual(database.people['P-006'].DELIVERABLE_EXPERIENCE_JSON, raw);
+    assert.equal(calls.some(({ sql }) => /UPDATE|INSERT|DELETE/.test(sql)), false);
+  }
+});
+
+test('saving an unrelated skill preserves canonical deliverable storage exactly', async () => {
+  for (const native of [false, true]) {
+    reset();
+    const rows = [{ ...experience, importReference: { batch: 'import-v1', sourceRow: 17 } }];
+    const raw = native ? rows : JSON.stringify(rows);
+    database.people['P-001'].DELIVERABLE_EXPERIENCE_JSON = structuredClone(raw);
+    await updateSelfSkills(patch(), member);
+    assert.deepEqual(database.people['P-001'].DELIVERABLE_EXPERIENCE_JSON, raw);
+  }
+});
+
+test('editing one imported deliverable retains untouched entries and extension fields', async () => {
+  reset();
+  const untouched = { ...experience, importReference: { batch: 'import-v1', sourceRow: 17 } };
+  const changed = { ...experience, deliverableId: 'DEL-002', importReference: { batch: 'import-v1', sourceRow: 18 } };
+  database.people['P-001'].DELIVERABLE_EXPERIENCE_JSON = [untouched, changed];
+  await updateSelfSkills(deliveryPatch({ ...experience, deliverableId: 'DEL-002', experience: 'Updated only my demo video evidence.' }), member);
+  const saved = JSON.parse(database.people['P-001'].DELIVERABLE_EXPERIENCE_JSON);
+  assert.deepEqual(saved.find(row => row.deliverableId === 'DEL-001'), untouched);
+  const updated = saved.find(row => row.deliverableId === 'DEL-002');
+  assert.equal(updated.experience, 'Updated only my demo video evidence.');
+  assert.deepEqual(updated.importReference, changed.importReference);
+  assert.equal(updated.name, 'Demo video');
+  assert.equal(updated.source, 'Self-assessment');
+  assert.equal(updated.updatedBy, member.actor);
+  assert.equal('updatedBy' in saved.find(row => row.deliverableId === 'DEL-001'), false);
+});
+
+test('imported missing-catalogue references remain visible by ID and removable without dropping evidence on read', async () => {
+  reset();
+  const canonical = { ...experience, deliverableId: 'DEL-REMOVED' };
+  database.people['P-001'].DELIVERABLE_EXPERIENCE_JSON = JSON.stringify([canonical]);
+  const profile = await getSelfSkills(member);
+  assert.deepEqual(profile.deliverables[0], { ...canonical, name: 'DEL-REMOVED', projectName: '', active: false });
+  assert.deepEqual(JSON.parse(database.people['P-001'].DELIVERABLE_EXPERIENCE_JSON), [canonical]);
+  await updateSelfSkills({ version: 0, removeDeliverableIds: ['DEL-REMOVED'] }, member);
+  assert.equal(database.people['P-001'].DELIVERABLE_EXPERIENCE_JSON, '[]');
+});
+
+test('optional imported metadata is validated when present, without weakening canonical evidence validation', async () => {
+  reset();
+  for (const extra of [{ source: null }, { updatedBy: 42 }, { name: {} }, { interested: 'Y' }, { experienceLevel: 'Unknown' }]) {
+    const raw = JSON.stringify([{ ...experience, ...extra }]);
+    database.people['P-001'].DELIVERABLE_EXPERIENCE_JSON = raw;
+    await assert.rejects(getSelfSkills(member), error => error.code === 'INVALID_DELIVERABLE_PROFILE');
+    await assert.rejects(updateSelfSkills(deliveryPatch(), member), error => error.code === 'INVALID_DELIVERABLE_PROFILE');
+    assert.equal(database.people['P-001'].DELIVERABLE_EXPERIENCE_JSON, raw);
+  }
+});
+
 test('combined saves rollback deliverable JSON when a later skill write fails', async () => {
   reset(); const original = structuredClone(database);
   injectFailure = (sql) => /INSERT INTO person_interests/.test(sql);

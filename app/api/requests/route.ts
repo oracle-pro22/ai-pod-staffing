@@ -6,6 +6,7 @@ import { staffingRequestContext } from '@/lib/auth/staffing-request-context';
 import { StaffingApiError } from '@/lib/errors/staffing-api-error';
 import { createStaffingRequest } from '@/lib/repositories/staffing-mutation-repository';
 import { validateCreateRequestPayload } from '@/lib/validation/staffing-mutations';
+import { agenticEnabled, verifiedCaptain } from '@/backend/staffing/bridge';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -15,7 +16,10 @@ export async function POST(request: NextRequest) {
     if ((process.env.STAFFING_DATA_SOURCE ?? 'oracle').trim().toLowerCase() !== 'oracle') {
       throw new StaffingApiError('Request saving requires the Oracle data source.', 503, 'ORACLE_REQUIRED');
     }
-    const context = staffingRequestContext(request);
+    const identity = agenticEnabled() ? await verifiedCaptain(request) : null;
+    const context = identity
+      ? { role: 'POD Captain' as const, actor: identity.identity_subject, responsibleCaptainId: identity.person_id }
+      : await staffingRequestContext(request);
     const body = await request.json().catch(() => {
       throw new StaffingApiError('The request body is not valid JSON.', 400, 'INVALID_JSON');
     });
@@ -26,7 +30,7 @@ export async function POST(request: NextRequest) {
       { status: 201, headers: { 'Cache-Control': 'no-store' } },
     );
   } catch (error) {
-    if (!(error instanceof StaffingApiError)) console.error('Unable to create staffing request.', error);
+    if (!(error instanceof StaffingApiError)) console.error('Unable to create staffing request.', { type: error instanceof Error ? error.name : 'Unknown' });
     return staffingApiErrorResponse(error);
   }
 }

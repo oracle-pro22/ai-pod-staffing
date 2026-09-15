@@ -8,11 +8,13 @@ import type { StaffingMutationContext } from '@/types/mutations';
 import type { SelfSkillsProfile } from '@/types/self-skills';
 import { validateSelfSkillsPatch } from './validation';
 import { readDeliverableCatalogue, readDeliverableExperience, saveDeliverableExperience } from './deliverables';
+import { assertIdentityMapping } from '@/lib/auth/identity-mapping';
 
 type Row = Record<string, unknown>;
 const options = { outFormat: oracledb.OUT_FORMAT_OBJECT } as const;
 
 function previewPerson(context: StaffingMutationContext): string {
+  if (context.authenticated && context.personId && ['POD Lead', 'POD Member'].includes(context.role)) return context.personId;
   if ((process.env.STAFFING_DATA_SOURCE ?? 'oracle').trim().toLowerCase() !== 'oracle') {
     throw new StaffingApiError('Skills management requires Oracle.', 503, 'ORACLE_REQUIRED');
   }
@@ -25,6 +27,7 @@ function previewPerson(context: StaffingMutationContext): string {
 }
 
 async function authorize(connection: Connection, context: StaffingMutationContext, write: boolean) {
+  await assertIdentityMapping(connection, context);
   const result = await connection.execute<Row>(`
     SELECT rp.access_scope, rp.can_view, rp.can_create, rp.can_update
       FROM role_permissions rp JOIN app_roles ar ON ar.role_code = rp.role_code
@@ -82,7 +85,7 @@ async function readProfile(connection: Connection, personId: string): Promise<Se
     deliverables: savedDeliverables.map(({ deliverableId, experienceLevel, contributionScope, interested, experience, name, projectName }) => {
       const current = allDeliverables.find((row) => row.deliverableId === deliverableId);
       return { deliverableId, experienceLevel, contributionScope, interested, experience,
-        name: current?.name ?? name, projectName: current?.projectName ?? projectName, active: current?.active ?? false };
+        name: current?.name ?? name ?? deliverableId, projectName: current?.projectName ?? projectName ?? '', active: current?.active ?? false };
     }),
     catalogue: allSkills.filter((row) => row.ASSESSMENT_TYPE === 'SELF_RATED')
       .map((row) => ({ skillId: String(row.INTEREST_ID), name: String(row.INTEREST_NAME) })),
@@ -103,7 +106,8 @@ export async function getSelfSkills(context: StaffingMutationContext): Promise<S
     // One consistent version + assessments snapshot, including across concurrent saves.
     await connection.execute('SET TRANSACTION READ ONLY');
     await authorize(connection, context, false);
-    return readProfile(connection, personId);
+    const profile = await readProfile(connection, personId);
+    return { ...profile, identityMode: context.authenticated ? 'authenticated' : 'preview' };
   });
 }
 

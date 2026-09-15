@@ -1,0 +1,17 @@
+[Unit]
+Description=AI Pod Staffing API
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/opc/AIML_INTERNAL_INITIATIVES/AI_POD_STAFFING/backend/python
+EnvironmentFile=/home/opc/AIML_INTERNAL_INITIATIVES/AI_POD_STAFFING/backend/python/.env
+ExecStart=/home/opc/AIML_INTERNAL_INITIATIVES/AI_POD_STAFFING/backend/python/.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8015
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=40
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

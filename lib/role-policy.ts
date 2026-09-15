@@ -51,6 +51,13 @@ export function defaultScreen(role: StaffingRole, authorization?: Authorization)
   return NAVIGATION_ITEMS.find((item) => canAccessScreen(role, item.id, authorization))?.id ?? 'dashboard';
 }
 
+export function personaLandingScreen(role: StaffingRole, authorization?: Authorization): ScreenId {
+  const preferred: Record<StaffingRole, ScreenId> = {
+    'POD Captain': 'dashboard', 'POD Lead': 'requests', 'POD Member': 'interests', Administrator: 'admin',
+  };
+  return canAccessScreen(role, preferred[role], authorization) ? preferred[role] : defaultScreen(role, authorization);
+}
+
 export function canAccessScreen(role: StaffingRole, screen: ScreenId, authorization?: Authorization): boolean {
   return canPerform(role, SCREEN_RESOURCE[screen], 'canView', authorization);
 }

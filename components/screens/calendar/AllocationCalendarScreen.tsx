@@ -9,10 +9,15 @@ import { useStaffingApp } from '@/context/StaffingAppProvider';
 import { canPerform } from '@/lib/role-policy';
 import { selectVisiblePeople, selectVisibleRequests } from '@/lib/selectors';
 import type { StaffingPerson } from '@/types/staffing';
+import { LiveAllocationCalendar } from './LiveAllocationCalendar';
 
 const BASE_WEEK = new Date(Date.UTC(2026, 6, 20));
 
 export function AllocationCalendarScreen() {
+  return process.env.NEXT_PUBLIC_STAFFING_AGENTIC_ENABLED === 'true' ? <LiveAllocationCalendar /> : <PreviewCalendar />;
+}
+
+function PreviewCalendar() {
   const { data, state, dispatch } = useStaffingApp();
   const [skillId, setSkillId] = useState('');
   const [capacity, setCapacity] = useState('All capacity');

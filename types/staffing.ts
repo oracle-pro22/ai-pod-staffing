@@ -50,6 +50,7 @@ export type AvailabilityEvent = {
 };
 
 export type StaffingPerson = {
+  capacityStatus?: string;
   id: string;
   name: string;
   initials: string;
@@ -130,6 +131,7 @@ export type RequestDeliverable = Pick<CatalogDeliverable, 'id' | 'name' | 'note'
 };
 
 export type StaffingRequest = {
+  pastPlannedEnd?: boolean;
   id: string;
   title: string;
   projectType: Pick<CatalogProject, 'id' | 'name' | 'description'>;
@@ -170,6 +172,9 @@ export type StaffingMetrics = {
 };
 
 export type StaffingViewModel = {
+  allocationPeriod?: { start: string; end: string; timezone: string };
+  identity?: { personId: string; role: import('./roles').StaffingRole; fullName?: string;
+    sessionMode?: 'persona'; sessionKey?: string };
   source: StaffingSource;
   catalog: {
     projects: CatalogProject[];

@@ -10,10 +10,15 @@ import { useStaffingApp } from '@/context/StaffingAppProvider';
 import { canPerform } from '@/lib/role-policy';
 import { allocationTone } from '@/lib/formatting';
 import { selectDashboardMetrics, selectVisiblePeople, selectVisibleRequests } from '@/lib/selectors';
+import { LiveReports } from './LiveReports';
 
 const CHART_COLORS = ['#c74634', '#2b6f6d', '#315d84', '#b87b2c', '#66508c', '#8d5b00'];
 
 export function ReportsScreen() {
+  return process.env.NEXT_PUBLIC_STAFFING_AGENTIC_ENABLED === 'true' ? <LiveReports /> : <PreviewReports />;
+}
+
+function PreviewReports() {
   const { data, state } = useStaffingApp();
   const requests = selectVisibleRequests(data, state.role);
   const people = selectVisiblePeople(data, state.role);

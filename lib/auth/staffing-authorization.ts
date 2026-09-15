@@ -5,6 +5,7 @@ import { withOracleConnection } from '@/lib/db/oracle';
 import { forbiddenError } from '@/lib/errors/staffing-api-error';
 import { ROLE_CODES } from '@/types/roles';
 import type { StaffingMutationContext } from '@/types/mutations';
+import { assertIdentityMapping } from './identity-mapping';
 
 /** Preview role validation is separate from future authenticated OCI identity mapping. */
 export async function requireStaffingPermission(
@@ -13,6 +14,7 @@ export async function requireStaffingPermission(
   action: 'canView' | 'canCreate',
 ): Promise<void> {
   await withOracleConnection(async (connection) => {
+    await assertIdentityMapping(connection, context);
     const result = await connection.execute<Record<string, unknown>>(`
       SELECT rp.can_view, rp.can_create, rp.access_scope
         FROM app_roles ar JOIN role_permissions rp ON rp.role_code = ar.role_code

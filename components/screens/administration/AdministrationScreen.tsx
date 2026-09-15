@@ -8,6 +8,7 @@ import { Pill } from '@/components/ui/Pill';
 import { useStaffingApp } from '@/context/StaffingAppProvider';
 import { canPerform, type PermissionAction } from '@/lib/role-policy';
 import { STAFFING_ROLES } from '@/types/roles';
+import { UtilizationSettings } from './UtilizationSettings';
 
 const ACTIONS: { label: string; resource: string; action: PermissionAction }[] = [
   { label: 'Submit requests', resource: 'REQUESTS', action: 'canCreate' },
@@ -26,8 +27,8 @@ export function AdministrationScreen() {
   const pending = () => notify('Feature in progress', 'This workflow will be available in a future release.');
   return <section className="staffing-screen">
     <PageHeader title="Administration" description="Review profile permissions, catalogue configuration, and integration status." actions={<>
-      <Button onClick={() => setRole('POD Member')}>Preview as POD Member</Button>
-      {canPerform(state.role, 'BACKEND_CONFIGURATION', 'canUpdate', data.authorization) ? <Button variant="primary" onClick={pending}>Save changes</Button> : null}
+      {!data.identity && <Button onClick={() => setRole('POD Member')}>Preview as POD Member</Button>}
+      {state.adminTab !== 'rules' && canPerform(state.role, 'BACKEND_CONFIGURATION', 'canUpdate', data.authorization) ? <Button variant="primary" onClick={pending}>Save changes</Button> : null}
     </>} />
     <Card padded>
       <div className="staffing-admin-tabs">{tabs.map(([id, label]) => <button type="button" className={state.adminTab === id ? 'active' : ''} key={id} onClick={() => dispatch({ type: 'set-admin-tab', tab: id })}>{label}</button>)}</div>
@@ -51,9 +52,8 @@ export function AdministrationScreen() {
         {data.catalog.skills.map((skill) => <div className="staffing-taxonomy-item" key={skill.id}><span><b>{skill.name}</b><small>{skill.category}</small></span><Pill tone="teal">Customer controlled</Pill></div>)}
       </div></div> : null}
       {state.adminTab === 'rules' ? <div className="staffing-admin-panel">
-        <h3>Agent rules and load protection</h3>
-        <Notice title="Configuration on hold">Eligibility rules, load guardrails, scoring weights, and execution history are pending team review. Demo fitment is not an active policy engine.</Notice>
-        <Button onClick={pending}>Configure rules</Button>
+        {state.role === 'Administrator' && canPerform(state.role, 'BACKEND_CONFIGURATION', 'canAdminister', data.authorization)
+          ? <UtilizationSettings /> : <Notice title="Administrator access required">Only an Administrator can edit the utilization limit.</Notice>}
       </div> : null}
       {state.adminTab === 'audit' ? <div className="staffing-admin-panel">
         <Notice title="Audit trail on hold">Immutable audit, approval history, and final assignment persistence are not enabled in the current model.</Notice>

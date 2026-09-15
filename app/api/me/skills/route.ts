@@ -10,13 +10,13 @@ const headers = { 'Cache-Control': 'no-store' };
 
 export async function GET(request: NextRequest) {
   try {
-    return NextResponse.json({ data: await getSelfSkills(staffingRequestContext(request)) }, { headers });
+    return NextResponse.json({ data: await getSelfSkills(await staffingRequestContext(request)) }, { headers });
   } catch (error) { return staffingApiErrorResponse(error); }
 }
 
 export async function PATCH(request: NextRequest) {
   try {
-    const context = staffingRequestContext(request);
+    const context = await staffingRequestContext(request);
     const raw = await request.text();
     if (Buffer.byteLength(raw, 'utf8') > 256000) throw validationError('Skills request is too large.');
     let body: unknown;

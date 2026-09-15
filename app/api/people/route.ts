@@ -14,7 +14,7 @@ function requireOracle() {
 export async function GET(request: NextRequest) {
   try {
     requireOracle();
-    const context = staffingRequestContext(request);
+    const context = await staffingRequestContext(request);
     await requireStaffingPermission(context, 'REQUESTS', 'canCreate');
     return NextResponse.json({ data: await listActivePeopleNames() }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) { return staffingApiErrorResponse(error); }
@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     requireOracle();
-    const context = staffingRequestContext(request);
+    const context = await staffingRequestContext(request);
     const body = await request.json().catch(() => { throw validationError('Invalid JSON body.'); });
     const data = await createPerson(validateCreatePerson(body), context);
     return NextResponse.json({ data }, { status: 201, headers: { 'Cache-Control': 'no-store' } });

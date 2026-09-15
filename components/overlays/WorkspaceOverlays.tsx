@@ -1,4 +1,6 @@
 'use client';
+import { staffingFetch } from '@/lib/staffing-fetch';
+import { personAllocationLabel } from '@/lib/formatting';
 
 import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -40,7 +42,7 @@ function QuickAllocationDrawer() {
     notify('Feature in progress', 'This workflow will be available in a future release.');
   }
 
-  return <Drawer open={open} title="Quick allocation" onClose={close} footer={<><Button type="button" onClick={close}>Cancel</Button><Button type="submit" form="quickAllocationForm" variant="primary">Save allocation</Button></>}><form id="quickAllocationForm" onSubmit={save}><div className="staffing-form-grid"><FormGroup label="Person" full><SelectField name="personId">{people.map((person) => <option key={person.id} value={person.id}>{person.name} • {person.allocationPct}%</option>)}</SelectField></FormGroup><FormGroup label="Request" full><SelectField name="requestId">{requests.map((request) => <option key={request.id} value={request.id}>{request.id} • {request.title}</option>)}</SelectField></FormGroup><FormGroup label="Date"><TextField type="date" name="date" defaultValue="2026-07-27" /></FormGroup><FormGroup label="Hours"><TextField type="number" name="hours" min="1" max="8" defaultValue="4" /></FormGroup></div><Notice icon="♢" title="Allocation workflow integration is in progress">Existing database availability remains visible while assignment persistence is being added.</Notice></form></Drawer>;
+  return <Drawer open={open} title="Quick allocation" onClose={close} footer={<><Button type="button" onClick={close}>Cancel</Button><Button type="submit" form="quickAllocationForm" variant="primary">Save allocation</Button></>}><form id="quickAllocationForm" onSubmit={save}><div className="staffing-form-grid"><FormGroup label="Person" full><SelectField name="personId">{people.map((person) => <option key={person.id} value={person.id}>{person.name} • {personAllocationLabel(person)}</option>)}</SelectField></FormGroup><FormGroup label="Request" full><SelectField name="requestId">{requests.map((request) => <option key={request.id} value={request.id}>{request.id} • {request.title}</option>)}</SelectField></FormGroup><FormGroup label="Date"><TextField type="date" name="date" defaultValue="2026-07-27" /></FormGroup><FormGroup label="Hours"><TextField type="number" name="hours" min="1" max="8" defaultValue="4" /></FormGroup></div><Notice icon="♢" title="Allocation workflow integration is in progress">Existing database availability remains visible while assignment persistence is being added.</Notice></form></Drawer>;
 }
 
 function AllocationGuardrailModal() {
@@ -58,7 +60,7 @@ function PersonDetailsDrawer() {
   const visible = selectVisiblePeople(data, state.role);
   const person = visible.find((item) => item.id === personId);
   const close = () => dispatch({ type: 'close-drawer' });
-  return <Drawer open={open} title={person?.name ?? 'Person details'} onClose={close}>{person ? <><div className="staffing-person-drawer-head"><Avatar initials={person.initials} /><div><h3>{person.name}</h3><p>{person.jobTitle} • {person.location}</p></div></div><div className="staffing-reason-grid"><div><span>Allocation</span><strong>{person.allocationPct}%</strong></div><div><span>Active pods</span><strong>{person.activePods}</strong></div><div><span>Mapped skills</span><strong>{person.skills.length}</strong></div></div><h4>Capabilities and evidence</h4>{person.skills.map((skill) => <div className="staffing-person-skill" key={skill.id}><div><b>{skill.name}</b><small>{skill.category}</small></div><span className="staffing-stars">{'★'.repeat(skill.strength)}{'☆'.repeat(5 - skill.strength)}</span><p>{skill.evidence || 'No evidence note recorded'}</p></div>)}</> : <div className="staffing-empty">Person unavailable in the current access scope.</div>}</Drawer>;
+  return <Drawer open={open} title={person?.name ?? 'Person details'} onClose={close}>{person ? <><div className="staffing-person-drawer-head"><Avatar initials={person.initials} /><div><h3>{person.name}</h3><p>{person.jobTitle} • {person.location}</p></div></div><div className="staffing-reason-grid"><div><span>Allocation</span><strong>{personAllocationLabel(person)}</strong></div><div><span>Active pods</span><strong>{person.activePods}</strong></div><div><span>Mapped skills</span><strong>{person.skills.length}</strong></div></div><h4>Capabilities and evidence</h4>{person.skills.map((skill) => <div className="staffing-person-skill" key={skill.id}><div><b>{skill.name}</b><small>{skill.category}</small></div><span className="staffing-stars">{'★'.repeat(skill.strength)}{'☆'.repeat(5 - skill.strength)}</span><p>{skill.evidence || 'No evidence note recorded'}</p></div>)}</> : <div className="staffing-empty">Person unavailable in the current access scope.</div>}</Drawer>;
 }
 
 function AvailabilityDrawer() {
@@ -84,7 +86,7 @@ function AvailabilityDrawer() {
     busy.current = true;
     setSaving(true);
     try {
-      const response = await fetch('/api/availability', {
+      const response = await staffingFetch('/api/availability', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

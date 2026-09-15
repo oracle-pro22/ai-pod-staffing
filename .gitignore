@@ -31,3 +31,17 @@ tmp/
 .cache/
 ~$*
 data/~$*
+
+# Python backend environments, caches and local configuration
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.uv-cache/
+.coverage
+htmlcov/
+*.egg-info/
+backend/python/.env
+backend/python/.env.*
+!backend/python/.env.example

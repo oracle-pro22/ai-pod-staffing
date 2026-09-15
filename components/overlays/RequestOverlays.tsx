@@ -1,6 +1,7 @@
 'use client';
 
 import { CreateRequestModal } from '@/components/overlays/CreateRequestModal';
+import { FinalPodDetails } from '@/components/screens/requests/FinalPodDetails';
 import { Button } from '@/components/ui/Button';
 import { Drawer } from '@/components/ui/Drawer';
 import { FormGroup, TextArea } from '@/components/ui/FormControls';
@@ -29,7 +30,7 @@ function RequestDetailsDrawer() {
   const request = selectVisibleRequests(data, state.role).find((item) => item.id === requestId) ?? null;
   const close = () => dispatch({ type: 'close-drawer' });
   return (
-    <Drawer open={open} title={request?.title ?? 'Request details'} onClose={close} footer={<><Button onClick={close}>Close</Button>{request && canAccessScreen(state.role, 'fitment', data.authorization) ? <Button variant="primary" onClick={() => { dispatch({ type: 'set-active-request', requestId: request.id }); close(); dispatch({ type: 'set-screen', screen: 'fitment' }); }}>Open fitment</Button> : null}{request && request.status.toLowerCase() !== 'closed' && canPerform(state.role, 'PROJECT_CLOSURE', 'canUpdate', data.authorization) ? <Button onClick={() => notify('Feature in progress', 'Project closure will be available in a future release.')}>Close project</Button> : null}</>}>
+    <Drawer open={open} title={request?.title ?? 'Request details'} onClose={close} footer={<><Button onClick={close}>Close</Button>{request && (!data.identity || state.role === 'POD Captain' || state.role === 'Administrator') && canAccessScreen(state.role, 'fitment', data.authorization) ? <Button variant="primary" onClick={() => { dispatch({ type: 'set-active-request', requestId: request.id }); close(); dispatch({ type: 'set-screen', screen: 'fitment' }); }}>Open fitment</Button> : null}{!data.identity && request && request.status.toLowerCase() !== 'closed' && canPerform(state.role, 'PROJECT_CLOSURE', 'canUpdate', data.authorization) ? <Button onClick={() => notify('Feature in progress', 'Project closure will be available in a future release.')}>Close project</Button> : null}</>}>
       {request ? <>
         <Pill tone="blue">{request.id}</Pill><h3>{request.projectType.name}</h3>
         <dl className="staffing-summary-list">
@@ -46,7 +47,8 @@ function RequestDetailsDrawer() {
         <div className="staffing-fit-summary-note"><b>Project description</b><p>{request.projectDescription || 'No project description recorded'}</p></div>
         <div className="staffing-fit-summary-note"><b>Business objectives</b><p>{request.businessObjectives || request.businessContext || 'No business objectives recorded'}</p></div>
         <div className="staffing-fit-summary-note"><b>Expected outcomes</b><p>{request.expectedOutcomes || 'No expected outcomes recorded'}</p></div>
-        <div className="staffing-source-strip"><span>{request.mappingVersion}</span><span>•</span><span>{request.recommendations.length ? `${request.recommendations.length} scoped recommendations` : 'Demo fitment available'}</span></div>
+        {data.identity && open && <FinalPodDetails key={request.id} requestId={request.id} />}
+        <div className="staffing-source-strip"><span>{request.mappingVersion}</span><span>•</span><span>{data.identity ? 'Database-backed request' : request.recommendations.length ? `${request.recommendations.length} scoped recommendations` : 'Demo fitment available'}</span></div>
       </> : <div className="staffing-empty">Request unavailable in the current access scope.</div>}
     </Drawer>
   );
@@ -54,7 +56,7 @@ function RequestDetailsDrawer() {
 
 function ApprovalModal() {
   const { data, state, dispatch, notify } = useStaffingApp();
-  const open = state.modal?.id === 'approve-pod' && canPerform(state.role, 'AI_FITMENT', 'canApprove', data.authorization);
+  const open = !data.identity && state.modal?.id === 'approve-pod' && canPerform(state.role, 'AI_FITMENT', 'canApprove', data.authorization);
   const requestId = typeof state.modal?.payload?.requestId === 'string' ? state.modal.payload.requestId : null;
   const request = selectActiveRequest(data, state.role, requestId);
   const storedRecommendations = selectScopedRecommendations(request, data, state.role);

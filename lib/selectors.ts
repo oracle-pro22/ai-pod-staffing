@@ -19,6 +19,7 @@ export function selectVisibleRequests(
 ): StaffingRequest[] {
   const requests = data.requests;
   if (!canAccessScreen(role, 'requests', data.authorization)) return [];
+  if (data.identity) return requests; // Already record-scoped by the authenticated server projection.
   const scope = rolePermission(role, 'REQUESTS', data.authorization)?.accessScope;
   if (scope === 'full') return requests;
   const person = selectIdentityPerson(data, role);
@@ -32,15 +33,20 @@ export function selectVisiblePeople(
   data: StaffingViewModel,
   role: StaffingRole,
 ): StaffingPerson[] {
+  if (data.identity && data.identity.role !== role) return [];
   const identity = selectIdentityPerson(data, role);
   const permission = rolePermission(role, 'TEAM_SKILLS', data.authorization);
   if (!permission?.canView || permission.accessScope === 'locked') return [];
-  if (permission.accessScope === 'own') return identity ? [identity] : [];
-  if (permission.accessScope === 'full') return data.people;
+  if (role === 'POD Member' || permission.accessScope === 'own') return identity ? [identity] : [];
+  if (data.identity) return data.people; // Independent, server-authorized profile allowlist.
+  if (permission.accessScope === 'full' && (role === 'POD Captain' || role === 'Administrator')) return data.people;
 
   const visibleIds = new Set<string>();
   if (identity) visibleIds.add(identity.id);
   for (const request of selectVisibleRequests(data, role)) {
+    if (role !== 'POD Lead' || request.status.toUpperCase() !== 'STAFFED'
+      || !request.recommendations.some(item => item.personId === identity?.id && isApprovedAssignment(item)
+        && /^(pod[ _-]?)?lead$/i.test(item.roleInPod.trim()))) continue;
     for (const recommendation of request.recommendations.filter(isApprovedAssignment)) visibleIds.add(recommendation.personId);
   }
   return data.people.filter((person) => visibleIds.has(person.id));
@@ -75,6 +81,7 @@ export function selectScopedRecommendations(
 export function selectDashboardMetrics(data: StaffingViewModel, role: StaffingRole) {
   const requests = selectVisibleRequests(data, role);
   const people = selectVisiblePeople(data, role);
+  const knownPeople = people.filter(person => !person.capacityStatus || person.capacityStatus === 'CURRENT');
   const activeRequests = requests.filter((request) => request.status.toLowerCase() !== 'closed');
   const staffedRequests = activeRequests.filter((request) => request.status.toLowerCase() === 'staffed');
   const pendingRecommendations = requests.reduce(
@@ -86,13 +93,13 @@ export function selectDashboardMetrics(data: StaffingViewModel, role: StaffingRo
   return {
     openRequests: activeRequests.length,
     highPriorityRequests: requests.filter((request) => /high|urgent/i.test(request.priority)).length,
-    averageAllocationPct: people.length
-      ? Math.round(people.reduce((total, person) => total + person.allocationPct, 0) / people.length)
+    averageAllocationPct: knownPeople.length
+      ? Math.round(knownPeople.reduce((total, person) => total + person.allocationPct, 0) / knownPeople.length)
       : 0,
     constrainedPeople: people.filter((person) => person.allocationPct >= 70).length,
     staffingProgressPct: activeRequests.length ? Math.round((staffedRequests.length / activeRequests.length) * 100) : 0,
     staffedRequests: staffedRequests.length,
-    pendingRecommendations,
+    pendingRecommendations: data.identity ? data.metrics.pendingRecommendations : pendingRecommendations,
   };
 }
 
@@ -101,7 +108,9 @@ export function selectRoleViewModel(data: StaffingViewModel, role: StaffingRole)
   const enabled = data.authorization.roles.some((item) => item.active && item.name === role && item.code === ROLE_CODES[role]);
   const people = enabled ? selectVisiblePeople(data, role) : [];
   const requests = enabled ? selectVisibleRequests(data, role).map((request) => ({
-    ...request, recommendations: selectScopedRecommendations(request, data, role),
+    ...request, recommendations: selectScopedRecommendations(request, data, role).map(item =>
+      people.some(person => person.id === item.personId) ? item
+        : { ...item, score: 0, rationale: '', matchingSkills: [], factors: [] }),
   })) : [];
   const dashboard = selectDashboardMetrics(data, role);
   return {

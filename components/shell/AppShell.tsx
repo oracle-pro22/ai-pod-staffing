@@ -12,6 +12,7 @@ import { useStaffingApp } from '@/context/StaffingAppProvider';
 import { NotificationDrawer } from './NotificationDrawer';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
+import { PersonaSessionGuard } from './PersonaSession';
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { state } = useStaffingApp();
@@ -28,17 +29,18 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="staffing-shell">
+      <PersonaSessionGuard />
       <Sidebar mobileOpen={mobileNavOpen} onNavigate={() => setMobileNavOpen(false)} />
       {mobileNavOpen && <button type="button" className="staffing-nav-backdrop" aria-label="Close navigation" onClick={() => setMobileNavOpen(false)} />}
       <main className="staffing-main">
         <Topbar onMenu={() => setMobileNavOpen((value) => !value)} />
         <div className="staffing-content">{children}</div>
       </main>
-      <AskAiPod key={state.role} />
+      <AskAiPod key={`ask-ai-${state.role}`} />
       <NotificationDrawer />
       <RequestOverlays />
-      <AddPersonModal key={state.role} />
-      <WorkspaceOverlays key={state.role} />
+      <AddPersonModal key={`add-person-${state.role}`} />
+      <WorkspaceOverlays key={`workspace-overlays-${state.role}`} />
       <ToastHost />
     </div>
   );

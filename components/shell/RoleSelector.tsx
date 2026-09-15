@@ -5,11 +5,15 @@ import { ROLE_CODES, STAFFING_ROLES, type StaffingRole } from '@/types/roles';
 
 export function RoleSelector() {
   const { data, state, setRole, notify } = useStaffingApp();
+  if (data.identity?.sessionMode === 'persona') {
+    return <span className="staffing-persona-current-role" aria-label={`Current profile: ${state.role}`}>{state.role}</span>;
+  }
   return (
     <select
       className="staffing-role-select"
       aria-label="Current role"
       value={state.role}
+      disabled={Boolean(data.identity)}
       onChange={(event) => {
         const role = event.target.value as StaffingRole;
         setRole(role);

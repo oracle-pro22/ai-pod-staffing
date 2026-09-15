@@ -1,4 +1,5 @@
 'use client';
+import { staffingFetch } from '@/lib/staffing-fetch';
 
 import { type TextareaHTMLAttributes, useEffect, useId, useRef, useState } from 'react';
 
@@ -74,7 +75,7 @@ export function AiRephraseTextarea({
     busyCallback.current?.(field, true);
 
     try {
-      const response = await fetch('/api/ai/rephrase', {
+      const response = await staffingFetch('/api/ai/rephrase', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

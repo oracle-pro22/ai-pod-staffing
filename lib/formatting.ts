@@ -1,6 +1,11 @@
 import type { EstimatedEffort, StaffingRequest } from '@/types/staffing';
 import type { Tone } from '@/types/ui';
 
+export function personAllocationLabel(person: { allocationPct: number; capacityStatus?: string }): string {
+  if (person.capacityStatus === 'NO_CAPACITY') return 'No available hours';
+  return person.capacityStatus && person.capacityStatus !== 'CURRENT' ? 'Needs refresh' : `${person.allocationPct}%`;
+}
+
 function parseWorkbookDate(value: string): Date | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
   if (!match) return null;

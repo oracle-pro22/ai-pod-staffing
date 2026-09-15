@@ -17,7 +17,7 @@ export type SelfSkillsProfile = {
   personId: string;
   fullName: string;
   version: number;
-  identityMode: 'preview';
+  identityMode: 'preview' | 'authenticated';
   catalogue: { skillId: string; name: string }[];
   skills: (SkillAssessmentInput & { name: string; source: string })[];
   roleCapabilities: { skillId: string; name: string; roleCode: string }[];
