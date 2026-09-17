@@ -1,6 +1,9 @@
 # Dependencies and Next.js build output
 node_modules/
+node_modules.shared
+scripts/node_modules
 .next/
+.next-dev/
 out/
 
 # Local environment and deployment configuration
@@ -23,3 +26,17 @@ data/*.inspect.ndjson
 # Temporary local files
 tmp/
 .cache/
+data/runtime/
+*.xlsx.backup
+*.xlsx.lock
+*.tmp.xlsx
+
+# Python backend
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
