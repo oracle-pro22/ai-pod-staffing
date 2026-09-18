@@ -10,7 +10,9 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(case_sensitive=False, extra="ignore", hide_input_in_errors=True)
 
     backend_env: Literal["local", "test", "production"] = "local"
-    backend_auth_mode: Literal["oidc", "local"] = "oidc"
+    backend_auth_mode: Literal["oidc", "local", "password"] = "oidc"
+    staffing_session_hours: int = Field(default=8, ge=1, le=24)
+    staffing_mvp_default_password: SecretStr | None = None  # Used by the explicit account import only.
     backend_local_token: SecretStr | None = None
     backend_local_subject: str = ""
     staffing_demo_personas_enabled: bool = False
@@ -64,7 +66,7 @@ class Settings(BaseSettings):
             if (not self.backend_local_token or len(self.backend_local_token.get_secret_value().strip()) < 32
                 or (not self.staffing_demo_personas_enabled and not self.backend_local_subject.strip())):
                 raise ValueError("Local authentication requires a random token and, outside persona mode, a configured subject")
-        if self.backend_env == "production" and not self.oidc_ready:
+        if self.backend_env == "production" and self.backend_auth_mode != "password" and not self.oidc_ready:
             raise ValueError("Production requires configured OIDC issuer, audience and JWKS URL")
         return self
 

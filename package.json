@@ -9,6 +9,8 @@
     "test:agentic": "node --test scripts/test-agentic-integration.cjs",
     "test:skills": "node --test scripts/test-self-skills.cjs",
     "test:personas": "node --test scripts/test-personas.cjs",
+    "test:login": "node --test scripts/test-password-login.cjs",
+    "test:selections": "node --test scripts/test-selections.cjs",
     "start": "next start -p 3001"
   },
   "dependencies": {

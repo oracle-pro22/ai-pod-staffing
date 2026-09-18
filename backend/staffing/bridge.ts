@@ -4,8 +4,10 @@ import type { NextRequest } from 'next/server';
 import { StaffingApiError } from '@/lib/errors/staffing-api-error';
 import { browserRequestOrigin, LOOPBACK_HOSTS, requireSameOrigin } from './request-origin';
 import { PERSONA_COOKIE, PERSONA_PAGE_HEADER, personaModeEnabled, personaSessionKey, requirePersonaMode } from './persona-mode';
+import { PASSWORD_COOKIE, passwordModeEnabled, requirePasswordOrigin } from './password-mode';
 
 export function agenticEnabled(): boolean {
+  passwordModeEnabled(); // Do not fall back to preview when password mode is misconfigured.
   const enabled = process.env.STAFFING_AGENTIC_ENABLED === 'true';
   if (enabled !== (process.env.NEXT_PUBLIC_STAFFING_AGENTIC_ENABLED === 'true')) {
     throw new StaffingApiError('Staffing frontend and backend feature flags must match.', 503, 'AGENTIC_CONFIGURATION');
@@ -22,7 +24,7 @@ export type BackendIdentity = {
 };
 
 export async function staffingBackend(request: NextRequest, path: string, method = 'GET', body?: unknown,
-  options: { personaManagement?: boolean } = {}): Promise<unknown> {
+  options: { personaManagement?: boolean; passwordLogin?: boolean } = {}): Promise<unknown> {
   if (!agenticEnabled()) throw new StaffingApiError('Staffing integration is not enabled.', 503, 'AGENTIC_DISABLED');
   const browserOrigin = browserRequestOrigin(request);
   const endpoint = new URL(process.env.STAFFING_BACKEND_URL || 'http://127.0.0.1:8015');
@@ -32,8 +34,24 @@ export async function staffingBackend(request: NextRequest, path: string, method
     throw new StaffingApiError('Invalid staffing backend configuration.', 503, 'BACKEND_CONFIGURATION');
   }
   const personas = personaModeEnabled();
+  const passwords = passwordModeEnabled();
   let authorization: string | null = null;
-  if (personas || options.personaManagement) {
+  if (passwords) {
+    requirePasswordOrigin(request, !['GET', 'HEAD'].includes(request.method));
+    if (options.personaManagement) throw new StaffingApiError('Profile selection is disabled.', 404, 'PERSONAS_DISABLED');
+    if (options.passwordLogin) {
+      if (path !== '/v1/auth/password/login' || method !== 'POST') throw new StaffingApiError('Invalid login operation.', 403, 'FORBIDDEN');
+    } else {
+      const selected = request.cookies.get(PASSWORD_COOKIE)?.value;
+      if (!selected) throw new StaffingApiError('Sign in to continue.', 401, 'SIGN_IN_REQUIRED');
+      if (request.headers.get(PERSONA_PAGE_HEADER) !== personaSessionKey(selected)) {
+        throw new StaffingApiError('Your account changed. Reload the workspace.', 409, 'PERSONA_CHANGED');
+      }
+      authorization = `Bearer ${selected}`;
+    }
+  } else if (options.passwordLogin) {
+    throw new StaffingApiError('Password sign-in is disabled.', 404, 'PASSWORD_LOGIN_DISABLED');
+  } else if (personas || options.personaManagement) {
     requirePersonaMode(request);
     if (!loopback) throw new StaffingApiError('Profile selection requires the local backend.', 503, 'LOCAL_AUTH_RESTRICTED');
     if (options.personaManagement) {
@@ -56,7 +74,7 @@ export async function staffingBackend(request: NextRequest, path: string, method
     // Enterprise cookie is verified independently by Python. Browser role headers grant nothing.
     authorization = request.headers.get('authorization');
   }
-  if (!personas && !authorization) {
+  if (!passwords && !personas && !authorization) {
     const token = request.cookies.get('staffing_access_token')?.value;
     if (token) authorization = `Bearer ${token}`;
   }
@@ -69,14 +87,14 @@ export async function staffingBackend(request: NextRequest, path: string, method
     const token = process.env.STAFFING_BACKEND_LOCAL_TOKEN;
     if (token && token.length >= 32) authorization = `Bearer ${token}`;
   }
-  if (!authorization) throw new StaffingApiError('Sign in with your staffing identity.', 401, 'SIGN_IN_REQUIRED');
+  if (!authorization && !(passwords && options.passwordLogin)) throw new StaffingApiError('Sign in with your staffing identity.', 401, 'SIGN_IN_REQUIRED');
   if (request.method !== 'GET' && request.method !== 'HEAD') {
     requireSameOrigin(request);
   }
   let response: Response;
   try {
     response = await fetch(new URL(path, endpoint), { method, cache: 'no-store', redirect: 'error',
-      headers: { Authorization: authorization, 'Content-Type': 'application/json' },
+      headers: { ...(authorization ? { Authorization: authorization } : {}), 'Content-Type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(30000) });
   } catch {
     throw new StaffingApiError('Staffing backend could not be reached. Check the operation status before retrying a save.', 503, 'BACKEND_UNAVAILABLE');

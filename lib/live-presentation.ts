@@ -37,7 +37,9 @@ export function executionProgress(status: string | undefined, events: { stage: s
   if (status === 'READY_FOR_REVIEW') return 6;
   if (events.some(e => e.stage === 'planning')) return 5;
   if (events.some(e => e.stage === 'rules')) return 4;
-  if (events.some(e => e.stage === 'evidence')) return 3;
+  if (events.some(e => e.stage === 'analysis' || e.stage === 'analyst')) return 3;
+  if (events.some(e => e.stage === 'supervisor')) return 2;
+  if (events.some(e => e.stage === 'evidence')) return 1;
   return events.some(e => e.stage === 'worker') ? 1 : 0;
 }
 

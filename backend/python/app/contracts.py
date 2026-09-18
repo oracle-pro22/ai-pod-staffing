@@ -149,6 +149,7 @@ class Proposal(Contract):
 class CaptainDecision(Contract):
     proposal_id: EntityId
     proposal_version: int = Field(ge=1, strict=True)
+    selection_id: EntityId | None = None
     action: Literal["APPROVED", "REJECTED"]
     reason: str = Field(default="", max_length=2000)
     idempotency_key: str = Field(min_length=16, max_length=100, pattern=r"^[A-Za-z0-9_-]+$")

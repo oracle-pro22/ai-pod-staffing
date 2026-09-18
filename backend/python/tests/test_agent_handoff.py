@@ -124,15 +124,18 @@ class HandoffGraphTests(unittest.TestCase):
         source = complete_context()
         option = find_options(source).options[0]
         model = ScriptedModel([
+            [("delegate_analysis", {})],
             *evidence_calls(),
             [("complete_analysis", {**analysis_values(), "clarification_questions": [
                 "What proposed hour split should be used across the lead and two members?"]})],
             [("complete_analysis", analysis_values(clarification_fields=["projected_allocation_pct"]))],
             [("complete_analysis", analysis_values())],
+            [("delegate_planning", {})],
             [("get_validated_options", {})],
             [("complete_plan", {"plan_id": option.plan_id,
                 "explanation": "The returned plan supplies meaningful contributions within known capacity.",
                 "evidence_refs": sorted(required_plan_references(source, option.proposal))})],
+            [("finish_review", {})],
         ])
         store, item = BudgetedMemoryStore(), job(source)
         item.checkpoint = new_checkpoint()
@@ -140,7 +143,8 @@ class HandoffGraphTests(unittest.TestCase):
         self.assertEqual(result["outcome"], "READY_FOR_REVIEW")
         self.assertEqual(item.checkpoint["analyst_model_calls"], 6)
         self.assertEqual(item.checkpoint["planner_model_calls"], 2)
-        self.assertEqual(item.checkpoint["model_calls"], 8)
+        self.assertEqual(item.checkpoint["model_calls"], 11)
+        self.assertEqual(item.checkpoint["supervisor_model_calls"], 3)
         self.assertEqual(item.checkpoint["analysis"]["clarification_questions"], [])
         self.assertEqual([member.hours for member in store.published[0].proposal.members], [Decimal(8)] * 3)
         self.assertEqual(sum(day.hours for member in store.published[0].proposal.members
@@ -150,8 +154,8 @@ class HandoffGraphTests(unittest.TestCase):
     def test_genuine_missing_input_still_stops_before_planning(self):
         source = complete_context()
         source.context["business_objectives"] = ""
-        model = ScriptedModel([*evidence_calls(), [("complete_analysis",
-            analysis_values(clarification_fields=["business_objectives"]))]])
+        model = ScriptedModel([[("delegate_analysis", {})], *evidence_calls(), [("complete_analysis",
+            analysis_values(clarification_fields=["business_objectives"]))], [("request_clarification", {})]])
         store, item = BudgetedMemoryStore(), job(source)
         item.checkpoint = new_checkpoint()
         self.assertEqual(StaffingWorkflow(store, item, lambda: model).run()["outcome"], "NEEDS_INFORMATION")
@@ -163,7 +167,8 @@ class HandoffGraphTests(unittest.TestCase):
         source = complete_context()
         source.ledgers.clear()
         source.exclusions.update({person.person_id: "CAPACITY_UNKNOWN" for person in source.candidates})
-        model = ScriptedModel([*evidence_calls(), [("complete_analysis", analysis_values())]])
+        model = ScriptedModel([[("delegate_analysis", {})], *evidence_calls(), [("complete_analysis", analysis_values())],
+                               [("delegate_planning", {})]])
         store, item = BudgetedMemoryStore(), job(source)
         item.checkpoint = new_checkpoint()
         self.assertEqual(StaffingWorkflow(store, item, lambda: model).run()["outcome"], "NEEDS_INFORMATION")

@@ -7,6 +7,7 @@ import {
   useEffect,
   useId,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 
@@ -19,6 +20,7 @@ type PersonComboboxProps = {
   disabled?: boolean;
   required?: boolean;
   placeholder?: string;
+  'aria-label'?: string;
   'aria-labelledby'?: string;
 };
 
@@ -29,6 +31,7 @@ export function PersonCombobox({
   disabled = false,
   required = false,
   placeholder = 'Search people by name',
+  'aria-label': ariaLabel,
   'aria-labelledby': ariaLabelledBy,
 }: PersonComboboxProps) {
   const listboxId = useId();
@@ -36,15 +39,23 @@ export function PersonCombobox({
   const [query, setQuery] = useState(selectedPerson?.name ?? '');
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
+  const clearingSelectionForSearch = useRef(false);
 
   useEffect(() => {
+    if (clearingSelectionForSearch.current && !value) {
+      clearingSelectionForSearch.current = false;
+      return;
+    }
+    clearingSelectionForSearch.current = false;
     setQuery(selectedPerson?.name ?? '');
-  }, [selectedPerson?.id, selectedPerson?.name]);
+  }, [selectedPerson?.id, selectedPerson?.name, value]);
 
   const matches = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase();
     return people
-      .filter((person) => !normalizedQuery || person.name.toLocaleLowerCase().includes(normalizedQuery))
+      .filter((person) => !normalizedQuery
+        || person.name.toLocaleLowerCase().includes(normalizedQuery)
+        || person.id.toLocaleLowerCase().includes(normalizedQuery))
       .sort((left, right) => left.name.localeCompare(right.name));
   }, [people, query]);
 
@@ -53,12 +64,14 @@ export function PersonCombobox({
   }, [matches.length]);
 
   function selectPerson(person: Pick<StaffingPerson, 'id' | 'name'>) {
+    clearingSelectionForSearch.current = false;
     onChange(person.id);
     setQuery(person.name);
     setOpen(false);
   }
 
   function changeQuery(event: ChangeEvent<HTMLInputElement>) {
+    clearingSelectionForSearch.current = true;
     setQuery(event.target.value);
     if (value) onChange('');
     setActiveIndex(0);
@@ -92,6 +105,7 @@ export function PersonCombobox({
         className="staffing-field"
         type="text"
         role="combobox"
+        aria-label={ariaLabel}
         aria-labelledby={ariaLabelledBy}
         aria-autocomplete="list"
         aria-expanded={open}

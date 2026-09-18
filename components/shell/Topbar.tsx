@@ -37,7 +37,7 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
           />
         </label>
         <RoleSelector />
-        {data.identity?.sessionMode === 'persona' ? <ChangePersonaButton /> : data.identity &&
+        {data.identity?.sessionMode === 'password' ? <ChangePersonaButton password /> : data.identity?.sessionMode === 'persona' ? <ChangePersonaButton /> : data.identity &&
           <form method="post" action="/api/auth/logout"><button type="submit" className="staffing-btn">Sign out</button></form>}
         <button
           type="button"

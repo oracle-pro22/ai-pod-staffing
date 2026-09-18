@@ -804,16 +804,109 @@
 }
 .staffing-create-request-modal .staffing-select { padding-inline: 13px 38px; color: #292622; cursor: pointer; }
 .staffing-create-request-modal .staffing-select:disabled { cursor: not-allowed; background-color: #f5f2ee; }
-.staffing-create-request-modal .staffing-person-options {
+:is(.staffing-create-request-modal, .staffing-manual-override-modal) .staffing-person-options {
   top: calc(100% + 7px);
   padding: 7px;
   border-color: #ded8d1;
   border-radius: 13px;
   box-shadow: 0 16px 36px rgba(37, 32, 27, .16);
 }
-.staffing-create-request-modal .staffing-person-options button { padding: 10px 12px; border-radius: 9px; font-size: 14px; }
-.staffing-create-request-modal .staffing-person-options button:hover,
-.staffing-create-request-modal .staffing-person-options button.active { color: #a83a2c; background: #fff0ec; }
+:is(.staffing-create-request-modal, .staffing-manual-override-modal) .staffing-person-options button { padding: 10px 12px; border-radius: 9px; font-size: 14px; }
+:is(.staffing-create-request-modal, .staffing-manual-override-modal) .staffing-person-options button:hover,
+:is(.staffing-create-request-modal, .staffing-manual-override-modal) .staffing-person-options button.active { color: #a83a2c; background: #fff0ec; }
+.staffing-manual-override-modal { width: min(700px, 100%); }
+.staffing-manual-override-modal .staffing-modal-head { padding: 17px 20px; }
+.staffing-manual-override-modal .staffing-modal-head h3 { font-size: 19px; }
+.staffing-manual-override-modal .staffing-modal-head p { max-width: 560px; margin-top: 5px; font-size: 11px; line-height: 1.45; }
+.staffing-manual-override-modal .staffing-modal-body { padding: 16px 18px; }
+.staffing-manual-override-modal .staffing-modal-foot { padding: 12px 18px; }
+.staffing-manual-policy {
+  padding: 11px 12px;
+  border: 1px solid #e7d5a4;
+  border-radius: 11px;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 9px;
+  color: #594a2d;
+  background: #fff9ea;
+}
+.staffing-manual-policy > span {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #795000;
+  background: #ffe9b6;
+  font-size: 12px;
+  font-weight: 800;
+}
+.staffing-manual-policy b { display: block; color: #3c3323; font-size: 12px; }
+.staffing-manual-policy p { margin: 3px 0 0; color: #746443; font-size: 10.5px; line-height: 1.45; }
+.staffing-manual-slots { margin-top: 12px; display: grid; gap: 9px; }
+.staffing-manual-slot { padding: 11px 12px 12px; border: 1px solid var(--staffing-border); border-radius: 12px; background: #fcfbf8; }
+.staffing-manual-slot-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.staffing-manual-slot-head > div { min-width: 0; display: grid; }
+.staffing-manual-slot-head > div > span { color: var(--staffing-ink-3); font-size: 9px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+.staffing-manual-slot-head b { margin-top: 1px; font-size: 12.5px; }
+.staffing-manual-check {
+  min-height: 30px;
+  padding: 5px 9px;
+  border: 1px solid var(--staffing-border);
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--staffing-ink-2);
+  background: #fff;
+  font-size: 10.5px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.staffing-manual-check.active { color: #286765; border-color: #a9cec8; background: var(--staffing-teal-soft); }
+.staffing-manual-check input { width: 15px; height: 15px; margin: 0; accent-color: var(--staffing-teal); }
+.staffing-manual-check:has(input:disabled) { cursor: default; opacity: .72; }
+.staffing-manual-person { margin-top: 8px; display: grid; gap: 4px; }
+.staffing-manual-person > span { color: var(--staffing-ink-3); font-size: 10px; font-weight: 650; }
+.staffing-manual-override-modal .staffing-person-combobox { margin-top: 0; }
+.staffing-manual-override-modal .staffing-person-combobox .staffing-field {
+  min-height: 39px;
+  padding-block: 8px;
+  border-color: #d9d3cc;
+  border-radius: 10px;
+  background-color: #fff;
+  box-shadow: 0 1px 2px rgba(31, 27, 23, .025);
+  font-size: 13px;
+  transition: border-color .16s ease, box-shadow .16s ease;
+}
+.staffing-manual-override-modal .staffing-person-combobox .staffing-field:hover:not(:disabled) { border-color: #bdb5ac; }
+.staffing-manual-override-modal .staffing-person-combobox .staffing-field:focus {
+  border-color: #c86858;
+  box-shadow: 0 0 0 3px rgba(199, 70, 52, .1);
+}
+.staffing-manual-readiness {
+  margin-top: 11px;
+  padding: 8px 10px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #6d6254;
+  background: #f4f1ed;
+  font-size: 10.5px;
+}
+.staffing-manual-readiness > span { width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; background: #e7e2dc; font-size: 10px; font-weight: 800; }
+.staffing-manual-readiness.ready { color: var(--staffing-green); background: var(--staffing-green-soft); }
+.staffing-manual-readiness.ready > span { color: #fff; background: var(--staffing-green); }
+@media (max-width: 600px) {
+  .staffing-manual-override-modal .staffing-modal-head,
+  .staffing-manual-override-modal .staffing-modal-body,
+  .staffing-manual-override-modal .staffing-modal-foot { padding-inline: 14px; }
+  .staffing-manual-slot-head { align-items: flex-start; flex-direction: column; gap: 7px; }
+  .staffing-manual-check { align-self: flex-start; }
+  .staffing-manual-override-modal .staffing-modal-foot-actions { width: 100%; display: grid; grid-template-columns: 1fr 1fr; }
+  .staffing-manual-override-modal .staffing-modal-foot-actions .staffing-btn { width: 100%; }
+}
 .staffing-create-request-modal .staffing-dropdown { position: relative; min-width: 0; }
 .staffing-create-request-modal .staffing-dropdown-trigger {
   width: 100%;
@@ -929,6 +1022,9 @@
 .staffing-candidate-main { min-width: 0; flex: 1; }
 .staffing-candidate-name { font-weight: 760; }
 .staffing-candidate-meta, .staffing-candidate-foot { color: var(--staffing-ink-3); font-size: 11px; }
+.staffing-candidate-choice { margin-top: 12px; display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.staffing-candidate-choice > span { color: var(--staffing-ink-3); font-size: 11px; }
+.staffing-candidate-choice .staffing-btn { min-width: 82px; }
 .staffing-score { color: var(--staffing-teal); font-size: 20px; font-weight: 790; }
 .staffing-rationale { margin: 13px 0; padding-left: 10px; border-left: 3px solid var(--staffing-teal); color: var(--staffing-ink-2); font-size: 12px; }
 .staffing-inline-actions { display: flex; align-items: center; gap: 8px; }
@@ -1147,6 +1243,75 @@
 .staffing-persona-current-role { display: inline-flex; align-items: center; padding: 12px 16px; border: 1px solid var(--staffing-border); border-radius: 14px; background: white; font-weight: 600; white-space: nowrap; }
 .staffing-live-review .staffing-candidate:last-child { margin-bottom: 0; }
 .staffing-live-review .staffing-candidate-name, .staffing-live-review .staffing-rationale { overflow-wrap: anywhere; }
+
+/* Compact, predictable hierarchy for the full AI Fitment review. */
+.staffing-live-review .staffing-page-head { margin-bottom: 16px; }
+.staffing-live-review .staffing-page-head h2 { font-size: 25px; }
+.staffing-live-review .staffing-page-head p { margin-top: 5px; font-size: 13px; }
+.staffing-live-review .staffing-fit-layout {
+  grid-template-columns: minmax(270px, .64fr) minmax(0, 1.56fr);
+  gap: 14px;
+  align-items: start;
+}
+.staffing-fit-review-actions { width: min(520px, 46vw); gap: 8px; }
+.staffing-fit-review-actions > .staffing-inline-actions { justify-content: flex-end; gap: 7px; }
+.staffing-live-review .staffing-fitment-picker .staffing-select { min-height: 38px; padding-block: 8px; }
+.staffing-live-review .staffing-fit-review-actions .staffing-btn { min-height: 36px; padding: 8px 12px; }
+.staffing-live-review .staffing-request-summary { padding: 15px; }
+.staffing-live-review .staffing-summary-title { margin-top: 8px; font-size: 17px; }
+.staffing-live-review .staffing-summary-list { margin: 13px 0; }
+.staffing-live-review .staffing-summary-list > div { grid-template-columns: 104px 1fr; gap: 10px; padding: 8px 0; }
+.staffing-live-review .staffing-fit-summary-note { margin-top: 10px; padding: 10px 11px; }
+.staffing-live-review .staffing-fit-results {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.staffing-live-review .staffing-fit-results > * { min-width: 0; }
+.staffing-live-review .staffing-fit-results > :is(.staffing-card, .staffing-source-strip, .staffing-section-gap, .staffing-muted) {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+.staffing-live-review .staffing-selection-summary { padding: 15px 16px; }
+.staffing-selection-summary-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px 18px;
+}
+.staffing-selection-summary-head h3 { margin: 0; font-size: 15px; line-height: 1.3; }
+.staffing-selection-summary-head p { margin: 4px 0 0; color: var(--staffing-ink-3); font-size: 11px; }
+.staffing-selection-summary-head .staffing-btn { align-self: start; }
+.staffing-selection-original {
+  margin: 12px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--staffing-border-2);
+  color: var(--staffing-ink-2);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.staffing-live-review .staffing-fit-factors { margin: 0; padding: 15px 16px; }
+.staffing-live-review .staffing-explain-title { font-size: 14px; }
+.staffing-live-review .staffing-explain-title small { font-size: 11px; font-weight: 500; }
+.staffing-live-review .staffing-spark { width: 26px; height: 26px; }
+.staffing-live-review .staffing-factor {
+  grid-template-columns: minmax(118px, .48fr) minmax(90px, 1fr) 62px;
+  gap: 9px;
+  margin: 8px 0;
+}
+.staffing-live-review .staffing-fit-results .staffing-card-head { padding: 13px 15px; }
+.staffing-live-review .staffing-fit-results .staffing-card-head h3 { font-size: 14px; }
+.staffing-live-review .staffing-fit-results .staffing-card-head p { font-size: 11px; }
+.staffing-live-review .staffing-fit-results .staffing-card-body { padding: 14px; }
+.staffing-live-review .staffing-candidate { margin-bottom: 10px; padding: 13px; border-radius: 12px; }
+.staffing-live-review .staffing-candidate-head { gap: 10px; }
+.staffing-live-review .staffing-candidate-head .staffing-avatar { width: 38px; height: 38px; }
+.staffing-live-review .staffing-candidate-name { font-size: 13px; }
+.staffing-live-review .staffing-score { font-size: 18px; }
+.staffing-live-review .staffing-rationale { margin: 10px 0; font-size: 11px; line-height: 1.45; }
+.staffing-live-review .staffing-candidate-foot { gap: 6px 14px; font-size: 10px; }
+.staffing-live-review .staffing-candidate-choice { margin-top: 10px; }
 .staffing-live-console { min-height: 290px; max-height: 440px; overflow-wrap: anywhere; }
 .staffing-live-console > div { margin-bottom: 8px; }
 .staffing-live-review .staffing-step.active .staffing-step-icon { animation: staffing-stage-pulse 1.5s ease-in-out infinite; }
@@ -1165,12 +1330,17 @@
   .staffing-live-review .staffing-fit-layout { grid-template-columns: minmax(0, 1fr); }
   .staffing-live-review .staffing-request-summary { position: static; }
   .staffing-fit-review-actions { width: 100%; }
+  .staffing-fit-review-actions > .staffing-inline-actions { justify-content: flex-start; }
   .staffing-live-review .staffing-agent-shell { grid-template-columns: minmax(0, 1fr); }
   .staffing-execution-actions .staffing-fitment-picker { width: min(400px, 100%); }
 }
 @media (max-width: 640px) {
   .staffing-live-review .staffing-factor { grid-template-columns: minmax(100px, .8fr) minmax(50px, 1fr) 60px; }
   .staffing-live-review .staffing-request-summary { position: static; }
+  .staffing-selection-summary-head { grid-template-columns: minmax(0, 1fr); }
+  .staffing-selection-summary-head .staffing-btn { justify-self: start; }
+  .staffing-live-review .staffing-candidate-choice { align-items: flex-start; flex-direction: column; }
+  .staffing-live-review .staffing-candidate-choice .staffing-btn { align-self: flex-end; }
 }
 .staffing-self-skill-row > div { min-width: 0; overflow-wrap: anywhere; }
 .staffing-self-skill-row small { display: block; }

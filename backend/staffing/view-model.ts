@@ -8,6 +8,7 @@ import type { LiveWorkspace } from '@/types/assignments';
 import { StaffingApiError } from '@/lib/errors/staffing-api-error';
 import { PERSONA_COOKIE, personaModeEnabled, personaSessionKey } from './persona-mode';
 import { liveStatusLabel } from '@/lib/live-presentation';
+import { PASSWORD_COOKIE, passwordModeEnabled } from './password-mode';
 
 /** Filter on the server BEFORE any model reaches React/browser. Never serialize raw authorization mappings. */
 export async function authenticatedViewModel(request: NextRequest): Promise<StaffingViewModel> {
@@ -59,12 +60,13 @@ export async function authenticatedViewModel(request: NextRequest): Promise<Staf
   const known = people.filter(p => p.capacityStatus === 'CURRENT');
   const adminRoles = identity.roles.includes('SYSTEM_ADMINISTRATOR') && identity.permissions.some(p =>
     p.role === 'SYSTEM_ADMINISTRATOR' && p.resource === 'ADMINISTRATION' && p.scope === 'FULL' && p.actions.includes('view'));
-  const selectedToken = personaModeEnabled() ? request.cookies.get(PERSONA_COOKIE)?.value : undefined;
+  const passwords = passwordModeEnabled();
+  const selectedToken = passwords ? request.cookies.get(PASSWORD_COOKIE)?.value : personaModeEnabled() ? request.cookies.get(PERSONA_COOKIE)?.value : undefined;
   return { ...raw, people, requests,
     allocationPeriod: teamSnapshot ? { start: teamSnapshot.week_start, end: teamSnapshot.week_end, timezone: teamSnapshot.timezone } : undefined,
     identity: { personId: identity.person_id, role,
     ...(identity.full_name ? { fullName: identity.full_name } : {}),
-    ...(selectedToken ? { sessionMode: 'persona' as const, sessionKey: personaSessionKey(selectedToken) } : {}) },
+    ...(selectedToken ? { sessionMode: passwords ? 'password' as const : 'persona' as const, sessionKey: personaSessionKey(selectedToken) } : {}) },
     demoIdentity: { podCaptainPersonId: identity.person_id, podLeadPersonId: identity.person_id, podMemberPersonId: identity.person_id },
     authorization: { roles: adminRoles ? raw.authorization.roles : roles, userRoles: [] }, integrity: { checked: true, counts: { visible_people: people.length, visible_requests: requests.length } },
     metrics: { ...raw.metrics, people: people.length, requests: requests.length, openRequests: requests.filter(r => r.status !== 'Closed').length,

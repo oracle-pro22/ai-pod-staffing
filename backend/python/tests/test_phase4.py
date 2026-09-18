@@ -40,6 +40,8 @@ class DecisionTests(unittest.TestCase):
                 self.commands.clear()
         self.store = DecisionStore(SimpleNamespace(write=write), self.settings)
         self.patches = [patch("app.decisions.rows", side_effect=self.read), patch("app.decisions.execute", side_effect=self.execute),
+                        patch("app.selections.rows", side_effect=self.read),
+                        patch("app.manual_store.rows", side_effect=self.read),
                         patch('app.policy_admin.rows', side_effect=lambda *_a, **_kw: [{'policy_version': self.data.policy.version}]),
                         patch("app.decisions.collect_evidence", side_effect=self.collect),
                         patch("app.notifications.rows", return_value=[{"email_address": "person@example.test"}]),
@@ -110,6 +112,14 @@ class DecisionTests(unittest.TestCase):
         self.assertTrue(any("INSERT INTO approval_decisions" in sql and binds["reasonText"] == "Need stronger launch experience" for sql, binds in self.committed))
         self.assertFalse(any("INSERT INTO pod_assignments" in sql for sql, _ in self.committed))
         self.assertNotIn("fresh-capacity", self.order)
+
+    def test_pending_manual_draft_blocks_deciding_original_recommendation(self):
+        with patch('app.manual_store.pending_manual', return_value={'draft_id': 'MD-1'}):
+            for action in ('APPROVED', 'REJECTED'):
+                with self.subTest(action=action), self.assertRaises(ServiceError) as error:
+                    self.decide(action, reason='Review manual choice')
+                self.assertEqual(error.exception.code, 'MANUAL_DRAFT_ACTIVE')
+        self.assertFalse(self.committed)
 
     def test_disabled_decisions_do_not_write(self):
         self.settings.staffing_decisions_enabled = False

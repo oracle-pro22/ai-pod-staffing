@@ -98,6 +98,9 @@ class ExecutionStore:
                 return prior[0]
             if request["status"] not in ("NEEDS_RECOMMENDATION", "IN_REVIEW"):
                 raise ServiceError("REQUEST_NOT_RUNNABLE", "Only open unstaffed requests can be evaluated.", 409)
+            from app.manual_store import pending_manual
+            if pending_manual(connection, request_id, request['request_revision']):
+                raise ServiceError('MANUAL_DRAFT_ACTIVE', 'Review or discard the manual draft before running fitment.', 409)
             active = rows(connection, """SELECT execution_id,request_id,request_revision,status FROM agent_executions
                 WHERE request_id=:requestId AND request_revision=:requestRevision AND status IN ('QUEUED','RUNNING')""",
                 requestId=request_id, requestRevision=request["request_revision"])
@@ -147,7 +150,7 @@ class ExecutionStore:
                 self.enqueue(request["request_id"], subject, request["responsible_captain_id"],
                              f"automatic:{request['request_id']}:{request['request_revision']}", automatic=True)
             except ServiceError as error:
-                if error.code not in ("FORBIDDEN", "REQUEST_NOT_RUNNABLE"):
+                if error.code not in ("FORBIDDEN", "REQUEST_NOT_RUNNABLE", "MANUAL_DRAFT_ACTIVE"):
                     raise
 
     def claim(self, owner):
@@ -344,6 +347,8 @@ class ExecutionStore:
                      "factorsJson": json_text(scores[member.person_id]), "skillsVersion": fresh.versions[member.person_id]["skills_version"],
                      "workloadVersion": fresh.versions[member.person_id]["workload_version"]}, ("deliverablesJson", "evidenceJson", "factorsJson"))
             execute(connection, "UPDATE pod_proposals SET status='READY_FOR_REVIEW' WHERE proposal_id=:proposalId", {"proposalId": proposal_id})
+            from app.selections import save_initial_review
+            save_initial_review(connection, proposal_id, fresh, option, self.settings.staffing_search_limit)
             execute(connection, """INSERT INTO audit_events(audit_event_id,entity_type,entity_id,action_type,actor_subject,
                 correlation_id,after_state_json) VALUES(:auditId,'POD_PROPOSAL',:proposalId,'PROPOSED',:actorSubject,:executionId,:afterJson)""",
                 {"auditId": uuid4().hex, "proposalId": proposal_id, "actorSubject": job.created_by,
@@ -407,7 +412,7 @@ class ExecutionStore:
     def get_proposal(self, proposal_id, actor):
         with self.database.read() as connection:
             records = rows(connection, """SELECT p.proposal_id,p.request_id,p.proposal_version,p.request_revision,p.execution_id,
-                p.policy_version,p.status,p.starts_on,p.ends_on,p.total_hours,p.lead_count,p.member_count,p.rationale,
+                p.policy_version,p.status,p.starts_on,p.ends_on,p.total_hours,p.lead_count,p.member_count,p.rationale,p.origin_type AS origin,
                 p.evidence_refs_json,p.validation_json,r.responsible_captain_id,
                 CASE WHEN p.status IN ('APPROVED','REJECTED') OR p.request_revision=r.request_revision THEN 'N' ELSE 'Y' END AS stale
                 FROM pod_proposals p JOIN requests r ON r.request_id=p.request_id WHERE p.proposal_id=:proposalId""", proposalId=proposal_id)
@@ -429,5 +434,17 @@ class ExecutionStore:
             for member in members:
                 for key in ("deliverable_ids_json", "factors_json"):
                     member[key.removesuffix("_json")] = document(member.pop(key))
+                member['source'] = record['validation'].get('selection_sources', {}).get(member['person_id'])
             record["members"] = members
+            from app.selections import attach_review
+            attach_review(connection, record)
             return record
+
+    def latest_proposal(self, request_id, actor):
+        with self.database.read() as connection:
+            found = rows(connection, 'SELECT responsible_captain_id FROM requests WHERE request_id=:requestId', requestId=request_id)
+            if not found:
+                raise ServiceError('REQUEST_NOT_FOUND', 'Request not found.', 404)
+            self.authorize_read(actor, found[0]['responsible_captain_id'])
+            proposals = rows(connection, 'SELECT proposal_id FROM pod_proposals WHERE request_id=:requestId ORDER BY proposal_version DESC FETCH FIRST 1 ROW ONLY', requestId=request_id)
+        return self.get_proposal(proposals[0]['proposal_id'], actor) if proposals else None

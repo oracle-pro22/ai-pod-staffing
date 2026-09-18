@@ -12,8 +12,8 @@ async function forward(request: NextRequest, context: { params: Promise<{ path: 
     const joined = path.join('/');
     const id = '[A-Za-z0-9_-]{1,64}';
     const allowed = request.method === 'GET'
-      ? new RegExp(`^(me|workspace|reports/export|requests|admin/utilization|requests/${id}/execution|executions/${id}|proposals/${id})$`)
-      : new RegExp(`^(requests/${id}/(executions|close)|decisions|admin/utilization)$`);
+      ? new RegExp(`^(me|workspace|reports/export|requests|admin/utilization|requests/${id}/(execution|proposal|manual)|executions/${id}|proposals/${id})$`)
+      : new RegExp(`^(requests/${id}/(executions|close|manual-preview|manual-decision)|proposals/${id}/selection|decisions|admin/utilization)$`);
     if (!allowed.test(joined)) throw new StaffingApiError('Staffing endpoint not found.', 404, 'NOT_FOUND');
     let body: unknown;
     if (request.method === 'POST') {

@@ -40,6 +40,7 @@ __pycache__/
 .ruff_cache/
 .uv-cache/
 .coverage
+.mvp/
 htmlcov/
 *.egg-info/
 backend/python/.env

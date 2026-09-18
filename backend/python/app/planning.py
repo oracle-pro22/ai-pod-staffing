@@ -39,7 +39,7 @@ class PlanOption(Contract):
     plan_id: str
     proposal: Proposal
     scores: dict[str, dict]
-    average_score: Decimal
+    average_score: Decimal | None
 
 
 class SearchResult(Contract):
@@ -153,7 +153,9 @@ def _responsibilities(bundle, person, is_lead, hours, deliverables):
     return text[:2000]
 
 
-def find_options(bundle: EvidenceBundle, limit: int = 2000, keep: int = 3) -> SearchResult:
+def find_options(bundle: EvidenceBundle, limit: int = 2000, keep: int = 3, *,
+                 selected_leads: tuple[str, ...] | None = None,
+                 selected_members: tuple[str, ...] | None = None) -> SearchResult:
     if not 1 <= limit <= 10000 or not 1 <= keep <= 10:
         raise ValueError("Invalid search bounds")
     req, policy = bundle.request, bundle.policy
@@ -176,6 +178,15 @@ def find_options(bundle: EvidenceBundle, limit: int = 2000, keep: int = 3) -> Se
     leads = sorted(p.person_id for p in bundle.candidates if caps[p.person_id] and effective_role(p, policy.lead_role_code, req))
     members = sorted(p.person_id for p in bundle.candidates if caps[p.person_id]
                      and any(effective_role(p, role, req) for role in policy.member_role_codes))
+    # Pin an exact Captain selection without changing any candidate's actual
+    # roles/evidence. Normal eligibility and full-team validation still apply.
+    if selected_leads is not None or selected_members is not None:
+        if (selected_leads is None or selected_members is None
+            or len(selected_leads) != req.lead_count or len(selected_members) != req.member_count
+            or len(set((*selected_leads, *selected_members))) != req.lead_count + req.member_count
+            or not set(selected_leads) <= set(leads) or not set(selected_members) <= set(members)):
+            return SearchResult(options=(), examined=0, exhaustive=True, exclusions=exclusions)
+        leads, members = sorted(selected_leads), sorted(selected_members)
     people = {p.person_id: p for p in bundle.candidates}
     if policy.scheduling:
         # The search remains bounded, but strong relevant candidates are considered

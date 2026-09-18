@@ -174,7 +174,7 @@ export type StaffingMetrics = {
 export type StaffingViewModel = {
   allocationPeriod?: { start: string; end: string; timezone: string };
   identity?: { personId: string; role: import('./roles').StaffingRole; fullName?: string;
-    sessionMode?: 'persona'; sessionKey?: string };
+    sessionMode?: 'persona' | 'password'; sessionKey?: string };
   source: StaffingSource;
   catalog: {
     projects: CatalogProject[];

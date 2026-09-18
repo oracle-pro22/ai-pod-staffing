@@ -125,7 +125,7 @@ class GroundedToolTests(unittest.TestCase):
         store.database.write.assert_not_called()
 
     def test_publication_uses_fresh_facts_and_not_model_numerical_assertions(self):
-        settings = SimpleNamespace(staffing_max_candidates=60, backend_env="local")
+        settings = SimpleNamespace(staffing_max_candidates=60, staffing_search_limit=2000, backend_env="local")
         store = ExecutionStore(MagicMock(), settings)
         selection = Selection(plan_id=self.option.plan_id, explanation="Invented 999% allocation and 900 hours.",
                               evidence_refs=sorted(required_plan_references(self.data, self.option.proposal)))

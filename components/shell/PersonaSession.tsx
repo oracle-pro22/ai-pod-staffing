@@ -7,7 +7,7 @@ import { announcePersonaChange, staffingFetch } from '@/lib/staffing-fetch';
 export function PersonaSessionGuard() {
   const { data } = useStaffingApp();
   useEffect(() => {
-    if (data.identity?.sessionMode !== 'persona') return;
+    if (!data.identity?.sessionKey) return;
     let channel: BroadcastChannel | null = null;
     try {
       if (typeof BroadcastChannel !== 'undefined') channel = new BroadcastChannel('staffing-persona');
@@ -33,22 +33,22 @@ export function PersonaSessionGuard() {
   return null;
 }
 
-export function ChangePersonaButton() {
+export function ChangePersonaButton({ password = false }: { password?: boolean }) {
   const { notify } = useStaffingApp();
   const [busy, setBusy] = useState(false);
   async function change() {
     if (busy) return;
     setBusy(true);
     try {
-      const response = await fetch('/api/personas/session', { method: 'DELETE', cache: 'no-store' });
+      const response = await staffingFetch(password ? '/api/auth/logout' : '/api/personas/session', { method: password ? 'POST' : 'DELETE', cache: 'no-store' });
       if (!response.ok) throw new Error('Unable to change profile. Please try again.');
       announcePersonaChange();
       window.location.assign('/');
     } catch {
-      setBusy(false); notify('Profile unchanged', 'Unable to change profile. Please try again.');
+      setBusy(false); notify(password ? 'Sign out failed' : 'Profile unchanged', 'Please try again.');
     }
   }
   return <button type="button" className="staffing-btn" disabled={busy} onClick={() => void change()}>
-    {busy ? 'Changing…' : 'Change profile'}
+    {busy ? 'Please wait…' : password ? 'Sign out' : 'Change profile'}
   </button>;
 }

@@ -8,6 +8,7 @@ export const PERSONA_COOKIE = 'staffing_persona_session';
 export const PERSONA_PAGE_HEADER = 'x-staffing-persona-session';
 
 export function personaModeEnabled(): boolean {
+  if (process.env.STAFFING_BACKEND_AUTH_MODE === 'password') return false;
   if (process.env.STAFFING_DEMO_PERSONAS_ENABLED !== 'true') return false;
   if (process.env.NODE_ENV !== 'development' || process.env.STAFFING_BACKEND_AUTH_MODE !== 'local'
       || process.env.STAFFING_AGENTIC_ENABLED !== 'true' || process.env.NEXT_PUBLIC_STAFFING_AGENTIC_ENABLED !== 'true') {

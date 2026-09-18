@@ -20,9 +20,9 @@ from app.errors import ServiceError
 from app.execution_store import ExecutionStore
 
 
-def checkpoint(analyst=0, planner=0, tools=0):
+def checkpoint(analyst=0, planner=0, tools=0, supervisor=0):
     return {**new_checkpoint(), "analyst_model_calls": analyst, "planner_model_calls": planner,
-            "model_calls": analyst + planner, "tool_calls": tools}
+            "supervisor_model_calls": supervisor, "model_calls": analyst + planner + supervisor, "tool_calls": tools}
 
 
 class StageBudgetTests(unittest.TestCase):
@@ -36,25 +36,25 @@ class StageBudgetTests(unittest.TestCase):
         self.assertEqual(error.exception.code, "AGENT_BUDGET_EXCEEDED")
         self.assertEqual(value, before)
         self.assertEqual(remaining_model_calls(value, 12, "analyst"), 0)
-        self.assertEqual(remaining_model_calls(value, 12, "planner"), 6)
+        self.assertEqual(remaining_model_calls(value, 12, "planner"), 3)
 
     def test_lowest_policy_reserves_two_planner_calls(self):
-        self.assertEqual(model_call_limits(6), (6, 4))
-        value = checkpoint(analyst=4)
-        self.assertEqual(remaining_model_calls(value, 6, "analyst"), 0)
-        self.assertEqual(remaining_model_calls(value, 6, "planner"), 2)
+        self.assertEqual(model_call_limits(9), (9, 4))
+        value = checkpoint(analyst=4, supervisor=3)
+        self.assertEqual(remaining_model_calls(value, 9, "analyst"), 0)
+        self.assertEqual(remaining_model_calls(value, 9, "planner"), 2)
         for _ in range(2):
-            value.update(reserve_call(value, "planner", "model_calls", 6))
-        self.assertEqual(value["model_calls"], 6)
+            value.update(reserve_call(value, "planner", "model_calls", 9))
+        self.assertEqual(value["model_calls"], 9)
         with self.assertRaises(ServiceError):
-            reserve_call(value, "planner", "model_calls", 6)
+            reserve_call(value, "planner", "model_calls", 9)
 
     def test_planner_can_use_unused_analyst_budget_without_increasing_total(self):
-        value = checkpoint(analyst=2)
-        self.assertEqual(remaining_model_calls(value, 12, "planner"), 10)
-        for _ in range(10):
+        value = checkpoint(analyst=4, supervisor=3)
+        self.assertEqual(remaining_model_calls(value, 12, "planner"), 5)
+        for _ in range(5):
             value.update(reserve_call(value, "planner", "model_calls", 12))
-        self.assertEqual(value["planner_model_calls"], 10)
+        self.assertEqual(value["planner_model_calls"], 5)
         self.assertEqual(value["model_calls"], 12)
         with self.assertRaises(ServiceError):
             reserve_call(value, "planner", "model_calls", 12)
@@ -66,7 +66,7 @@ class StageBudgetTests(unittest.TestCase):
             reserve_call(checkpoint(6, 6), "planner", "model_calls", 30)
 
     def test_policy_too_small_for_six_stage_calls_fails_before_reservation(self):
-        for maximum in (0, 1, 2, 3, 4, 5, True, 6.0, "12"):
+        for maximum in (0, 1, 2, 3, 4, 5, 6, 7, 8, True, 9.0, "12"):
             value = checkpoint()
             with self.subTest(maximum=maximum), self.assertRaises(ServiceError) as error:
                 reserve_call(value, "analyst", "model_calls", maximum)
@@ -100,7 +100,7 @@ class StageBudgetTests(unittest.TestCase):
 
     def test_policy_reduction_never_reinterprets_prior_stage_usage(self):
         with self.assertRaises(ValueError):
-            remaining_model_calls(checkpoint(analyst=6), 6, "planner")
+            remaining_model_calls(checkpoint(analyst=6), 9, "planner")
 
 
 class PersistedBudgetTests(unittest.TestCase):

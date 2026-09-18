@@ -9,6 +9,8 @@ import { NextRequest } from 'next/server';
 import { workspaceError } from '@/backend/staffing/workspace-error';
 import { PersonaEntry } from '@/components/entry/PersonaEntry';
 import { PERSONA_COOKIE, PERSONA_PAGE_HEADER, personaModeEnabled, personaSessionKey, requirePersonaMode } from '@/backend/staffing/persona-mode';
+import { PASSWORD_COOKIE, passwordModeEnabled, requirePasswordOrigin } from '@/backend/staffing/password-mode';
+import { PasswordEntry } from '@/components/entry/PasswordEntry';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,7 +22,12 @@ export default async function Home() {
     const origin = process.env.STAFFING_APP_ORIGIN || `http://${incoming.get('host') || 'invalid'}`;
     try {
       const request = new NextRequest(origin, { headers: incoming });
-      if (personaModeEnabled()) {
+      if (passwordModeEnabled()) {
+        requirePasswordOrigin(request);
+        const selected = request.cookies.get(PASSWORD_COOKIE)?.value;
+        if (!selected) return <PasswordEntry />;
+        request.headers.set(PERSONA_PAGE_HEADER, personaSessionKey(selected));
+      } else if (personaModeEnabled()) {
         requirePersonaMode(request);
         const selected = request.cookies.get(PERSONA_COOKIE)?.value;
         if (!selected) return <PersonaEntry />;
@@ -29,6 +36,7 @@ export default async function Home() {
       data = await authenticatedViewModel(request);
     }
     catch (error) {
+      if (passwordModeEnabled()) return <PasswordEntry initialError="Your workspace could not be loaded. Sign in again, or retry when the backend is available." />;
       if (process.env.STAFFING_DEMO_PERSONAS_ENABLED === 'true') {
         return <PersonaEntry initialError="Your workspace could not be loaded. Choose your profile again, or retry once the backend is available." />;
       }

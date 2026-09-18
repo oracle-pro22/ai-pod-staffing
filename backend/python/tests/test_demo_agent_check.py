@@ -113,7 +113,9 @@ class GraphInformationOutcomeTests(unittest.TestCase):
         item.policy_version = data.policy.version
         item.checkpoint["analysis"] = Analysis(summary="Evidence is ready.",
             evidence_refs=[f"request:{data.request.request_id}"]).model_dump(mode="json")
-        result = process_job(store, item, lambda: self.fail("Information-needed scheduling must not call another model"))
+        from test_phase3_runtime import ScriptedModel
+        # Supervisor delegates; deterministic rules stop before a Planner call.
+        result = process_job(store, item, lambda: ScriptedModel([[('delegate_planning', {})]]))
         self.assertEqual(result, {"outcome": "NEEDS_INFORMATION"})
         self.assertEqual(store.outcome, "NEEDS_INFORMATION")
 

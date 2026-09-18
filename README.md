@@ -1,6 +1,18 @@
 # AI Pod Staffing
 
-AI Pod Staffing is a Next.js and Oracle application that creates staffing requests, uses two OCI Generative AI agents to prepare a POD recommendation, and keeps the final decision with the POD Captain.
+AI Pod Staffing is a Next.js and Oracle application that creates staffing requests, uses a Supervisor with two specialist OCI Generative AI agents to prepare POD recommendations, and keeps the final decision with the POD Captain.
+
+## New MVP Phase 1: email/password login
+
+Use the [Phase 1 setup and migration guide](docs/mvp-phase1.md) for the new Oracle-email/password entry page, shared initial password, scoped old-request archive, uniform existing person IDs and expanded 31-account roster (one Administrator). It supersedes the persona-picker setup below when password mode is enabled. The SQL/import steps are explicit; nothing resets the database at startup. Catalogue mappings and existing employee assessments are protected.
+
+## New MVP Phase 2: supervised, selectable recommendations
+
+The migration and verification in [MVP Phase 2](docs/mvp-phase2.md) add an actual tool-calling Supervisor, up to two distinct alternatives per role group, saved Captain selections, whole-POD recalculation and approval of the exact reviewed selection. Original recommendations remain immutable. All normal rules, including the Administrator's utilization ceiling, still apply. No new environment variables or data import are required for Phase 2.
+
+## New MVP Phase 3: Captain manual override
+
+**Run and verify the [Phase 3 migration](docs/mvp-phase3.md) before restarting this version.** Captains can explicitly choose people outside the AI shortlist, preview without a successful agent run, and approve the exact selected POD. For manual people, existing POD assignments plus new POD hours cannot exceed **100% of contracted working hours**; skills, leave, external commitments and the normal recommendation ceiling are bypassed. The preview separately shows overall workload including the ignored records. Non-manual people keep all normal rules. Drafts reserve no capacity, and neither an AI score nor an agent execution is invented. Catalogue, employee assessments, source commitments and existing history are retained. No new env variables or roster reset are needed.
 
 The application includes four profiles:
 
@@ -16,33 +28,40 @@ Captain saves request
         ↓
 Execution is queued in Oracle
         ↓
-Analyst Agent reads the request and evidence
+Supervisor delegates to Analyst → request and evidence review
         ↓
 Deterministic rules engine builds and validates feasible POD options
         ↓
-Planner Agent selects and explains one validated option
+Supervisor delegates to Planner → selects and explains one validated option
         ↓
-Proposal waits for Captain review
+Supervisor finishes review → recommended POD + distinct alternatives
+        ↓
+Captain selects alternatives → exact selected team recalculated (no OCI call)
         ↓
 Captain approves → final assignments
 Captain rejects → reason saved and supplied to the next run
 ```
 
-There are **two agents**, not an unrestricted autonomous system:
+There are **three bounded agents**, not an unrestricted autonomous system:
 
-1. **Request and Evidence Analyst**
+1. **Supervisor**
+   - Reads sanitized execution state and calls delegation/status/clarification/review tools.
+   - Coordinates the two specialists; retries a recoverable delegate output failure at most once.
+   - Cannot skip prerequisites, repeat completed delegates, invent a clarification or approve assignments.
+
+2. **Request and Evidence Analyst**
    - Reads the request, catalogue, candidate skill/deliverable evidence, capacity status, and previous rejection feedback.
    - Summarizes the business need.
    - Requests clarification only when objectives, outcomes, or project description are actually missing.
    - Does not choose people or calculate hours.
 
-2. **POD Planner**
+3. **POD Planner**
    - Reads server-generated, validated POD options.
    - May inspect a selected person's evidence and capacity.
    - Selects an existing plan ID and explains the exact hours, evidence, and projected allocation.
    - Cannot invent a person, change a score, approve a proposal, create an assignment, execute SQL, or send email.
 
-LangGraph coordinates `collect → analyse → deterministic plan → publish`. Oracle stores executions, evidence snapshots, checkpoints, events, proposals, and worker leases so recovery does not depend on in-memory state.
+LangGraph routes Supervisor tool calls through application-validated transitions to the specialists, then back to the Supervisor. Oracle stores executions, evidence snapshots, checkpoints, events, proposals, selection revisions and worker leases. Model calls remain capped at 12 total (or the lower policy limit, minimum 9): Analyst at most 6, Supervisor at most 4, with minimum calls reserved for the other stages. Tools remain capped at 40. Old two-agent checkpoints are rejected, not silently resumed as three-agent jobs.
 
 ## Staffing rules
 
@@ -73,7 +92,7 @@ Eligibility is a mandatory gate. A high score cannot override a failed rule.
 - Pending proposals reserve no capacity; approved assignments do.
 - Scores are calculated by server code: **skill 50%, deliverable experience 30%, remaining capacity 15%, interest 5%**.
 - Search is bounded—normally 2,000 combinations—and is not described as globally optimal.
-- Request, policy, roles, skills, availability, capacity, and assignments are rechecked before approval. Stale evidence requires a new run.
+- Request, policy, roles, skills, availability, capacity, and assignments are rechecked before approval. Changed workload requires recalculating the selected POD and confirming the refreshed figures; changed request/catalogue/policy requires a new run.
 
 Captain approval is final; there is no Lead/Member acceptance step. Rejection requires a reason. The assigned Lead can close the project: historical work is retained and only future scheduled capacity is released.
 
@@ -91,6 +110,8 @@ Captain approval is final; there is no Lead/Member acceptance step. Rejection re
 
 - Saving an eligible request automatically creates a queued agent execution.
 - The worker publishes a `READY_FOR_REVIEW` proposal; it remains advisory until Captain approval.
+- Captain selections are separate, versioned previews. Lead choices contain the selected Lead(s) plus up to two distinct alternatives; Member choices contain the selected N Members plus up to two additional people. Short pools are shown honestly.
+- Selecting an alternative revalidates the full POD and recalculates exact hours, dates, request-window and peak-week allocations. Drafts do not reserve capacity and do not invoke OCI.
 - Approval writes the final assignments and dated hours in one guarded transaction.
 - Rejection creates no assignment and saves the required reason for the next run.
 - Current allocation is recalculated from dated confirmed work, external commitments, leave, and working capacity. It is not a permanently stored percentage.

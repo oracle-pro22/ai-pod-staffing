@@ -5,6 +5,7 @@ import { agenticEnabled, staffingBackend } from './bridge';
 import { StaffingApiError } from '@/lib/errors/staffing-api-error';
 
 function config() {
+  if (process.env.STAFFING_BACKEND_AUTH_MODE === 'password') throw new StaffingApiError('Organization sign-in is disabled in password mode.', 404, 'LOGIN_DISABLED');
   if (!agenticEnabled()) throw new StaffingApiError('Identity integration is not enabled.', 503, 'LOGIN_DISABLED');
   const secret = process.env.STAFFING_LOGIN_STATE_SECRET || '';
   const clientId = process.env.STAFFING_OIDC_CLIENT_ID || '';

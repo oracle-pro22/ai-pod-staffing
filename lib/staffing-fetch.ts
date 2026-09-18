@@ -15,7 +15,7 @@ export async function staffingFetch(input: string, init: RequestInit = {}): Prom
   if (session && [401, 403, 409].includes(response.status)) {
     const error = await response.clone().json().catch(() => null);
     const code = error?.code ?? error?.error?.code;
-    if (['PERSONA_CHANGED', 'PERSONA_REQUIRED', 'UNAUTHENTICATED', 'IDENTITY_NOT_LINKED', 'PERSONA_MAPPING_CHANGED', 'PERSONA_NOT_AVAILABLE'].includes(code)) {
+    if (['SIGN_IN_REQUIRED', 'PERSONA_CHANGED', 'PERSONA_REQUIRED', 'UNAUTHENTICATED', 'IDENTITY_NOT_LINKED', 'PERSONA_MAPPING_CHANGED', 'PERSONA_NOT_AVAILABLE'].includes(code)) {
       window.location.assign('/');
     }
   }

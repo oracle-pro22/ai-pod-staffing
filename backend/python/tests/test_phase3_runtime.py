@@ -82,24 +82,29 @@ class FrameworkTests(unittest.TestCase):
             self.assertEqual(error.exception.code, "INVALID_AGENT_OUTPUT")
             self.assertIn(expected, error.exception.message)
 
-    def test_actual_graph_and_two_tool_calling_agents_publish(self):
+    def test_actual_graph_and_three_tool_calling_agents_publish(self):
         data = bundle()
         option = find_options(data).options[0]
         model = ScriptedModel([
+            [("delegate_analysis", {})],
             [("get_request_context", {}), ("get_candidate_overview", {}), ("get_rejection_feedback", {})],
             [("complete_analysis", {"summary": "Request evidence reviewed.", "evidence_refs": ["request:REQ-1046"]})],
+            [("delegate_planning", {})],
             [("get_validated_options", {})],
             [("complete_plan", {"plan_id": option.plan_id, "explanation": "Mandatory capability and known capacity fit.",
                                 "evidence_refs": plan_references(data)})],
+            [("finish_review", {})],
         ])
         store = MemoryStore()
         result = StaffingWorkflow(store, job(data), lambda: model).run()
         self.assertEqual(result["outcome"], "READY_FOR_REVIEW")
-        self.assertEqual(len(model.bound), 3)
-        self.assertIn("complete_analysis", model.bound[0])
-        self.assertNotIn("complete_plan", model.bound[0])
-        self.assertEqual(model.bound[1], {"complete_analysis"})
-        self.assertIn("complete_plan", model.bound[2])
+        self.assertEqual(len(model.bound), 6)
+        self.assertIn("delegate_analysis", model.bound[0])
+        self.assertIn("complete_analysis", model.bound[1])
+        self.assertNotIn("complete_plan", model.bound[1])
+        self.assertEqual(model.bound[2], {"complete_analysis"})
+        self.assertIn("complete_plan", model.bound[4])
+        self.assertIn("finish_review", model.bound[5])
         self.assertFalse(any("assign" in name or "sql" in name or "email" in name for names in model.bound for name in names))
 
     def test_unapproved_tool_is_blocked(self):

@@ -19,6 +19,9 @@ from app.storage import load_policy
 from app.policy_admin import PolicyAdminStore, UtilizationUpdate, active_policy_version
 from app.assignments import AssignmentStore, CloseProject
 from app.personas import PersonaRepository, PersonaSelection, constrain_actor, mint_session, require_management
+from app.accounts import AccountStore, PasswordLogin
+from app.selections import SelectionStore, SelectionUpdate
+from app.manual_store import ManualStore, ManualPreviewInput, ManualDecisionInput
 from datetime import date
 from typing import Literal
 
@@ -29,7 +32,7 @@ class EnqueueExecution(Contract):
     idempotency_key: str = Field(min_length=8, max_length=100, pattern=r"^[A-Za-z0-9._:-]+$")
 
 
-def create_app(settings: Settings | None = None, database=None, verifier=None, authorization=None, executions=None, decisions=None, assignments=None) -> FastAPI:
+def create_app(settings: Settings | None = None, database=None, verifier=None, authorization=None, executions=None, decisions=None, assignments=None, accounts=None, selections=None, manual=None) -> FastAPI:
     settings = settings or Settings()
     database = database or OracleDatabase(settings)
     verifier = verifier or TokenVerifier(settings)
@@ -39,6 +42,9 @@ def create_app(settings: Settings | None = None, database=None, verifier=None, a
     assignments = assignments or AssignmentStore(database, settings)
     personas = PersonaRepository(database)
     policy_admin = PolicyAdminStore(database)
+    accounts = accounts or AccountStore(database, settings)
+    selections = selections or SelectionStore(database, settings)
+    manual = manual or ManualStore(database, settings)
 
     @asynccontextmanager
     async def lifespan(_app):
@@ -78,6 +84,8 @@ def create_app(settings: Settings | None = None, database=None, verifier=None, a
                             headers={"Cache-Control": "no-store"})
 
     def current_actor(request: Request) -> Actor:
+        if settings.backend_auth_mode == "password":
+            return authorization.resolve(accounts.subject(request.headers.get("authorization")))
         if settings.staffing_demo_personas_enabled:
             identity = verifier.persona(request.headers.get("authorization"))
             # Re-read active person/role mappings and permissions on every API
@@ -89,6 +97,14 @@ def create_app(settings: Settings | None = None, database=None, verifier=None, a
     def local_persona_management(request: Request):
         require_management(settings, request.headers.get("authorization"),
                            request.client.host if request.client else None)
+
+    @app.post("/v1/auth/password/login")
+    def password_login(body: PasswordLogin):
+        return accounts.login(body)
+
+    @app.post("/v1/auth/password/logout")
+    def password_logout(request: Request):
+        return accounts.logout(request.headers.get("authorization"))
 
     @app.get("/v1/local-personas", dependencies=[Depends(local_persona_management)])
     def local_personas():
@@ -154,6 +170,31 @@ def create_app(settings: Settings | None = None, database=None, verifier=None, a
     @app.post("/v1/decisions")
     def decide(body: CaptainDecision, actor: Actor = Depends(current_actor)):
         return decisions.decide(actor, body)
+
+    @app.post("/v1/proposals/{proposal_id}/selection")
+    def update_selection(proposal_id: str, body: SelectionUpdate, actor: Actor = Depends(current_actor)):
+        actor.require("AI_FITMENT", "approve", "POD_CAPTAIN")
+        return selections.update(actor, proposal_id, body)
+
+    @app.get('/v1/requests/{request_id}/proposal')
+    def latest_proposal(request_id: str, actor: Actor = Depends(current_actor)):
+        actor.require('AI_FITMENT', 'view')
+        return executions.latest_proposal(request_id, actor)
+
+    @app.get('/v1/requests/{request_id}/manual')
+    def manual_state(request_id: str, actor: Actor = Depends(current_actor)):
+        actor.require('AI_FITMENT', 'approve', 'POD_CAPTAIN')
+        return manual.get(actor, request_id)
+
+    @app.post('/v1/requests/{request_id}/manual-preview')
+    def manual_preview(request_id: str, body: ManualPreviewInput, actor: Actor = Depends(current_actor)):
+        actor.require('AI_FITMENT', 'approve', 'POD_CAPTAIN')
+        return manual.preview(actor, request_id, body)
+
+    @app.post('/v1/requests/{request_id}/manual-decision')
+    def manual_decision(request_id: str, body: ManualDecisionInput, actor: Actor = Depends(current_actor)):
+        actor.require('AI_FITMENT', 'approve', 'POD_CAPTAIN')
+        return manual.decide(actor, request_id, body)
 
     @app.get("/v1/workspace")
     def workspace(week: date | None = None, resource: Literal["REQUESTS", "ALLOCATION_CALENDAR", "REPORTS", "TEAM_SKILLS", "MY_AVAILABILITY"] = "REQUESTS", actor: Actor = Depends(current_actor)):
