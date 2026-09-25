@@ -127,7 +127,11 @@ export function CreateRequestModal() {
     if (capabilityChoice === 'other') {
       const name = customCapability.trim();
       if (!name) return;
-      setCapabilities((current) => mergeCapabilities(current, [{ id: `CUSTOM-SKILL-${Date.now()}`, name, requiredStrength: null, source: 'Request entry', custom: true }]));
+      const normalize = (value: string) => value.toLocaleLowerCase('en-US').replace(/[^a-z0-9]+/g, ' ').trim();
+      const exact = data.catalog.skills.find((skill) => normalize(skill.name) === normalize(name));
+      setCapabilities((current) => mergeCapabilities(current, [exact
+        ? { id: exact.id, name: exact.name, requiredStrength: null, source: `Exact catalogue match for “${name}”`, mandatory: true }
+        : { id: `CUSTOM-SKILL-${Date.now()}`, name, requiredStrength: null, source: 'Request entry', custom: true, mandatory: false }]));
       setCustomCapability('');
     } else {
       const item = data.catalog.skills.find((skill) => skill.id === capabilityChoice);
@@ -149,6 +153,10 @@ export function CreateRequestModal() {
     if (!canCreate) return;
     if (!project || deliverables.length === 0 || capabilities.length === 0) {
       notify('Request incomplete', 'Add at least one deliverable and required capability.');
+      return;
+    }
+    if (!capabilities.some((item) => !item.custom)) {
+      notify('Catalogue capability required', 'Keep the “Other” capability as a preference, and add at least one catalogue capability the staffing engine can verify.');
       return;
     }
     if (!requestSourcePersonId) {
@@ -242,10 +250,10 @@ export function CreateRequestModal() {
             <FormGroup label="Required capabilities" className="half">
               <div className="staffing-editor-box">
                 <div className="staffing-editor-meta">Mapped to deliverables</div>
-                <div className="staffing-chip-row">{capabilities.map((item) => <span className="staffing-edit-chip" key={item.id}>{item.name}<button type="button" aria-label={`Remove ${item.name}`} onClick={() => setCapabilities((current) => current.filter((selected) => selected.id !== item.id))}>×</button></span>)}</div>
+                <div className="staffing-chip-row">{capabilities.map((item) => <span className="staffing-edit-chip" key={item.id}>{item.name}{item.custom ? ' · preference until mapped' : ''}<button type="button" aria-label={`Remove ${item.name}`} onClick={() => setCapabilities((current) => current.filter((selected) => selected.id !== item.id))}>×</button></span>)}</div>
                 <div className="staffing-add-row"><DropdownField aria-label="Add required capability" value={capabilityChoice} onChange={setCapabilityChoice} placeholder="Select a capability" options={[...data.catalog.skills.filter((skill) => !capabilities.some((item) => item.id === skill.id)).map((skill) => ({ value: skill.id, label: skill.name })), { value: 'other', label: 'Other — type a capability' }]} /><Button type="button" onClick={addCapability}>＋ Add</Button></div>
                 {capabilityChoice === 'other' ? <TextField aria-label="Custom capability" value={customCapability} onChange={(event) => setCustomCapability(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); addCapability(); } }} placeholder="Type a capability and press Enter" /> : null}
-                <small>Add or remove capabilities for this request.</small>
+                <small>Catalogue capabilities are mandatory. A new “Other” capability remains an unverified preference until the backend can map it safely.</small>
                 {unmappedDeliverables.length ? <small role="status">No default capabilities supplied for {unmappedDeliverables.map((item) => item.name).join(', ')}. Add the capabilities needed for this request.</small> : null}
               </div>
             </FormGroup>

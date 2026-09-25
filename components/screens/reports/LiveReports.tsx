@@ -16,20 +16,23 @@ import { staffingFetch } from '@/lib/staffing-fetch';
 import { displayReportNumber as number, reportMetrics, reportExport, type ReportExportKind } from '@/lib/reports-model';
 import type { LiveWorkspace } from '@/types/assignments';
 
-const TABS = ['Overview', 'Capacity', 'Requests', 'Excel export'] as const;
+const TABS = ['Overview', 'Capacity', 'Projects & PODs', 'My PODs', 'Excel export'] as const;
 const EXPORTS: { id: ReportExportKind; title: string; description: string }[] = [
   { id: 'summary', title: 'KPI summary', description: 'Headline metrics, reporting scope, and calculation definitions.' },
-  { id: 'capacity', title: 'People & capacity', description: 'Weekly hours, utilization, headroom, and active POD counts.' },
-  { id: 'requests', title: 'Request register', description: 'Current request status, planned end dates, and assigned team size.' },
+  { id: 'capacity', title: 'People & capacity', description: 'POD, reported, external and leave hours with utilization, headroom and active POD counts.' },
+  { id: 'requests', title: 'Projects & PODs', description: 'Current project status, schedule, final team, assigned hours and staffing method.' },
   { id: 'assignments', title: 'Weekly assignment detail', description: 'Counted project hours by person and day, including retained closed-project history.' },
 ];
 
 export function LiveReports() {
-  const { dispatch } = useStaffingApp();
+  const { data, dispatch } = useStaffingApp();
   const [tab, setTab] = useState<typeof TABS[number]>('Overview');
   const [week, setWeek] = useState('');
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('ALL');
+  const [projectType, setProjectType] = useState('ALL');
+  const [person, setPerson] = useState('ALL');
+  const [capacityFilter, setCapacityFilter] = useState('ALL');
   const [exporting, setExporting] = useState<ReportExportKind | null>(null);
   const [exportError, setExportError] = useState('');
   const [exportSuccess, setExportSuccess] = useState('');
@@ -37,7 +40,9 @@ export function LiveReports() {
   const metrics = snapshot ? reportMetrics(snapshot) : null;
   const period = snapshot ? `${formatDate(snapshot.week_start)} – ${formatDate(snapshot.week_end)}` : 'Loading reporting week';
 
-  function selectTab(value: typeof TABS[number]) { setTab(value); setSearch(''); setStatus('ALL'); }
+  function selectTab(value: typeof TABS[number]) {
+    setTab(value); setSearch(''); setStatus('ALL'); setProjectType('ALL'); setPerson('ALL'); setCapacityFilter('ALL');
+  }
   function changeWeek(days: number) {
     if (!snapshot) return;
     const value = new Date(`${snapshot.week_start.slice(0,10)}T12:00:00Z`);
@@ -60,6 +65,19 @@ export function LiveReports() {
     finally { setExporting(null); }
   }
   const openRequest = (requestId: string) => dispatch({ type: 'open-drawer', drawer: { id: 'request-details', title: 'Request details', payload: { requestId } } });
+  const projects = snapshot?.requests ?? [];
+  const projectTypes = [...new Set(projects.map(request => request.project_type).filter((value): value is string => Boolean(value)))].sort();
+  const assignedPeople = [...new Map((snapshot?.assignments ?? []).map(assignment => [assignment.person_id, assignment.full_name])).entries()]
+    .sort((a,b) => a[1].localeCompare(b[1]));
+  const teamFor = (requestId: string) => (snapshot?.assignments ?? []).filter(assignment => assignment.request_id === requestId);
+  const projectMatches = (request: LiveWorkspace['requests'][number]) => {
+    const team = teamFor(request.request_id);
+    return (status === 'ALL' || request.status === status)
+      && (projectType === 'ALL' || request.project_type === projectType)
+      && (person === 'ALL' || team.some(assignment => assignment.person_id === person))
+      && `${request.request_id} ${request.title} ${request.project_type || ''} ${team.map(member => member.full_name).join(' ')}`
+        .toLowerCase().includes(search.trim().toLowerCase());
+  };
 
   return <section className="staffing-screen staffing-reports">
     <PageHeader title="Staffing reports" description="A clear view of staffing demand, team capacity, and delivery progress." actions={<>
@@ -106,23 +124,43 @@ export function LiveReports() {
         </CardBody></Card>
       </div>}
 
-      {tab === 'Capacity' && <Card><CardHeader><div><h3>People & capacity</h3><p>Confirmed project work and other commitments, after leave</p></div><input className="staffing-field staffing-report-search" aria-label="Search capacity by name" placeholder="Search people by name" value={search} onChange={e => setSearch(e.target.value)} /></CardHeader>
-        <div className="staffing-report-table-wrap"><table className="staffing-report-table"><thead><tr><th>Person</th><th>Weekly allocation</th><th>Available</th><th>Committed</th><th>Headroom</th><th>Active PODs today</th><th>Capacity</th></tr></thead><tbody>
-          {metrics.people.filter(p => p.name.toLowerCase().includes(search.trim().toLowerCase())).map(p => <tr key={p.person_id}><td><b>{p.name}</b><small>{p.person_id}</small></td><td><strong>{number(p.allocation,'%')}</strong><ProgressBar value={p.allocation ?? 0} tone={p.over ? 'red' : 'teal'} /></td><td>{number(p.available,'h')}</td><td>{number(p.committed,'h')}</td><td>{number(p.headroom,'h')}</td><td>{p.active_pods}</td><td><Pill tone={p.over ? 'red' : !p.known || p.headroom === 0 ? 'amber' : 'teal'}>{p.status}</Pill></td></tr>)}
-          {!metrics.people.some(p => p.name.toLowerCase().includes(search.trim().toLowerCase())) && <tr><td colSpan={7}>No matching people.</td></tr>}
+      {tab === 'Capacity' && <Card><CardHeader><div><h3>People & capacity</h3><p>POD work, reported work and external commitments after leave</p></div><div className="staffing-inline-actions">
+        <input className="staffing-field staffing-report-search" aria-label="Search capacity by name" placeholder="Search people by name" value={search} onChange={e => setSearch(e.target.value)} />
+        <select className="staffing-select" aria-label="Filter capacity condition" value={capacityFilter} onChange={e => setCapacityFilter(e.target.value)}><option value="ALL">All capacity</option><option value="OVER">Above limit</option><option value="REFRESH">Needs refresh</option><option value="WITHIN">Within limit</option></select>
+      </div></CardHeader>
+        <div className="staffing-report-table-wrap"><table className="staffing-report-table"><thead><tr><th>Person</th><th>Weekly allocation</th><th>Available</th><th>POD work</th><th>Reported POD</th><th>External</th><th>Leave</th><th>Headroom</th><th>Active PODs today</th><th>Capacity</th></tr></thead><tbody>
+          {metrics.people.filter(p => p.name.toLowerCase().includes(search.trim().toLowerCase())
+            && (capacityFilter === 'ALL' || (capacityFilter === 'OVER' && p.over) || (capacityFilter === 'REFRESH' && !p.known)
+              || (capacityFilter === 'WITHIN' && p.known && !p.over))).map(p => <tr key={p.person_id}><td><b>{p.name}</b><small>{p.person_id}</small></td><td><strong>{number(p.allocation,'%')}</strong><ProgressBar value={p.allocation ?? 0} tone={p.over ? 'red' : 'teal'} /></td><td>{number(p.available,'h')}</td><td>{number(p.pod,'h')}</td><td>{number(p.reportedPod,'h')}</td><td>{number(p.external,'h')}</td><td>{number(p.leave,'h')}</td><td>{number(p.headroom,'h')}</td><td>{p.active_pods}</td><td><Pill tone={p.over ? 'red' : !p.known || p.headroom === 0 ? 'amber' : 'teal'}>{p.status}</Pill></td></tr>)}
+          {!metrics.people.some(p => p.name.toLowerCase().includes(search.trim().toLowerCase())
+            && (capacityFilter === 'ALL' || (capacityFilter === 'OVER' && p.over) || (capacityFilter === 'REFRESH' && !p.known)
+              || (capacityFilter === 'WITHIN' && p.known && !p.over))) && <tr><td colSpan={10}>No matching people.</td></tr>}
         </tbody></table></div>
         <CardBody><p className="staffing-muted">Unknown capacity stays blank and is excluded from totals. Active POD counts are for today, not the selected historical week.</p></CardBody>
       </Card>}
 
-      {tab === 'Requests' && <Card><CardHeader><div><h3>Request register</h3><p>{snapshot.request_scope || 'Authorized requests'} · current status, independent of the capacity week</p></div><div className="staffing-inline-actions">
-        <input className="staffing-field staffing-report-search" aria-label="Search requests" placeholder="Search title or request ID" value={search} onChange={e => setSearch(e.target.value)} />
-        <select className="staffing-select" aria-label="Filter request status" value={status} onChange={e => setStatus(e.target.value)}><option value="ALL">All statuses</option>{[...new Set(snapshot.requests.map(r => r.status))].map(value => <option key={value} value={value}>{liveStatusLabel(value)}</option>)}</select></div></CardHeader>
-        <div className="staffing-report-table-wrap"><table className="staffing-report-table"><thead><tr><th>Request</th><th>Status</th><th>POD team</th><th>Planned end</th><th>Delivery check</th><th><span className="staffing-muted">Details</span></th></tr></thead><tbody>
-          {snapshot.requests.filter(r => (status === 'ALL' || r.status === status) && `${r.request_id} ${r.title}`.toLowerCase().includes(search.trim().toLowerCase())).map(r => <tr key={r.request_id}>
-            <td><b>{r.title}</b><small>{r.request_id}</small></td><td><Pill tone={statusTone(liveStatusLabel(r.status))}>{liveStatusLabel(r.status)}</Pill></td>
-            <td>{new Set(snapshot.assignments.filter(a => a.request_id === r.request_id).map(a => a.person_id)).size || '—'}</td><td>{r.planned_end_on ? formatDate(r.planned_end_on.slice(0,10)) : '—'}</td><td>{r.past_planned_end ? <Pill tone="amber">Past planned end</Pill> : '—'}</td><td><Button size="small" onClick={() => openRequest(r.request_id)}>Open</Button></td></tr>)}
-          {!snapshot.requests.some(r => (status === 'ALL' || r.status === status) && `${r.request_id} ${r.title}`.toLowerCase().includes(search.trim().toLowerCase())) && <tr><td colSpan={6}>No matching requests.</td></tr>}
+      {tab === 'Projects & PODs' && <Card><CardHeader><div><h3>Projects & PODs</h3><p>{snapshot.request_scope || 'Authorized requests'} · current project state and final teams</p></div></CardHeader>
+        <CardBody className="staffing-report-filter-row"><input className="staffing-field staffing-report-search" aria-label="Search projects and PODs" placeholder="Search project, request or person" value={search} onChange={e => setSearch(e.target.value)} />
+          <select className="staffing-select" aria-label="Filter project status" value={status} onChange={e => setStatus(e.target.value)}><option value="ALL">All statuses</option>{[...new Set(snapshot.requests.map(r => r.status))].map(value => <option key={value} value={value}>{liveStatusLabel(value)}</option>)}</select>
+          <select className="staffing-select" aria-label="Filter project type" value={projectType} onChange={e => setProjectType(e.target.value)}><option value="ALL">All project types</option>{projectTypes.map(value => <option key={value} value={value}>{value}</option>)}</select>
+          <select className="staffing-select" aria-label="Filter assigned person" value={person} onChange={e => setPerson(e.target.value)}><option value="ALL">All assigned people</option>{assignedPeople.map(([id,name]) => <option key={id} value={id}>{name}</option>)}</select>
+        </CardBody>
+        <div className="staffing-report-table-wrap"><table className="staffing-report-table"><thead><tr><th>Project</th><th>Type</th><th>Status</th><th>POD Lead</th><th>Members</th><th>Hours</th><th>Schedule</th><th>Staffing</th><th>Delivery</th><th><span className="staffing-muted">Details</span></th></tr></thead><tbody>
+          {snapshot.requests.filter(projectMatches).map(request => { const team = teamFor(request.request_id); const lead = team.find(member => member.role_in_pod === 'POD_LEAD'); const members = team.filter(member => member.role_in_pod === 'POD_MEMBER'); const hours = team.reduce((sum, member) => sum + Number(member.assigned_hours || 0), 0); const manual = team.some(member => member.staffing_method === 'MANUAL_OVERRIDE'); return <tr key={request.request_id}>
+            <td><b>{request.title}</b><small>{request.request_id}</small></td><td>{request.project_type || '—'}</td><td><Pill tone={statusTone(liveStatusLabel(request.status))}>{liveStatusLabel(request.status)}</Pill></td>
+            <td>{lead?.full_name || '—'}</td><td>{members.length ? members.map(member => member.full_name).join(', ') : '—'}</td><td>{team.length ? number(hours,'h') : '—'}</td>
+            <td>{request.planned_start_on && request.planned_end_on ? `${formatDate(request.planned_start_on.slice(0,10))} – ${formatDate(request.planned_end_on.slice(0,10))}` : request.planned_end_on ? `By ${formatDate(request.planned_end_on.slice(0,10))}` : '—'}</td>
+            <td>{team.length ? <Pill tone={manual ? 'amber' : 'purple'}>{manual ? 'Manual override' : 'Agent recommendation'}</Pill> : '—'}</td>
+            <td>{request.past_planned_end ? <Pill tone="amber">Past planned end</Pill> : '—'}</td><td><Button size="small" onClick={() => openRequest(request.request_id)}>Open</Button></td></tr>; })}
+          {!snapshot.requests.some(projectMatches) && <tr><td colSpan={10}>No matching projects or PODs.</td></tr>}
         </tbody></table></div>
+      </Card>}
+
+      {tab === 'My PODs' && <Card><CardHeader><div><h3>My PODs</h3><p>Your final project assignments and planned contribution</p></div></CardHeader>
+        <div className="staffing-report-table-wrap"><table className="staffing-report-table"><thead><tr><th>Project</th><th>Your role</th><th>Your hours</th><th>Team</th><th>Status</th><th>Schedule</th><th><span className="staffing-muted">Details</span></th></tr></thead><tbody>
+          {snapshot.assignments.filter(assignment => assignment.person_id === data.identity?.personId).map(assignment => { const request = snapshot.requests.find(item => item.request_id === assignment.request_id); const team = teamFor(assignment.request_id); return <tr key={assignment.assignment_id}><td><b>{request?.title || assignment.request_id}</b><small>{assignment.request_id}</small></td><td>{assignment.role_in_pod === 'POD_LEAD' ? 'POD Lead' : 'POD Member'}</td><td>{number(Number(assignment.assigned_hours || 0),'h')}</td><td>{team.map(member => member.full_name).join(', ')}</td><td><Pill tone={statusTone(liveStatusLabel(request?.status || assignment.status))}>{liveStatusLabel(request?.status || assignment.status)}</Pill></td><td>{assignment.starts_on && assignment.ends_on ? `${formatDate(assignment.starts_on.slice(0,10))} – ${formatDate(assignment.ends_on.slice(0,10))}` : '—'}</td><td><Button size="small" onClick={() => openRequest(assignment.request_id)}>Open</Button></td></tr>; })}
+          {!snapshot.assignments.some(assignment => assignment.person_id === data.identity?.personId) && <tr><td colSpan={7}>You have no final POD assignments in your current access scope.</td></tr>}
+        </tbody></table></div><CardBody><p className="staffing-muted">These are planned assignments, not timesheets. Pending recommendations are not included.</p></CardBody>
       </Card>}
 
       {tab === 'Excel export' && <>

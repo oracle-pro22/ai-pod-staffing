@@ -21,6 +21,7 @@ export type BackendIdentity = {
   identity_subject: string;
   roles: string[];
   permissions: { role: string; resource: string; scope: string; actions: string[] }[];
+  onboarding?: { status: string; revision: number };
 };
 
 export async function staffingBackend(request: NextRequest, path: string, method = 'GET', body?: unknown,
@@ -106,6 +107,9 @@ export async function staffingBackend(request: NextRequest, path: string, method
 
 export async function verifiedCaptain(request: NextRequest): Promise<BackendIdentity> {
   const identity = await staffingBackend(request, '/v1/me') as BackendIdentity;
+  if (identity.onboarding && !['COMPLETE', 'REVIEW', 'LEGACY'].includes(identity.onboarding.status)) {
+    throw new StaffingApiError('Complete first-login setup before creating requests.', 403, 'ONBOARDING_REQUIRED');
+  }
   if (!identity.roles.includes('POD_CAPTAIN') || !identity.permissions.some(p => p.role === 'POD_CAPTAIN'
       && p.resource === 'REQUESTS' && p.scope !== 'LOCKED' && p.actions.includes('view') && p.actions.includes('create'))) {
     throw new StaffingApiError('A signed-in POD Captain with request permission is required.', 403, 'FORBIDDEN');

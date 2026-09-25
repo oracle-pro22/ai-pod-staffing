@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import './base.css';
 import '../styles/react-foundation.css';
 import '../styles/reports.css';
+import '../styles/roster-onboarding.css';
 
 export const metadata: Metadata = {
   title: 'AI Pod Staffing',

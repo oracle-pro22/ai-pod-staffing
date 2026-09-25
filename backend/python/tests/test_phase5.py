@@ -24,14 +24,16 @@ def actor(role='POD_LEAD', scope='SCOPED'):
 
 
 class ScopeTests(unittest.TestCase):
-    def test_captain_is_scoped_by_responsible_captain_not_request_source(self):
+    def test_full_captain_can_read_shared_queue_but_narrow_grants_remain_narrow(self):
         clause, binds = scope_clause(actor('POD_CAPTAIN', 'FULL'), 'REQUESTS')
-        self.assertEqual(clause, 'r.responsible_captain_id=:viewerId')
-        self.assertEqual(binds, {'viewerId': 'P-006'})
+        self.assertEqual((clause, binds), ('1=1', {}))
+        self.assertEqual(scope_clause(actor('POD_CAPTAIN', 'OWN'), 'REQUESTS'),
+                         ('r.responsible_captain_id=:viewerId', {'viewerId': 'P-006'}))
 
-    def test_lead_even_with_full_permission_needs_final_lead_assignment(self):
+    def test_lead_sees_own_final_assignments_in_either_pod_role(self):
         clause, _ = scope_clause(actor('POD_LEAD', 'FULL'), 'REQUESTS')
-        self.assertIn("mine.role_in_pod='POD_LEAD'", clause)
+        self.assertNotIn("mine.role_in_pod=", clause)
+        self.assertIn("mine.person_id=:viewerId", clause)
         self.assertIn("mine.status IN ('CONFIRMED','CLOSED')", clause)
         self.assertNotIn('recommendations', clause)
 
@@ -81,12 +83,12 @@ class WorkspaceTests(unittest.TestCase):
         def query(_conn, sql, **binds):
             statements.append((sql, binds))
             if 'AS pending_review' in sql: return [{'pending_review':0,'approved':0,'rejected':0}]
-            if 'AS total' in sql: return [{'total':0}]
+            if 'AS total' in sql: return [{'person_id':'P-006','total':0}]
             if "p.active_flag='Y' AND NOT" in sql:
                 self.assertEqual(binds, {'profileViewerId': 'P-006'})
                 return [{'person_id': 'P-006'}]
             return []
-        with patch('app.assignments.rows', side_effect=query), patch('app.assignments.load_policy', return_value=DEFAULT_POLICY), patch('app.assignments.ZoneInfo', return_value=timezone.utc), patch('app.assignments.load_capacity_ledger', return_value=(CapacityLedger(),0)):
+        with patch('app.assignments.rows', side_effect=query), patch('app.assignments.load_policy', return_value=DEFAULT_POLICY), patch('app.assignments.ZoneInfo', return_value=timezone.utc), patch('app.assignments.load_capacity_ledgers', return_value={'P-006': (CapacityLedger(),0)}):
             result = AssignmentStore(SimpleNamespace(read=read), SimpleNamespace(staffing_policy_version='draft')).workspace(user, date(2026,9,16), 'ALLOCATION_CALENDAR')
         self.assertEqual(result['week_start'], date(2026,9,14))
         self.assertEqual(len(result['people']), 1)
@@ -100,10 +102,10 @@ class WorkspaceTests(unittest.TestCase):
         def read(): yield None
         def query(_conn, sql, **binds):
             if 'AS pending_review' in sql: return [{'pending_review':0,'approved':0,'rejected':0}]
-            if 'AS total' in sql: return [{'total':1}]
+            if 'AS total' in sql: return [{'person_id':'P-006','total':1}]
             if "p.active_flag='Y' AND NOT" in sql: return [{'person_id': 'P-006'}]
             return []
-        with patch('app.assignments.rows', side_effect=query), patch('app.assignments.load_policy', return_value=DEFAULT_POLICY), patch('app.assignments.ZoneInfo', return_value=timezone.utc), patch('app.assignments.load_capacity_ledger', side_effect=ServiceError('CAPACITY_STALE','Refresh',409)):
+        with patch('app.assignments.rows', side_effect=query), patch('app.assignments.load_policy', return_value=DEFAULT_POLICY), patch('app.assignments.ZoneInfo', return_value=timezone.utc), patch('app.assignments.load_capacity_ledgers', return_value={'P-006': ServiceError('CAPACITY_STALE','Refresh',409)}):
             result = AssignmentStore(SimpleNamespace(read=read), SimpleNamespace(staffing_policy_version='draft')).workspace(actor(), date(2026,9,16))
         self.assertIsNone(result['people'][0]['allocation_pct'])
         self.assertEqual(result['people'][0]['capacity_status'], 'CAPACITY_STALE')
@@ -196,6 +198,19 @@ class ClosureTests(unittest.TestCase):
                 (Permission(role, 'REQUESTS', 'FULL', frozenset({'view', 'update'})),))
             with self.subTest(role=role), self.assertRaises(ServiceError):
                 self.close()
+        self.assertFalse(self.commands)
+
+    def test_assigned_lead_can_close_with_higher_captain_and_admin_grants(self):
+        self.user = Actor('real-subject', 'P-006', frozenset({'POD_LEAD', 'POD_CAPTAIN', 'SYSTEM_ADMINISTRATOR'}), (
+            Permission('POD_LEAD', 'REQUESTS', 'SCOPED', frozenset({'view', 'update'})),
+            Permission('POD_CAPTAIN', 'REQUESTS', 'FULL', frozenset({'view', 'update'})),
+            Permission('SYSTEM_ADMINISTRATOR', 'REQUESTS', 'FULL', frozenset({'view', 'update'})),
+        ))
+        self.assertEqual(self.close()['status'], 'CLOSED')
+
+    def test_lead_grant_does_not_allow_closing_project_where_serving_as_member(self):
+        self.members[0]['role_in_pod'] = 'POD_MEMBER'
+        with self.assertRaises(ServiceError): self.close()
         self.assertFalse(self.commands)
 
     def test_decisions_disabled_and_unstaffed_requests_cannot_close(self):

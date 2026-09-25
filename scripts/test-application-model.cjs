@@ -129,7 +129,7 @@ test('active catalogue, new capability, blank defaults, and historical requests 
 test('assigned scopes exclude pending, declined, unselected and other-person recommendations', () => {
   const data = fixture();
   assert.equal(selectVisibleRequests(data, 'POD Captain').length, 5);
-  assert.deepEqual(selectVisibleRequests(data, 'POD Lead').map((item) => item.id), ['REQ-1']);
+  assert.deepEqual(selectVisibleRequests(data, 'POD Lead').map((item) => item.id), ['REQ-1', 'REQ-5']);
   assert.deepEqual(selectVisibleRequests(data, 'POD Member').map((item) => item.id), ['REQ-1']);
   assert.deepEqual(selectVisibleRequests(data, 'Administrator'), []);
   assert.deepEqual(selectVisiblePeople(data, 'POD Member').map((item) => item.id), ['P-001']);
@@ -266,6 +266,31 @@ test('new request uses canonical DB names, current revision and mapped capabilit
   assert.equal(writes[0].binds.mappingVersion, 'current-version');
   assert.equal(writes[1].binds.skillName, 'Comms Team');
   assert.equal(writes[1].binds.deliverableId, 'DEL-072');
+});
+test('Other entries resolve safely or remain request-scoped without blocking a valid request', async () => {
+  let writes = mockSave();
+  await createStaffingRequest({ ...input,
+    deliverables: [{ id: 'CUSTOM-DEL-1', name: 'Executive Communication Support', note: '', custom: true }],
+    requiredCapabilities: [{ id: 'CUSTOM-SKILL-1', name: 'Comms Team', requiredStrength: null, source: 'Request entry', custom: true }],
+  }, { role: 'POD Captain', actor: 'test' });
+  const exact = JSON.parse(writes[0].binds.deliverablesJson)[0];
+  assert.equal(exact.id, 'DEL-072');
+  assert.equal(exact.custom, false);
+  assert.equal(exact.requestedName, 'Executive Communication Support');
+  assert.equal(writes[1].binds.interestId, 'SK-014');
+  assert.equal(writes[1].binds.mandatoryFlag, 'Y');
+
+  writes = mockSave();
+  await createStaffingRequest({ ...input,
+    deliverables: [{ id: 'CUSTOM-DEL-1', name: 'Brand new customer artifact', note: '', custom: true }],
+    requiredCapabilities: [input.requiredCapabilities[0],
+      { id: 'CUSTOM-SKILL-1', name: 'Emerging specialty', requiredStrength: null, source: 'Request entry', custom: true, mandatory: false }],
+  }, { role: 'POD Captain', actor: 'test' });
+  const scoped = JSON.parse(writes[0].binds.deliverablesJson)[0];
+  assert.equal(scoped.custom, true);
+  assert.equal(scoped.resolution, 'REQUEST_SCOPED');
+  assert.equal(writes[2].binds.interestId, null);
+  assert.equal(writes[2].binds.mandatoryFlag, 'N');
 });
 test('retired or wrong-project deliverable submission fails before inserting anything', async () => {
   const writes = mockSave(true);

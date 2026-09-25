@@ -12,13 +12,13 @@ async function forward(request: NextRequest, context: { params: Promise<{ path: 
     const joined = path.join('/');
     const id = '[A-Za-z0-9_-]{1,64}';
     const allowed = request.method === 'GET'
-      ? new RegExp(`^(me|workspace|reports/export|requests|admin/utilization|requests/${id}/(execution|proposal|manual)|executions/${id}|proposals/${id})$`)
-      : new RegExp(`^(requests/${id}/(executions|close|manual-preview|manual-decision)|proposals/${id}/selection|decisions|admin/utilization)$`);
+      ? new RegExp(`^(me|onboarding|admin/accounts|workspace|reports/export|requests|admin/utilization|requests/${id}/(execution|proposal|manual)|executions/${id}|proposals/${id})$`)
+      : new RegExp(`^(onboarding|admin/accounts/${id}/access|requests/${id}/(executions|close|manual-preview|manual-decision)|proposals/${id}/selection|decisions|admin/utilization)$`);
     if (!allowed.test(joined)) throw new StaffingApiError('Staffing endpoint not found.', 404, 'NOT_FOUND');
     let body: unknown;
     if (request.method === 'POST') {
       const content = await request.text();
-      if (content.length > 12000) throw new StaffingApiError('Request is too large.', 413, 'BODY_LIMIT');
+      if (content.length > (joined === 'onboarding' ? 100000 : 12000)) throw new StaffingApiError('Request is too large.', 413, 'BODY_LIMIT');
       try { body = JSON.parse(content); } catch { throw new StaffingApiError('Invalid JSON.', 400, 'INVALID_JSON'); }
     }
     const after = request.nextUrl.searchParams.get('after');

@@ -6,14 +6,18 @@ import { StaffingApiError } from '@/lib/errors/staffing-api-error';
 import { isStaffingRole } from '@/types/roles';
 import type { StaffingMutationContext } from '@/types/mutations';
 import { agenticEnabled, staffingBackend, type BackendIdentity } from '@/backend/staffing/bridge';
-import { ROLE_CODES, STAFFING_ROLES } from '@/types/roles';
+import { highestStaffingRole, ROLE_CODES } from '@/types/roles';
 
 export async function staffingRequestContext(request: NextRequest): Promise<StaffingMutationContext> {
   if (agenticEnabled()) {
     const identity = await staffingBackend(request, '/v1/me') as BackendIdentity;
     const requested = request.headers.get('x-staffing-role');
-    const role = requested ?? STAFFING_ROLES.find(r => identity.roles.includes(ROLE_CODES[r]));
-    if (!isStaffingRole(role) || !identity.roles.includes(ROLE_CODES[role])) {
+    if (requested && (!isStaffingRole(requested) || !identity.roles.includes(ROLE_CODES[requested]))) {
+      throw new StaffingApiError('This profile is not assigned to your signed-in identity.', 403, 'FORBIDDEN');
+    }
+    // A browser header is a preview preference, never an authenticated role switch.
+    const role = highestStaffingRole(identity.roles);
+    if (!role) {
       throw new StaffingApiError('This profile is not assigned to your signed-in identity.', 403, 'FORBIDDEN');
     }
     return { role, actor: identity.identity_subject, personId: identity.person_id, authenticated: true };

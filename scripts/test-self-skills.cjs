@@ -48,7 +48,10 @@ async function transaction(fn) {
       calls.push({ sql, binds });
       if (injectFailure?.(sql, binds)) throw Object.assign(new Error('Injected database failure'), { errorNum: 99999 });
       if (/^(ALTER SESSION|SET TRANSACTION)/.test(sql)) return {};
-      if (/FROM role_permissions rp/.test(sql)) return { rows: working.permitted ? [{ ACCESS_SCOPE: 'OWN', CAN_VIEW: 'Y', CAN_CREATE: 'Y', CAN_UPDATE: 'Y' }] : [] };
+      if (/SELECT USER AS db_user/.test(sql)) return { rows: [{ DB_USER: 'AI_POD_STAFFING', CURRENT_SCHEMA: 'AI_POD_STAFFING' }] };
+      if (/SELECT ur.person_id FROM app_user_roles/.test(sql)) return { rows: working.identityAllowed ? [{ PERSON_ID: binds.personId }] : [] };
+      if (/FROM app_roles ar JOIN role_permissions rp/.test(sql)) return { rows: working.permitted
+        ? working.permissionRows ?? [{ ACCESS_SCOPE: 'OWN', CAN_VIEW: 'Y', CAN_CREATE: 'Y', CAN_UPDATE: 'Y' }] : [] };
       if (/FROM people/.test(sql)) return { rows: working.people[binds.personId] ? [structuredClone(working.people[binds.personId])] : [] };
       if (/FROM interests ORDER/.test(sql)) return { rows: structuredClone(catalogue) };
       if (/FROM interests WHERE interest_id/.test(sql)) return { rows: catalogue.filter((row) => row.INTEREST_ID === binds.skillId) };
@@ -112,6 +115,37 @@ const lead = { role: 'POD Lead', actor: 'PREVIEW:POD_LEAD' };
 const assessment = { skillId: 'SK-002', strength: 3, interested: true, evidence: 'Created a service launch communications plan.' };
 const patch = (upserts = [assessment], version = 0) => ({ version, upserts });
 const status = (expected) => (error) => error.status === expected;
+
+test('signed Administrator with a current Lead grant edits only their own skills without changing display role', async () => {
+  reset(); database.identityAllowed = true;
+  database.permissionRows = [
+    { ROLE_CODE: 'SYSTEM_ADMINISTRATOR', ACCESS_SCOPE: 'LOCKED', CAN_VIEW: 'N', CAN_CREATE: 'N', CAN_UPDATE: 'N' },
+    { ROLE_CODE: 'POD_LEAD', ACCESS_SCOPE: 'OWN', CAN_VIEW: 'Y', CAN_CREATE: 'Y', CAN_UPDATE: 'Y' },
+  ];
+  const context = { authenticated: true, role: 'Administrator', actor: 'acct:REAL', personId: 'P-006' };
+  const profile = await getSelfSkills(context);
+  assert.equal(profile.personId, 'P-006'); assert.equal(profile.identityMode, 'authenticated');
+  await updateSelfSkills(patch(), context);
+  assert.equal(database.people['P-006'].SKILLS_VERSION, 1);
+  assert.equal(database.people['P-001'].SKILLS_VERSION, 0);
+  const permissions = calls.find(call => /FROM app_roles ar JOIN role_permissions rp/.test(call.sql));
+  assert.equal(permissions.binds.identitySubject, 'acct:REAL');
+  assert.equal(permissions.binds.personId, 'P-006');
+  assert.match(permissions.sql, /ur.role_code = ar.role_code/);
+  assert.match(permissions.sql, /identity_account.active_flag='Y'/);
+  assert.equal(permissions.binds.roleCode, undefined); // No highest-role-only permission lookup.
+});
+
+test('a revoked staffing grant or inactive identity cannot use Administrator rank to edit personal skills', async () => {
+  reset(); database.identityAllowed = true;
+  database.permissionRows = [{ ROLE_CODE: 'SYSTEM_ADMINISTRATOR', ACCESS_SCOPE: 'LOCKED', CAN_VIEW: 'N' }];
+  const context = { authenticated: true, role: 'Administrator', actor: 'acct:REAL', personId: 'P-006' };
+  await assert.rejects(updateSelfSkills(patch(), context), status(403));
+  database.identityAllowed = false;
+  await assert.rejects(getSelfSkills(context), status(403));
+  assert.equal(database.people['P-006'].SKILLS_VERSION, 0);
+  assert.equal(calls.filter(call => /^(\s*UPDATE|\s*INSERT|\s*DELETE)/.test(call.sql)).length, 0);
+});
 
 test('validates ratings and distinguishes an unrated interest from a zero rating', () => {
   assert.equal(validateSelfSkillsPatch(patch()).upserts[0].strength, 3);
@@ -339,6 +373,8 @@ test('skills modal retains role capability controls without demo warnings or a s
   assert.ok(!markup.includes('Proficiency — Project Manager'));
   assert.match(markup, /<button[^>]*disabled=""[^>]*>Save changes<\/button>/);
   assert.match(markup, /Evidence \(required\) — GTM SME/);
+  assert.match(markup, /Interested in future work using this skill/);
+  assert.match(markup, /does not change proficiency or qualify someone for a required skill/);
 });
 
 const experience = { deliverableId: 'DEL-001', experienceLevel: 'SUPPORTED', contributionScope: 'CONTRIBUTOR', interested: true, experience: 'Helped produce launch communications with guidance.' };

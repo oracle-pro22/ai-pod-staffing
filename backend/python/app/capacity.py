@@ -16,11 +16,13 @@ class CapacityLedger(Contract):
     # Approved scheduled work that still counts: open assignments plus closed
     # assignments' dates through their closure day. This is not actual time spent.
     confirmed_work: tuple[DailyHours, ...] = ()
+    # Self-reported existing PODs count until linked/dismissed; not assignments.
+    reported_pod_work: tuple[DailyHours, ...] = ()
     external_work: tuple[DailyHours, ...] = ()
 
     @model_validator(mode="after")
     def unique_daily_aggregates(self):
-        for entries in (self.absences, self.confirmed_work, self.external_work):
+        for entries in (self.absences, self.confirmed_work, self.reported_pod_work, self.external_work):
             if len({row.day for row in entries}) != len(entries):
                 raise ValueError("Duplicate dates: pass de-duplicated daily aggregates")
         return self
@@ -72,6 +74,8 @@ def calculate_capacity(ledger: CapacityLedger, start: date, end: date, proposed:
     week_end = end + timedelta(days=6 - end.weekday())
     absence, confirmed, external, proposal = [{row.day: row.hours for row in entries}
         for entries in (ledger.absences, ledger.confirmed_work, ledger.external_work, proposed)]
+    for row in ledger.reported_pod_work:
+        confirmed[row.day] = confirmed.get(row.day, ZERO) + row.hours
     weeks = []
     overloaded = []
     daily_capacity = ledger.weekly_hours / 5
@@ -140,7 +144,7 @@ def available_day_caps(ledger: CapacityLedger, start: date, end: date,
         return {}
     absence = {item.day: item.hours for item in ledger.absences}
     work = {}
-    for item in (*ledger.external_work, *ledger.confirmed_work):
+    for item in (*ledger.external_work, *ledger.confirmed_work, *ledger.reported_pod_work):
         work[item.day] = work.get(item.day, ZERO) + item.hours
     result = {}
     for day in dates_between(start, end):

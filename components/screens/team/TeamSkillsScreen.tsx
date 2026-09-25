@@ -17,7 +17,7 @@ export function TeamSkillsScreen() {
   const { data, state, dispatch } = useStaffingApp();
   const person = selectIdentityPerson(data, state.role);
   const showDirectory = state.role !== 'POD Member';
-  const selfSkills = (state.role === 'POD Lead' || state.role === 'POD Member') && canPerform(state.role, 'MY_SKILLS', 'canView', data.authorization);
+  const selfSkills = canPerform(state.role, 'MY_SKILLS', 'canView', data.authorization);
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState('availability');
   const people = useMemo(() => {

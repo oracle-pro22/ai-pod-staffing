@@ -1,4 +1,5 @@
 'use client';
+import { browserId } from '@/lib/browser-id';
 
 import {
   createContext,
@@ -131,13 +132,20 @@ export function StaffingAppProvider({
   children: ReactNode;
 }) {
   const reducer = useMemo(
-    () => (state: StaffingAppState, action: StaffingAppAction) => staffingAppReducer(state, action, data.authorization),
-    [data.authorization],
+    () => (state: StaffingAppState, action: StaffingAppAction) => {
+      if (data.identity && action.type === 'set-role' && action.role !== data.identity.role) return state;
+      return staffingAppReducer(state, action, data.authorization);
+    },
+    [data.authorization, data.identity],
   );
   const [state, dispatch] = useReducer(reducer, { ...initialState, role: data.identity?.role ?? initialState.role,
     activeScreen: data.identity?.sessionMode === 'persona'
       ? personaLandingScreen(data.identity.role, data.authorization) : initialState.activeScreen });
   const storageReady = useRef(false);
+
+  useEffect(() => {
+    if (data.identity && data.identity.role !== state.role) dispatch({ type: 'set-role', role: data.identity.role });
+  }, [data.identity, state.role]);
 
   useEffect(() => {
     if (data.identity) return;
@@ -157,7 +165,7 @@ export function StaffingAppProvider({
     setRole: (role) => { if (!data.identity) dispatch({ type: 'set-role', role }); },
     notify: (title, message) => dispatch({
       type: 'add-toast',
-      toast: { id: window.crypto.randomUUID(), title, message },
+      toast: { id: browserId(), title, message },
     }),
   }), [data, state]);
 

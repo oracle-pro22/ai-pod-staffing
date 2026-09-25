@@ -1087,6 +1087,7 @@
 .staffing-availability-layout { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(300px, .75fr); gap: 16px; }
 .staffing-leave { display: grid; grid-template-columns: 58px 1fr auto; gap: 10px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--staffing-border-2); }
 .staffing-leave:last-child { border-bottom: 0; }
+.staffing-leave > .staffing-inline-actions { justify-content: flex-end; flex-wrap: wrap; }
 .staffing-date-tile { padding: 5px; border-radius: 9px; background: var(--staffing-surface-soft); text-align: center; }
 .staffing-date-tile strong { display: block; font-size: 13px; }
 .staffing-date-tile span { color: var(--staffing-ink-3); font-size: 9px; text-transform: uppercase; }

@@ -6,13 +6,13 @@ import { PersonCombobox } from '@/components/ui/PersonCombobox';
 import type { Member } from './LiveStaffingReview';
 
 export type ManualSlot = { person_id: string; role: 'POD_LEAD' | 'POD_MEMBER'; manual: boolean };
-export type ManualPerson = { person_id: string; full_name: string; role_code: string };
+export type ManualPerson = { person_id: string; full_name: string; role_codes: string[] };
 
 export function manualPeopleForSlot(people: ManualPerson[], draft: ManualSlot[], slotIndex: number) {
   const slot = draft[slotIndex];
   const selectedElsewhere = new Set(draft.filter((_, index) => index !== slotIndex).map(row => row.person_id).filter(Boolean));
   return [...new Map(people
-    .filter(person => slot.role === 'POD_LEAD' ? person.role_code === 'POD_LEAD' : ['POD_MEMBER', 'POD_LEAD'].includes(person.role_code))
+    .filter(person => person.role_codes.includes(slot.role))
     .filter(person => person.person_id === slot.person_id || !selectedElsewhere.has(person.person_id))
     .map(person => [person.person_id, person])).values()];
 }
@@ -27,10 +27,12 @@ export function ManualPodEditor({ people, selected, slots, leadCount, memberCoun
   ]);
   const allSelected = draft.every(slot => slot.person_id);
   const uniquePeople = new Set(draft.map(slot => slot.person_id).filter(Boolean)).size === draft.length;
+  const eligiblePeople = draft.every(slot => people.some(person => person.person_id === slot.person_id && person.role_codes.includes(slot.role)));
   const manualCount = draft.filter(slot => slot.manual).length;
-  const valid = allSelected && uniquePeople && manualCount > 0;
+  const valid = allSelected && uniquePeople && eligiblePeople && manualCount > 0;
   const readiness = !allSelected ? 'Choose a person for every POD role.'
     : !uniquePeople ? 'Choose a different person for each POD role.'
+    : !eligiblePeople ? 'Choose people with an active grant for each POD role.'
     : !manualCount ? 'Change a person or mark at least one existing choice as a manual override.'
     : `${manualCount} manual override${manualCount === 1 ? '' : 's'} ready for allocation preview.`;
   return <Modal open title="Captain manual override"

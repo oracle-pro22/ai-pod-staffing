@@ -16,9 +16,9 @@ from app.engine_version import (
 from app.errors import ServiceError
 from app.evidence import collect_evidence
 from app.planning import EvidenceBundle, json_text
+from app.policy_admin import active_policy_version, require_current_policy
 from app.rules import validate_pod
 from app.storage import document, load_policy, rows
-from app.policy_admin import active_policy_version, require_current_policy
 
 TERMINAL = {"NEEDS_INFORMATION", "READY_FOR_REVIEW", "NO_FEASIBLE_POD", "FAILED", "SUPERSEDED", "CANCELLED"}
 
@@ -38,6 +38,7 @@ class Job:
     token: str
     checkpoint: dict
     evidence: EvidenceBundle | None = None
+    requester_person_id: str | None = None
 
 
 def execute(connection, sql, binds=None, clobs=()):
@@ -54,7 +55,7 @@ def runtime_enabled(connection):
     return len(result) == 1 and result[0]["agents_enabled"] == "Y"
 
 
-def assert_captain(connection, subject, person_id):
+def assert_captain(connection, subject, person_id, responsible_captain_id=None):
     permitted = rows(connection, """SELECT p.person_id FROM app_user_roles ur
         JOIN people p ON p.person_id=ur.person_id AND p.active_flag='Y'
         JOIN app_roles ar ON ar.role_code=ur.role_code AND ar.active_flag='Y'
@@ -62,10 +63,14 @@ def assert_captain(connection, subject, person_id):
         WHERE ur.identity_subject=:identitySubject AND ur.person_id=:captainId
         AND ur.role_code='POD_CAPTAIN' AND ur.active_flag='Y'
         AND ur.effective_from<=TRUNC(SYSDATE) AND (ur.effective_to IS NULL OR ur.effective_to>=TRUNC(SYSDATE))
-        AND rp.can_view='Y' AND rp.can_create='Y' AND rp.access_scope IN ('FULL','OWN','SCOPED')
-    """, identitySubject=subject, captainId=person_id)
-    if len(permitted) != 1:
-        raise ServiceError("FORBIDDEN", "An active responsible Captain with agent-run permission is required.", 403)
+        AND rp.can_view='Y' AND rp.can_create='Y'
+        AND (rp.access_scope='FULL' OR (rp.access_scope IN ('OWN','SCOPED') AND ur.person_id=:ownerId))
+        AND (NOT EXISTS (SELECT 1 FROM app_accounts a WHERE a.identity_subject=ur.identity_subject OR a.person_id=ur.person_id)
+             OR EXISTS (SELECT 1 FROM app_accounts a WHERE a.identity_subject=ur.identity_subject
+                        AND a.person_id=ur.person_id AND a.active_flag='Y'))
+    """, identitySubject=subject, captainId=person_id, ownerId=responsible_captain_id or person_id)
+    if len(permitted) != 1 or permitted[0]["person_id"] != person_id:
+        raise ServiceError("FORBIDDEN", "An active Captain with agent-run permission is required.", 403)
 
 
 class ExecutionStore:
@@ -85,9 +90,7 @@ class ExecutionStore:
             if len(request_rows) != 1:
                 raise ServiceError("REQUEST_NOT_FOUND", "Staffing request not found.", 404)
             request = request_rows[0]
-            if person_id != request["responsible_captain_id"]:
-                raise ServiceError("FORBIDDEN", "This request belongs to another Captain.", 403)
-            assert_captain(connection, subject, person_id)
+            assert_captain(connection, subject, person_id, request["responsible_captain_id"])
             if automatic and request["agent_enabled"] != "Y":
                 return None
             key = hashlib.sha256(f"{subject}|{idempotency_key}".encode()).hexdigest()
@@ -112,7 +115,8 @@ class ExecutionStore:
                 policy.require_published()
             execution_id = "RUN-" + uuid4().hex
             envelope = {"format_version": 1, "request_id": request_id, "revision": request["request_revision"],
-                        "responsible_captain_id": person_id, "policy": policy.model_dump(mode="json")}
+                        "responsible_captain_id": request["responsible_captain_id"],
+                        "requester_person_id": person_id, "policy": policy.model_dump(mode="json")}
             # An incomplete request still gets a durable information-needed outcome from the worker.
             execute(connection, """INSERT INTO agent_executions(execution_id,request_id,request_revision,policy_version,
                 idempotency_key,request_snapshot_json,created_by,model_id,prompt_version)
@@ -181,6 +185,10 @@ class ExecutionStore:
                 validate_execution_checkpoint(checkpoint, record["prompt_version"], record["model_id"],
                                               self.settings.oci_genai_model_id)
                 bundle = EvidenceBundle.model_validate(document(record["evidence_snapshot_json"])) if record["evidence_snapshot_json"] else None
+                envelope = document(record["request_snapshot_json"])
+                requester = envelope.get("requester_person_id", envelope["responsible_captain_id"])
+                if not isinstance(requester, str) or not requester.strip():
+                    raise ValueError("Missing execution requester")
                 if ("analysis" in checkpoint or "search" in checkpoint or "selection" in checkpoint) and bundle is None:
                     raise ValueError("Missing evidence snapshot")
             except (ValueError, TypeError, KeyError):
@@ -188,7 +196,7 @@ class ExecutionStore:
                 return None
             self.event(connection, chosen[0], "worker", "RUNNING", "Worker acquired execution lease.")
             return Job(chosen[0], record["request_id"], record["request_revision"], record["policy_version"],
-                       record["created_by"], token, checkpoint, bundle)
+                       record["created_by"], token, checkpoint, bundle, requester)
 
     def lock_job(self, connection, job):
         record = rows(connection, """SELECT lease_token,status,attempt_count,max_attempts,
@@ -236,9 +244,14 @@ class ExecutionStore:
             request = rows(connection, "SELECT request_revision,responsible_captain_id,status FROM requests WHERE request_id=:requestId", requestId=job.request_id)[0]
             if request["request_revision"] != job.request_revision or request["status"] not in ("NEEDS_RECOMMENDATION", "IN_REVIEW"):
                 raise ServiceError("STALE_INPUTS", "Request changed after execution was queued.", 409)
-            assert_captain(connection, job.created_by, request["responsible_captain_id"])
             job_row = rows(connection, "SELECT request_snapshot_json FROM agent_executions WHERE execution_id=:executionId", executionId=job.execution_id)[0]
             envelope = document(job_row["request_snapshot_json"])
+            if envelope.get("responsible_captain_id") != request["responsible_captain_id"]:
+                raise ServiceError("STALE_INPUTS", "Request ownership changed after execution was queued.", 409)
+            # Pre-multirole runs were necessarily queued by their owner. New
+            # runs preserve the actual caller independently of that owner.
+            job.requester_person_id = envelope.get("requester_person_id", envelope["responsible_captain_id"])
+            assert_captain(connection, job.created_by, job.requester_person_id, request["responsible_captain_id"])
             bundle = collect_evidence(connection, job.request_id, job.policy_version, self.settings.staffing_max_candidates)
             if bundle.policy.model_dump(mode="json") != envelope["policy"]:
                 raise ServiceError("STALE_INPUTS", "Policy changed after execution was queued; start a new run.", 409)
@@ -294,7 +307,9 @@ class ExecutionStore:
             for member in sorted(proposal.members, key=lambda m: m.person_id):
                 rows(connection, "SELECT person_id FROM people WHERE person_id=:personId FOR UPDATE WAIT 5", personId=member.person_id)
             self.lock_job(connection, job)
-            assert_captain(connection, job.created_by, request_row["responsible_captain_id"])
+            assert_captain(connection, job.created_by,
+                           job.requester_person_id or job.evidence.request.responsible_captain_id,
+                           request_row["responsible_captain_id"])
             if request_row["status"] not in ("NEEDS_RECOMMENDATION", "IN_REVIEW") or request_row["request_revision"] != job.request_revision:
                 raise ServiceError("STALE_INPUTS", "Request changed before proposal publication.", 409)
             fresh = collect_evidence(connection, job.request_id, job.policy_version, self.settings.staffing_max_candidates)
@@ -359,11 +374,12 @@ class ExecutionStore:
 
     @staticmethod
     def authorize_read(actor, captain_id):
-        # Administrator FULL access is explicit. A Captain can read only their own requests.
-        if "SYSTEM_ADMINISTRATOR" in actor.roles:
-            permission = actor.require("AGENT_EXECUTION", "view", "SYSTEM_ADMINISTRATOR")
-            if permission.scope == "FULL":
-                return
+        # A locked Admin grant must not hide an actual Captain grant. A full
+        # read grant never creates approval/run rights for an Admin-only user.
+        if any(p.role in actor.roles and p.role in ("SYSTEM_ADMINISTRATOR", "POD_CAPTAIN")
+               and p.resource == "AGENT_EXECUTION" and p.scope == "FULL" and "view" in p.actions
+               for p in actor.permissions):
+            return
         actor.require("AGENT_EXECUTION", "view", "POD_CAPTAIN")
         if actor.person_id != captain_id:
             raise ServiceError("FORBIDDEN", "This staffing record belongs to another Captain.", 403)
@@ -391,14 +407,14 @@ class ExecutionStore:
 
     def visible_requests(self, actor):
         actor.require("AGENT_EXECUTION", "view")
-        full_admin = any(p.role == "SYSTEM_ADMINISTRATOR" and p.role in actor.roles and p.resource == "AGENT_EXECUTION"
+        full_access = any(p.role in ("SYSTEM_ADMINISTRATOR", "POD_CAPTAIN") and p.role in actor.roles and p.resource == "AGENT_EXECUTION"
                          and p.scope == "FULL" and "view" in p.actions for p in actor.permissions)
-        if not full_admin:
+        if not full_access:
             actor.require("AGENT_EXECUTION", "view", "POD_CAPTAIN")
         with self.database.read() as connection:
             return rows(connection, """SELECT request_id,title,status,responsible_captain_id,request_revision FROM requests
                 WHERE (:fullAdmin=1 OR responsible_captain_id=:personId) ORDER BY created_at DESC,request_id""",
-                fullAdmin=1 if full_admin else 0, personId=actor.person_id)
+                fullAdmin=1 if full_access else 0, personId=actor.person_id)
 
     def latest(self, request_id, actor):
         with self.database.read() as connection:

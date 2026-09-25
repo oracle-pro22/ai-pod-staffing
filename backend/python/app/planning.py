@@ -8,10 +8,10 @@ from pydantic import Field
 
 from app.capacity import (CapacityLedger, available_day_caps, calculate_capacity, dates_between,
                           distribute_cents, schedule_available_hours, spread_hours)
-from app.contracts import Candidate, Contract, Proposal, ProposedMember, RequestSnapshot
+from app.contracts import Candidate, Contract, PodRole, Proposal, ProposedMember, RequestSnapshot
 from app.policy import StaffingPolicy
 from app.errors import ServiceError
-from app.rules import (covers, effective_role, has_relevant_evidence, member_schedule,
+from app.rules import (covers, eligible_for_slot, has_relevant_evidence, member_schedule,
                        minimum_member_contribution, score_candidate, validate_pod)
 
 
@@ -102,7 +102,7 @@ def score_plan_member(bundle: EvidenceBundle, member: ProposedMember) -> dict:
               'current_allocation_pct': pct(week.committed_hours, week.available_hours)} for week in result.weeks]
     absence = {row.day: row.hours for row in ledger.absences}
     work = {}
-    for row in (*ledger.confirmed_work, *ledger.external_work):
+    for row in (*ledger.confirmed_work, *ledger.reported_pod_work, *ledger.external_work):
         work[row.day] = work.get(row.day, Decimal(0)) + row.hours
     days = list(dates_between(request.starts_on, request.ends_on))
     window_available = sum((max(Decimal(0), ledger.weekly_hours / 5 - absence.get(day, Decimal(0)))
@@ -175,9 +175,9 @@ def find_options(bundle: EvidenceBundle, limit: int = 2000, keep: int = 3, *,
         elif policy.scheduling and not has_relevant_evidence(person, req, policy):
             exclusions.setdefault(person.person_id, 'NO_RELEVANT_EVIDENCE')
             caps[person.person_id] = 0
-    leads = sorted(p.person_id for p in bundle.candidates if caps[p.person_id] and effective_role(p, policy.lead_role_code, req))
+    leads = sorted(p.person_id for p in bundle.candidates if caps[p.person_id] and eligible_for_slot(p, PodRole.LEAD, req))
     members = sorted(p.person_id for p in bundle.candidates if caps[p.person_id]
-                     and any(effective_role(p, role, req) for role in policy.member_role_codes))
+                     and eligible_for_slot(p, PodRole.MEMBER, req))
     # Pin an exact Captain selection without changing any candidate's actual
     # roles/evidence. Normal eligibility and full-team validation still apply.
     if selected_leads is not None or selected_members is not None:

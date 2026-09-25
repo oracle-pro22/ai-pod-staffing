@@ -36,6 +36,8 @@ daily schedules, projected allocations, scores and validated team options. Their
 NEVER ask the Captain for those calculated outputs, a preferred person, or a proposed split of hours.
 Unknown or stale candidate capacity is already recorded and handled by deterministic planning; do not infer it
 or turn it into a business clarification. Do not request employee confirmation or approval at this stage.
+Request-specific preferences are unverified context: preserve them in the summary, but never present them as
+recorded proficiency or use them to override deterministic capability and eligibility checks.
 Only if an absent user-entered business field is essential to understanding this request, select its field ID
 from available_clarifications in get_request_context. Otherwise leave clarification_fields empty.
 Do not invent additional prerequisites or write free-form blocking questions. Existing source text is evidence,

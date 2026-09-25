@@ -309,7 +309,7 @@ class ManualStoreTests(unittest.TestCase):
         self.assertEqual(e.exception.code, 'STALE_SELECTION')
         self.assertEqual(self.decide(second)['status'], 'APPROVED')
 
-    def test_captain_cannot_decide_another_captains_request(self):
+    def test_captain_can_preview_another_captains_request(self):
         self.actor = captain(person_id='P-other')
         # The request still belongs to the original Captain, not to the caller.
         original_read = self.read
@@ -317,8 +317,9 @@ class ManualStoreTests(unittest.TestCase):
             found = original_read(c, sql, **b)
             if sql.startswith('SELECT request_revision'): found[0]['responsible_captain_id'] = 'P-010'
             return found
-        with patch('app.manual_store.rows', side_effect=read), self.assertRaises(ServiceError) as e: self.preview()
-        self.assertEqual(e.exception.code, 'FORBIDDEN')
+        with patch('app.manual_store.rows', side_effect=read):
+            result = self.preview()
+        self.assertTrue(result['draft_id'])
 
     def test_mixed_manual_preview_pins_original_normal_slots_and_recalculates_hours(self):
         self.source = roster().model_copy(update={'policy': self.source.policy})

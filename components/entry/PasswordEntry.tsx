@@ -4,7 +4,7 @@ import { useState, type FormEvent } from 'react';
 import { announcePersonaChange } from '@/lib/staffing-fetch';
 import '@/styles/password-entry.css';
 
-export function PasswordEntry({ initialError = '' }: { initialError?: string }) {
+export function PasswordEntry({ initialError = '', applicationUrl }: { initialError?: string; applicationUrl?: string }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
@@ -13,13 +13,18 @@ export function PasswordEntry({ initialError = '' }: { initialError?: string }) 
     event.preventDefault();
     if (busy) return;
     setBusy(true); setError('');
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 30000);
     try {
       const response = await fetch('/api/auth/login', { method: 'POST', cache: 'no-store',
-        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: email.trim(), password }) });
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: email.trim(), password }), signal: controller.signal });
       const result = await response.json().catch(() => null);
       if (!response.ok) throw new Error(typeof result?.error === 'string' ? result.error : 'Unable to sign in. Please try again.');
       setPassword(''); announcePersonaChange(); window.location.assign('/');
-    } catch (e) { setError(e instanceof Error ? e.message : 'Unable to sign in.'); setBusy(false); }
+    } catch (e) { setError(e instanceof DOMException && e.name === 'AbortError'
+      ? 'Sign in took too long. Check that the backend and database are available, then try again.'
+      : e instanceof Error ? e.message : 'Unable to sign in.'); setBusy(false); }
+    finally { window.clearTimeout(timeout); }
   }
   return <main className="password-entry">
     <header className="password-brand"><span aria-hidden="true">AI</span><div><strong>AI Pod Staffing</strong><small>Customer Success Services</small></div></header>
@@ -33,7 +38,9 @@ export function PasswordEntry({ initialError = '' }: { initialError?: string }) 
         <label htmlFor="staffing-password">Password</label>
         <input id="staffing-password" name="password" type="password" autoComplete="current-password" required maxLength={1024}
           value={password} onChange={e => setPassword(e.target.value)} disabled={busy} />
-        {error && <p className="password-error" role="alert">{error}</p>}
+        {error && <p className="password-error" role="alert">{error}
+          {applicationUrl && <><br /><a href={applicationUrl}>Open {applicationUrl}</a></>}
+        </p>}
         <button type="submit" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button>
       </form>
       <p className="password-note">Your account opens the workspace assigned to your role.</p>

@@ -10,6 +10,42 @@ from app.execution_store import execute
 from app.storage import rows, calendar_day
 
 
+class SameConnection:
+    """Reuse the caller's transaction; never commit partial capacity changes."""
+    def __init__(self, connection):
+        self.c = connection
+
+    def write(self):
+        from contextlib import nullcontext
+        return nullcontext(self.c)
+
+    read = write
+
+
+def refresh_recorded_capacity(connection, person_id, operator, start, end):
+    """Refresh every recorded week after a person-wide version change.
+
+    Validate the event weeks, but never turn unconfirmed weeks into free capacity.
+    Each refresh is at most 13 weeks and shares the caller's person lock.
+    """
+    saved = rows(connection, 'SELECT work_date FROM person_capacity_days WHERE person_id=:personId', personId=person_id)
+    saved_days = {calendar_day(r['work_date']) for r in saved}
+    weeks = {day - timedelta(days=day.weekday()) for day in saved_days}
+    # Incomplete weeks were already unknown. Do not silently fill their gaps.
+    weeks = {week for week in weeks if all(week + timedelta(days=i) in saved_days for i in range(7))}
+    first, last = start - timedelta(days=start.weekday()), end - timedelta(days=end.weekday())
+    for offset in range(0, (last-first).days+1, 7):
+        week = first + timedelta(days=offset)
+        if week not in weeks:
+            refresh(SameConnection(connection), person_id, week, week + timedelta(days=6), operator, commit=False)
+    ordered = sorted(weeks)
+    while ordered:
+        block = [ordered.pop(0)]
+        while ordered and len(block) < 13 and ordered[0] == block[-1] + timedelta(days=7):
+            block.append(ordered.pop(0))
+        refresh(SameConnection(connection), person_id, block[0], block[-1] + timedelta(days=6), operator, commit=True)
+
+
 def build_days(weekly_hours, start, end, events):
     weekly = Decimal(str(weekly_hours)) if weekly_hours is not None else Decimal(0)
     if not weekly.is_finite() or weekly <= 0 or weekly > 80:
@@ -45,7 +81,7 @@ def refresh(database, person_id, start, end, operator, commit=False):
         if commit:
             person = rows(connection, "SELECT weekly_work_hours,availability_version FROM people WHERE person_id=:personId", personId=person_id)
         first, last = start-timedelta(days=start.weekday()), end+timedelta(days=6-end.weekday())
-        events = rows(connection, "SELECT availability_id,capacity_kind,starts_on,ends_on,allocated_hours FROM availability WHERE person_id=:personId AND starts_on<=:endDay AND ends_on>=:startDay", personId=person_id, startDay=first, endDay=last)
+        events = rows(connection, "SELECT availability_id,capacity_kind,starts_on,ends_on,allocated_hours FROM availability WHERE person_id=:personId AND status='ACTIVE' AND starts_on<=:endDay AND ends_on>=:startDay", personId=person_id, startDay=first, endDay=last)
         days = build_days(person[0]["weekly_work_hours"], start, end, events)
         existing = rows(connection, "SELECT work_date,available_hours,external_committed_hours,source_version FROM person_capacity_days WHERE person_id=:personId AND work_date BETWEEN :startDay AND :endDay", personId=person_id, startDay=first, endDay=last)
         for saved in existing:

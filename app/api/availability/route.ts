@@ -6,6 +6,7 @@ import { staffingRequestContext } from '@/lib/auth/staffing-request-context';
 import { StaffingApiError } from '@/lib/errors/staffing-api-error';
 import { createAvailabilityEvent } from '@/lib/repositories/staffing-mutation-repository';
 import { validateCreateAvailabilityPayload } from '@/lib/validation/staffing-mutations';
+import { agenticEnabled, staffingBackend } from '@/backend/staffing/bridge';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -20,7 +21,10 @@ export async function POST(request: NextRequest) {
       throw new StaffingApiError('The request body is not valid JSON.', 400, 'INVALID_JSON');
     });
     const input = validateCreateAvailabilityPayload(body);
-    const result = await createAvailabilityEvent(input, context);
+    // The backend saves the event AND rebuilds capacity in one transaction.
+    const result = agenticEnabled()
+      ? await staffingBackend(request, '/v1/availability', 'POST', input)
+      : await createAvailabilityEvent(input, context);
     return NextResponse.json(
       { data: result },
       { status: 201, headers: { 'Cache-Control': 'no-store' } },

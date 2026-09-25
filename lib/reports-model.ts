@@ -13,12 +13,16 @@ export function capacityRows(snapshot: LiveWorkspace) {
     const week = person.weeks?.[0];
     const available = reportNumber(week?.available_hours), committed = reportNumber(week?.committed_hours);
     const known = person.capacity_status === 'CURRENT' && available !== null && committed !== null;
+    const leave = known ? reportNumber(week?.leave_hours) ?? 0 : null;
+    const pod = known ? reportNumber(week?.pod_hours) ?? 0 : null;
+    const reportedPod = known ? reportNumber(week?.reported_pod_hours) ?? 0 : null;
+    const external = known ? reportNumber(week?.external_hours) ?? 0 : null;
     const allocation = known && available > 0 ? committed / available * 100 : null;
     const headroom = known && limit !== null ? Math.max(0, available * limit / 100 - committed) : null;
     const over = known && limit !== null && committed > available * limit / 100 + 0.0000001;
     const at = known && limit !== null && !over && available > 0 && Math.abs(committed - available * limit / 100) < 0.0000001;
     return { ...person, name: person.full_name || person.person_id, available: known ? available : null,
-      committed: known ? committed : null, known, allocation, headroom, over,
+      committed: known ? committed : null, leave, pod, reportedPod, external, known, allocation, headroom, over,
       status: !known ? 'Needs refresh' : available === 0 && !over ? 'No working capacity' : over ? 'Above limit' : at ? 'At limit' : 'Within limit' };
   }).sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -27,7 +31,12 @@ export function reportMetrics(snapshot: LiveWorkspace) {
   const people = capacityRows(snapshot), known = people.filter(p => p.known);
   const available = known.reduce((sum, p) => sum + p.available!, 0);
   const committed = known.reduce((sum, p) => sum + p.committed!, 0);
+  const pod = known.reduce((sum, p) => sum + (p.pod ?? 0), 0);
+  const reportedPod = known.reduce((sum, p) => sum + (p.reportedPod ?? 0), 0);
+  const external = known.reduce((sum, p) => sum + (p.external ?? 0), 0);
+  const leave = known.reduce((sum, p) => sum + (p.leave ?? 0), 0);
   return { people, known: known.length, unknown: people.length - known.length, available, committed,
+    pod, reportedPod, external, leave,
     utilization: available > 0 ? committed / available * 100 : null,
     headroom: known.length && reportNumber(snapshot.maximum_allocation_pct) !== null ? known.reduce((sum, p) => sum + (p.headroom ?? 0), 0) : null,
     aboveLimit: people.filter(p => p.over).length,
@@ -56,25 +65,42 @@ export function reportExport(snapshot: LiveWorkspace, kind: ReportExportKind) {
       ['Weekly utilization (%)', metrics.utilization, 'Sum of known commitments / sum of known available hours x 100'],
       ['Available hours', metrics.available, 'Known working capacity after leave'],
       ['Committed hours', metrics.committed, 'Known counted assignments plus external work; includes retained closed history'],
+      ['Confirmed POD hours', metrics.pod, 'Counted final assignment hours in the selected week'],
+      ['Self-reported POD hours', metrics.reportedPod, 'Existing POD work reported during onboarding; not a formal assignment'],
+      ['External commitment hours', metrics.external, 'Non-POD work included in total committed hours'],
+      ['Leave hours', metrics.leave, 'Working hours removed from available capacity'],
       ['Weekly headroom (hours)', metrics.headroom, 'Sum of positive per-person headroom to the limit; daily feasibility still applies'],
       ['Maximum utilization (%)', reportNumber(snapshot.maximum_allocation_pct), 'Current Administrator setting'],
       ['People with known capacity', metrics.known, 'Profiles with complete selected-week capacity'],
       ['People needing refresh', metrics.unknown, 'Excluded from capacity calculations, not treated as zero'],
     ].map(row => [...context, ...row] as (string | number | null)[]);
   } else if (kind === 'capacity') {
-    headers = [...contextHeaders, 'Person ID', 'Name', 'Weekly allocation (%)', 'Available hours', 'Committed hours', 'Weekly headroom (hours)', 'Maximum utilization (%)', 'Active PODs as of status date', 'Capacity status'];
-    rows = metrics.people.map(p => [...context, p.person_id, p.name, p.allocation, p.available, p.committed, p.headroom,
-      reportNumber(snapshot.maximum_allocation_pct), p.active_pods, p.status]);
+    headers = [...contextHeaders, 'Person ID', 'Name', 'Weekly allocation (%)', 'Available hours', 'Committed hours',
+      'Confirmed POD hours', 'Self-reported POD hours', 'External commitment hours', 'Leave hours',
+      'Weekly headroom (hours)', 'Maximum utilization (%)', 'Active PODs as of status date', 'Capacity status'];
+    rows = metrics.people.map(p => [...context, p.person_id, p.name, p.allocation, p.available, p.committed,
+      p.pod, p.reportedPod, p.external, p.leave, p.headroom, reportNumber(snapshot.maximum_allocation_pct), p.active_pods, p.status]);
   } else if (kind === 'requests') {
-    headers = [...contextHeaders, 'Request ID', 'Title', 'Current status', 'Planned end', 'Past planned end', 'Assigned people'];
-    rows = snapshot.requests.map(r => [...context, r.request_id, r.title, liveStatusLabel(r.status), r.planned_end_on?.slice(0,10) ?? '',
-      r.past_planned_end ? 'Yes' : 'No', new Set(snapshot.assignments.filter(a => a.request_id === r.request_id).map(a => a.person_id)).size]);
+    headers = [...contextHeaders, 'Request ID', 'Title', 'Project type', 'Priority', 'Current status', 'Planned start',
+      'Planned end', 'Past planned end', 'POD Lead', 'POD Members', 'Assigned hours', 'Staffing method'];
+    rows = snapshot.requests.map(r => {
+      const team = snapshot.assignments.filter(a => a.request_id === r.request_id);
+      const lead = team.filter(a => a.role_in_pod === 'POD_LEAD').map(a => a.full_name).join(', ');
+      const members = team.filter(a => a.role_in_pod === 'POD_MEMBER').map(a => a.full_name).join(', ');
+      const method = team.some(a => a.staffing_method === 'MANUAL_OVERRIDE') ? 'Manual override'
+        : team.length ? 'Agent recommendation' : '';
+      return [...context, r.request_id, r.title, r.project_type ?? '', r.priority ?? '', liveStatusLabel(r.status),
+        r.planned_start_on?.slice(0,10) ?? '', r.planned_end_on?.slice(0,10) ?? '', r.past_planned_end ? 'Yes' : 'No',
+        lead, members, team.reduce((sum, a) => sum + (reportNumber(a.assigned_hours) ?? 0), 0), method];
+    });
   } else {
-    headers = [...contextHeaders, 'Date', 'Request ID', 'Assignment ID', 'Person ID', 'Name', 'POD role', 'Counted planned hours', 'Assignment status'];
+    headers = [...contextHeaders, 'Date', 'Request ID', 'Assignment ID', 'Person ID', 'Name', 'POD role',
+      'Counted planned hours', 'Assignment status', 'Staffing method'];
     rows = snapshot.days.map(d => {
       const assignment = snapshot.assignments.find(a => a.assignment_id === d.assignment_id);
       return [...context, d.work_date.slice(0,10), d.request_id, d.assignment_id, d.person_id, assignment?.full_name || d.person_id,
-        assignment?.role_in_pod === 'POD_LEAD' ? 'POD Lead' : 'POD Member', d.assigned_hours, assignment?.status ?? ''];
+        assignment?.role_in_pod === 'POD_LEAD' ? 'POD Lead' : 'POD Member', d.assigned_hours, assignment?.status ?? '',
+        assignment?.staffing_method === 'MANUAL_OVERRIDE' ? 'Manual override' : assignment ? 'Agent recommendation' : ''];
     });
   }
   return { fileName: `staffing-${kind}-${snapshot.week_start.slice(0,10)}.xlsx`, sheetName: kind[0].toUpperCase()+kind.slice(1), headers, rows };

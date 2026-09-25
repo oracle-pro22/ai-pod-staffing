@@ -5,12 +5,13 @@ from zoneinfo import ZoneInfo
 
 from pydantic import Field
 
+from app.auth import ROLE_PRIORITY
 from app.capacity import calculate_capacity
 from app.contracts import Contract
 from app.errors import ServiceError
 from app.execution_store import execute
 from app.planning import json_text
-from app.storage import COUNTED_ASSIGNMENT_DAY_SQL, load_capacity_ledger, load_policy, rows
+from app.storage import COUNTED_ASSIGNMENT_DAY_SQL, load_capacity_ledgers, load_policy, rows
 
 # Fixed outer alias p. Identity authentication deliberately does not use this
 # employee-directory predicate: standalone administrators must remain active.
@@ -39,14 +40,13 @@ class CloseProject(Contract):
 
 def scope_clause(actor, resource):
     permission = actor.require(resource, "view")
-    if permission.role == "SYSTEM_ADMINISTRATOR" and permission.scope == "FULL":
+    if permission.role in ("SYSTEM_ADMINISTRATOR", "POD_CAPTAIN") and permission.scope == "FULL":
         return "1=1", {}
     if permission.role == "POD_CAPTAIN":
         return "r.responsible_captain_id=:viewerId", {"viewerId": actor.person_id}
     # Team access comes only from final assignments, never request source/recommendations.
-    role_filter = " AND mine.role_in_pod='POD_LEAD'" if permission.role == "POD_LEAD" else ""
     return ("EXISTS (SELECT 1 FROM pod_assignments mine WHERE mine.request_id=r.request_id "
-            "AND mine.person_id=:viewerId AND mine.status IN ('CONFIRMED','CLOSED')" + role_filter + ")",
+            "AND mine.person_id=:viewerId AND mine.status IN ('CONFIRMED','CLOSED'))",
             {"viewerId": actor.person_id})
 
 
@@ -77,6 +77,53 @@ def team_people_scope(actor, permission):
     )""", binds
 
 
+def _week_hours(entries, start, end):
+    return sum((entry.hours for entry in entries if start <= entry.day <= end), start=0)
+
+
+def capacity_people(connection, person_ids, monday, sunday, today, policy, names=None):
+    """Return scoped capacity with bounded, set-based database reads."""
+    person_ids = tuple(sorted(set(person_ids)))
+    if not person_ids:
+        return []
+    binds = {f"activePerson{index}": person_id for index, person_id in enumerate(person_ids)}
+    placeholders = ",".join(f":activePerson{index}" for index in range(len(person_ids)))
+    active = rows(connection, f"""SELECT person_id,COUNT(DISTINCT request_id) AS total
+        FROM pod_assignments WHERE person_id IN ({placeholders}) AND status='CONFIRMED'
+        AND starts_on<=:todayDay AND ends_on>=:todayDay GROUP BY person_id""", **binds, todayDay=today)
+    active_by_id = {row["person_id"]: row["total"] for row in active}
+    ledgers = load_capacity_ledgers(connection, person_ids, monday, sunday)
+    people = []
+    for person_id in person_ids:
+        value = {"person_id": person_id, "allocation_pct": None, "capacity_status": "UNKNOWN",
+                 "active_pods": active_by_id.get(person_id, 0)}
+        if names and person_id in names:
+            value["full_name"] = names[person_id]
+        loaded = ledgers.get(person_id)
+        if isinstance(loaded, ServiceError):
+            if loaded.code not in ("CAPACITY_UNKNOWN", "CAPACITY_STALE"):
+                raise loaded
+            value["capacity_status"] = loaded.code
+        elif loaded is not None:
+            ledger, _ = loaded
+            capacity = calculate_capacity(ledger, monday, sunday, (), policy.maximum_allocation_pct)
+            weeks = []
+            for week in capacity.weeks:
+                end = week.week_start + timedelta(days=6)
+                detail = week.model_dump(mode="json")
+                detail.update(
+                    leave_hours=_week_hours(ledger.absences, week.week_start, end),
+                    pod_hours=_week_hours(ledger.confirmed_work, week.week_start, end),
+                    reported_pod_hours=_week_hours(ledger.reported_pod_work, week.week_start, end),
+                    external_hours=_week_hours(ledger.external_work, week.week_start, end),
+                )
+                weeks.append(detail)
+            value.update(capacity_status="CURRENT", allocation_pct=capacity.weeks[0].allocation_pct,
+                         weeks=weeks)
+        people.append(value)
+    return people
+
+
 class AssignmentStore:
     def __init__(self, database, settings):
         self.database, self.settings = database, settings
@@ -94,23 +141,7 @@ class AssignmentStore:
             visible = rows(connection, f"""SELECT p.person_id FROM people p
                 WHERE p.active_flag='Y' AND NOT ({ADMINISTRATOR_ONLY_SQL})
                 AND ({predicate}) ORDER BY p.person_id""", **binds)
-            people = []
-            for person in visible:
-                pid = person["person_id"]
-                value = {"person_id": pid, "allocation_pct": None, "capacity_status": "UNKNOWN"}
-                try:
-                    ledger, _ = load_capacity_ledger(connection, pid, monday, sunday)
-                    capacity = calculate_capacity(ledger, monday, sunday, (), policy.maximum_allocation_pct)
-                    value.update(capacity_status="CURRENT", allocation_pct=capacity.weeks[0].allocation_pct,
-                                 weeks=[w.model_dump(mode="json") for w in capacity.weeks])
-                except ServiceError as error:
-                    if error.code not in ("CAPACITY_UNKNOWN", "CAPACITY_STALE"):
-                        raise
-                    value["capacity_status"] = error.code
-                value["active_pods"] = rows(connection, """SELECT COUNT(DISTINCT request_id) AS total
-                    FROM pod_assignments WHERE person_id=:personId AND status='CONFIRMED'
-                    AND starts_on<=:todayDay AND ends_on>=:todayDay""", personId=pid, todayDay=today)[0]["total"]
-                people.append(value)
+            people = capacity_people(connection, [person["person_id"] for person in visible], monday, sunday, today, policy)
             # Keep the workspace envelope, without borrowing request rosters,
             # assignment schedules or proposal statistics for a profile response.
             return {"requests": [], "assignments": [], "days": [], "people": people,
@@ -136,8 +167,9 @@ class AssignmentStore:
             selected = week or today
             monday = selected - timedelta(days=selected.weekday())
             sunday = monday + timedelta(days=6)
-            requests = rows(connection, f"""SELECT r.request_id,r.title,r.status,r.request_revision,
+            requests = rows(connection, f"""SELECT r.request_id,r.title,r.project_type,r.priority,r.status,r.request_revision,
                 r.responsible_captain_id,r.estimated_completion_date AS planned_end_on,
+                r.estimated_start_date AS planned_start_on,
                 CASE WHEN r.status='STAFFED' AND r.estimated_completion_date<:businessToday
                     THEN 1 ELSE 0 END AS past_planned_end
                 FROM requests r WHERE {clause} ORDER BY r.created_at DESC,r.request_id""", **binds, businessToday=today)
@@ -153,10 +185,21 @@ class AssignmentStore:
                 FROM pod_proposals p JOIN requests r ON r.request_id=p.request_id WHERE {clause}""", **summary_binds)[0]
             assignments = rows(connection, f"""SELECT a.assignment_id,a.request_id,a.person_id,p.full_name,
                 a.role_in_pod,a.status,a.starts_on,a.ends_on,a.assigned_hours,a.closed_at,a.close_reason,
-                m.responsibilities FROM pod_assignments a JOIN requests r ON r.request_id=a.request_id
+                m.responsibilities,
+                CASE WHEN JSON_VALUE(pp.validation_json,'$.origin')='CAPTAIN_MANUAL'
+                     THEN 'MANUAL_OVERRIDE' ELSE 'AGENT_RECOMMENDATION' END AS staffing_method
+                FROM pod_assignments a JOIN requests r ON r.request_id=a.request_id
                 JOIN people p ON p.person_id=a.person_id
+                JOIN pod_proposals pp ON pp.proposal_id=a.proposal_id
                 JOIN pod_proposal_members m ON m.proposal_id=a.proposal_id AND m.person_id=a.person_id
                 WHERE a.status IN ('CONFIRMED','CLOSED') AND {clause}{assignment_filter} ORDER BY a.request_id,a.role_in_pod,a.person_id""", **assignment_binds)
+            lead_update = any(p.role == "POD_LEAD" and p.role in actor.roles and p.resource == "REQUESTS"
+                              and p.scope != "LOCKED" and {"view", "update"} <= p.actions for p in actor.permissions)
+            led_requests = {a["request_id"] for a in assignments if a["person_id"] == actor.person_id
+                            and a["role_in_pod"] == "POD_LEAD" and a["status"] == "CONFIRMED"}
+            for request in requests:
+                request["can_close"] = bool(lead_update and request["status"] == "STAFFED"
+                                            and request["request_id"] in led_requests)
             days = rows(connection, f"""SELECT d.assignment_id,d.person_id,d.work_date,d.assigned_hours,a.request_id
                 FROM assignment_days d JOIN pod_assignments a ON a.assignment_id=d.assignment_id
                 JOIN requests r ON r.request_id=a.request_id WHERE {COUNTED_ASSIGNMENT_DAY_SQL}
@@ -165,12 +208,18 @@ class AssignmentStore:
             # A request roster is NOT a profile/capacity permission. Apply the
             # same profile boundary on every workspace resource, including
             # direct calendar/report requests and historical project rosters.
-            profile_permissions = [p for p in actor.permissions if p.role == permission.role
+            profile_permissions = [p for p in actor.permissions if p.role in actor.roles
                                    and p.resource == "TEAM_SKILLS" and p.scope != "LOCKED"
                                    and "view" in p.actions]
             predicate, profile_binds = "p.person_id=:profileViewerId", {"profileViewerId": actor.person_id}
-            if profile_permissions and not own_only:
-                profile_permission = max(profile_permissions, key=lambda p: {"OWN": 1, "SCOPED": 2, "FULL": 3}.get(p.scope, 0))
+            # A FULL Administrator REPORTS grant explicitly includes the
+            # employee capacity roll-up, without also opening Team & Skills.
+            if (resource == "REPORTS" and permission.role == "SYSTEM_ADMINISTRATOR"
+                    and permission.scope == "FULL"):
+                predicate, profile_binds = "1=1", {}
+            elif profile_permissions and not own_only:
+                profile_permission = max(profile_permissions, key=lambda p: (
+                    {"OWN": 1, "SCOPED": 2, "FULL": 3}.get(p.scope, 0), -ROLE_PRIORITY.get(p.role, 99)))
                 predicate, profile_binds = team_people_scope(actor, profile_permission)
             profile_rows = rows(connection, f"""SELECT p.person_id,p.full_name FROM people p
                 WHERE p.active_flag='Y' AND NOT ({ADMINISTRATOR_ONLY_SQL})
@@ -179,7 +228,8 @@ class AssignmentStore:
             profile_names = {p['person_id']: p.get('full_name', p['person_id']) for p in profile_rows}
             # Basic project teammates remain visible without their personal
             # schedule, closure notes or workload. Never send hidden fields.
-            roster_fields = {"assignment_id", "request_id", "person_id", "full_name", "role_in_pod", "status", "responsibilities"}
+            roster_fields = {"assignment_id", "request_id", "person_id", "full_name", "role_in_pod", "status",
+                             "responsibilities", "staffing_method"}
             public_assignments = []
             for assignment in assignments:
                 if assignment["person_id"] in person_ids:
@@ -197,29 +247,15 @@ class AssignmentStore:
                 public_assignments.append(public)
             assignments = public_assignments
             days = [d for d in days if d["person_id"] in person_ids]
-            people = []
-            for pid in sorted(person_ids):
-                value = {"person_id": pid, "full_name": profile_names[pid], "allocation_pct": None, "capacity_status": "UNKNOWN"}
-                try:
-                    ledger, _ = load_capacity_ledger(connection, pid, monday, sunday)
-                    capacity = calculate_capacity(ledger, monday, sunday, (), policy.maximum_allocation_pct)
-                    value.update(capacity_status="CURRENT", allocation_pct=capacity.weeks[0].allocation_pct,
-                                 weeks=[w.model_dump(mode="json") for w in capacity.weeks])
-                except ServiceError as error:
-                    if error.code not in ("CAPACITY_UNKNOWN", "CAPACITY_STALE"):
-                        raise
-                    value["capacity_status"] = error.code
-                # Count current confirmed PODs, not historical/preview fields or pending proposals.
-                value["active_pods"] = rows(connection, """SELECT COUNT(DISTINCT request_id) AS total
-                    FROM pod_assignments WHERE person_id=:personId AND status='CONFIRMED'
-                    AND starts_on<=:todayDay AND ends_on>=:todayDay""", personId=pid, todayDay=today)[0]["total"]
-                people.append(value)
+            people = capacity_people(connection, person_ids, monday, sunday, today, policy, profile_names)
+            request_scope = ('All requests' if clause == '1=1' else 'Captain-owned requests'
+                             if permission.role == 'POD_CAPTAIN' else 'Your assigned projects')
             return {"requests": requests, "assignments": assignments, "days": days, "people": people,
                     "summary": summary,
                     "week_start": monday, "week_end": sunday, "timezone": policy.scheduling_timezone,
                     "as_of": today, "maximum_allocation_pct": policy.maximum_allocation_pct,
                     "policy_version": policy.version,
-                    "request_scope": 'All requests' if clause == '1=1' else 'Your requests' if permission.role == 'POD_CAPTAIN' else 'Assigned requests',
+                    "request_scope": request_scope,
                     "can_export": any(p.resource == resource and p.role in actor.roles and p.scope != "LOCKED"
                                       and {"view", "export"} <= p.actions for p in actor.permissions)}
 
@@ -239,7 +275,10 @@ class AssignmentStore:
                 WHERE ur.identity_subject=:actorSubject AND ur.person_id=:personId AND ur.role_code='POD_LEAD'
                 AND ur.active_flag='Y' AND ur.effective_from<=TRUNC(SYSDATE)
                 AND (ur.effective_to IS NULL OR ur.effective_to>=TRUNC(SYSDATE))
-                AND rp.can_view='Y' AND rp.can_update='Y' AND rp.access_scope IN ('FULL','SCOPED','OWN')""",
+                AND rp.can_view='Y' AND rp.can_update='Y' AND rp.access_scope IN ('FULL','SCOPED','OWN')
+                AND (NOT EXISTS (SELECT 1 FROM app_accounts a WHERE a.identity_subject=ur.identity_subject OR a.person_id=ur.person_id)
+                     OR EXISTS (SELECT 1 FROM app_accounts a WHERE a.identity_subject=ur.identity_subject
+                                AND a.person_id=ur.person_id AND a.active_flag='Y'))""",
                 actorSubject=actor.subject, personId=actor.person_id)
             members = rows(connection, "SELECT assignment_id,person_id,role_in_pod,status,close_reason FROM pod_assignments WHERE request_id=:requestId ORDER BY person_id", requestId=request_id)
             if not linked or not any(m["person_id"] == actor.person_id and m["role_in_pod"] == "POD_LEAD"

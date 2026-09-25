@@ -10,6 +10,16 @@ def effective_role(candidate: Candidate, code: str, request: RequestSnapshot) ->
                and (role.ends_on is None or role.ends_on >= request.ends_on) for role in candidate.roles)
 
 
+def eligible_for_slot(candidate: Candidate, role: PodRole, request: RequestSnapshot) -> bool:
+    """Live authorization is explicit, never inherited from an advisory policy.
+
+    Frozen policies may still describe the former Lead-as-Member behavior. Keep
+    those historical documents intact, but they cannot grant a person an absent
+    role when making a new recommendation, preview or assignment.
+    """
+    return candidate.active and effective_role(candidate, PodRole(role).value, request)
+
+
 def capability_strength(candidate: Candidate, requirement: Requirement, request: RequestSnapshot) -> Decimal | None:
     if requirement.assessment_type == "ROLE_DERIVED":
         return Decimal(5) if requirement.derived_role_code and effective_role(candidate, requirement.derived_role_code, request) else None
@@ -93,8 +103,7 @@ def validate_pod(request: RequestSnapshot, proposal: Proposal, candidates: tuple
         if person is None or not person.active:
             issue("INACTIVE_OR_UNKNOWN", "Person is missing or inactive.", member.person_id)
             continue
-        required_roles = (policy.lead_role_code,) if member.role == PodRole.LEAD else policy.member_role_codes
-        if not any(effective_role(person, code, request) for code in required_roles):
+        if not eligible_for_slot(person, member.role, request):
             issue("ROLE_INELIGIBLE", "An effective eligible role is required for the scheduled period.", member.person_id)
             continue
         if policy.scheduling:

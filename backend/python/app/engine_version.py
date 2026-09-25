@@ -5,10 +5,10 @@ version. Old queued/checkpointed searches must be rerun, not reinterpreted silen
 """
 from app.agent_budget import budget_counters
 
-PROMPT_VERSION = "staffing-tools-v5-supervised"
-ENGINE_VERSION = "staffing-engine-v4"
-CHECKPOINT_FORMAT_VERSION = 4
-VALIDATOR_VERSION = "staffing-validator-v2"
+PROMPT_VERSION = "staffing-tools-v6-explicit-roles"
+ENGINE_VERSION = "staffing-engine-v5"
+CHECKPOINT_FORMAT_VERSION = 5
+VALIDATOR_VERSION = "staffing-validator-v3"
 
 
 def new_checkpoint() -> dict:

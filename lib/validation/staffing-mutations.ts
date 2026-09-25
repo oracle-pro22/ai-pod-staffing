@@ -6,7 +6,7 @@ import type { EffortUnit, RequestDeliverable, RequiredCapability } from '@/types
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const PRIORITIES = new Set(['Low', 'Medium', 'High']);
 const EFFORT_UNITS = new Set<EffortUnit>(['hours', 'days', 'weeks', 'months']);
-const AVAILABILITY_TYPES = new Set(['OOO', 'Leave', 'Travel', 'Training', 'Reduced hours']);
+const AVAILABILITY_TYPES = new Set(['OOO', 'Leave', 'Travel', 'Training', 'Reduced hours', 'External commitment']);
 
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw validationError('The submitted information is not valid.');
@@ -67,6 +67,7 @@ function capabilities(value: unknown): RequiredCapability[] {
     const entry = record(item);
     const name = requiredText(entry.name, `Capability ${index + 1}`, 500);
     const custom = entry.custom === true;
+    const mandatory = typeof entry.mandatory === 'boolean' ? entry.mandatory : !custom;
     const id = custom
       ? optionalText(entry.id, `Capability ${index + 1} identifier`, 100) || `CUSTOM-SKILL-${index + 1}`
       : requiredText(entry.id, `Capability ${index + 1} identifier`, 30);
@@ -84,6 +85,7 @@ function capabilities(value: unknown): RequiredCapability[] {
       requiredStrength,
       source: optionalText(entry.source, `Capability ${index + 1} source`, 250),
       custom,
+      mandatory,
     };
   });
 }
@@ -149,9 +151,11 @@ export function validateCreateAvailabilityPayload(value: unknown): CreateAvailab
   const start = new Date(`${startsOn}T00:00:00Z`);
   const end = new Date(`${endsOn}T00:00:00Z`);
   const days = Math.floor((end.valueOf() - start.valueOf()) / 86_400_000) + 1;
+  if (days > 367) throw validationError('Availability periods must span at most 366 days.');
   const allocatedHours = Number(input.allocatedHours);
-  if (!Number.isFinite(allocatedHours) || allocatedHours < 0 || allocatedHours > days * 24) {
-    throw validationError(`Allocated hours must be between 0 and ${days * 24} for the selected dates.`);
+  if (!Number.isFinite(allocatedHours) || allocatedHours <= 0 || allocatedHours > days * 24
+      || Math.abs(allocatedHours * 100 - Math.round(allocatedHours * 100)) > 0.000001) {
+    throw validationError(`Enter positive unavailable hours, up to ${days * 24}, with at most two decimal places.`);
   }
 
   return {

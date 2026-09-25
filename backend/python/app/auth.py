@@ -9,6 +9,7 @@ from app.database import OracleDatabase
 from app.errors import ServiceError
 
 OFFICIAL_ROLES = {"POD_CAPTAIN", "POD_LEAD", "POD_MEMBER", "SYSTEM_ADMINISTRATOR"}
+ROLE_PRIORITY = {"SYSTEM_ADMINISTRATOR": 0, "POD_CAPTAIN": 1, "POD_LEAD": 2, "POD_MEMBER": 3}
 ACTIONS = {"view", "create", "update", "approve", "export", "administer"}
 
 
@@ -38,7 +39,8 @@ class Actor:
         if not matches:
             raise ServiceError("FORBIDDEN", "This action is not permitted.", 403)
         # Never merge scopes from different roles. Callers must enforce the returned record scope.
-        return sorted(matches, key=lambda item: ({"FULL": 0, "SCOPED": 1, "OWN": 2}[item.scope], item.role))[0]
+        return sorted(matches, key=lambda item: (
+            {"FULL": 0, "SCOPED": 1, "OWN": 2}[item.scope], ROLE_PRIORITY.get(item.role, 99)))[0]
 
 
 class TokenVerifier:
@@ -124,7 +126,8 @@ def require_own_person(actor: Actor, person_id: str):
 
 
 def require_captain_decision(actor: Actor, responsible_captain_id: str):
-    actor.require("AI_FITMENT", "approve", role="POD_CAPTAIN")
-    # Request source is NOT the responsible Captain and cannot grant decision rights.
-    if actor.person_id != responsible_captain_id:
+    permission = actor.require("AI_FITMENT", "approve", role="POD_CAPTAIN")
+    # Official Captains have FULL access to the shared queue. Keep narrower
+    # legacy grants narrow; neither a source name nor an Admin grant upgrades them.
+    if permission.scope != "FULL" and actor.person_id != responsible_captain_id:
         raise ServiceError("FORBIDDEN", "This request belongs to another Captain.", 403)

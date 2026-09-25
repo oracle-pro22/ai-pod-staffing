@@ -1,4 +1,5 @@
 """Execute the real profile predicate against a relational fixture; no external I/O."""
+import json
 import sqlite3
 import unittest
 from contextlib import contextmanager
@@ -25,6 +26,10 @@ class TeamPrivacyTests(unittest.TestCase):
         self.db = sqlite3.connect(":memory:")
         self.db.row_factory = sqlite3.Row
         register_closure_day(self.db)
+        self.db.create_function(
+            "JSON_VALUE", 2,
+            lambda payload, path: json.loads(payload or "{}").get(path.removeprefix("$.")),
+        )
         self.addCleanup(self.db.close)
         self.db.executescript('''
             CREATE TABLE people(person_id TEXT PRIMARY KEY,active_flag TEXT);
@@ -60,7 +65,7 @@ class TeamPrivacyTests(unittest.TestCase):
         # not just mocking a pre-filtered list of people.
         for table, columns in {
             "people": ["full_name TEXT"],
-            "requests": ["title TEXT", "request_revision INTEGER", "responsible_captain_id TEXT", "created_at TEXT", "estimated_completion_date TEXT"],
+            "requests": ["title TEXT", "project_type TEXT", "priority TEXT", "request_revision INTEGER", "responsible_captain_id TEXT", "created_at TEXT", "estimated_start_date TEXT", "estimated_completion_date TEXT"],
             "pod_assignments": ["assignment_id TEXT", "proposal_id TEXT", "starts_on TEXT", "ends_on TEXT",
                                 "assigned_hours INTEGER", "closed_at TEXT", "close_reason TEXT", "policy_version TEXT"],
         }.items():
@@ -71,7 +76,8 @@ class TeamPrivacyTests(unittest.TestCase):
             UPDATE requests SET title=request_id,request_revision=1,responsible_captain_id='captain',created_at='2026-09-01';
             UPDATE pod_assignments SET assignment_id='A-' || rowid,proposal_id=request_id,
                 starts_on='2026-09-14',ends_on='2026-09-18',assigned_hours=8,close_reason='private closure note';
-            CREATE TABLE pod_proposals(request_id TEXT,status TEXT,request_revision INTEGER,policy_version TEXT);
+            CREATE TABLE pod_proposals(proposal_id TEXT,request_id TEXT,status TEXT,request_revision INTEGER,policy_version TEXT,validation_json TEXT);
+            INSERT INTO pod_proposals SELECT DISTINCT proposal_id,request_id,'APPROVED',1,'v1','{}' FROM pod_assignments;
             CREATE TABLE pod_proposal_members(proposal_id TEXT,person_id TEXT,responsibilities TEXT);
             INSERT INTO pod_proposal_members SELECT proposal_id,person_id,'Project contribution; 8 planned hours. Deliverable experience: mentor. PRIVATE-SKILL-EVIDENCE' FROM pod_assignments;
             CREATE TABLE assignment_days(assignment_id TEXT,person_id TEXT,work_date TEXT,assigned_hours INTEGER);
@@ -127,18 +133,20 @@ class TeamPrivacyTests(unittest.TestCase):
 
         def query(conn, sql, **binds):
             if "COUNT(DISTINCT request_id)" in sql:
-                return [{"total": 1}]
+                return [{"person_id": "member", "total": 1}]
             return [dict(row) for row in conn.execute(sqlite_closure_sql(sql).replace("TRUNC(SYSDATE)", "'2026-09-14'"), binds)]
 
         with patch("app.assignments.rows", side_effect=query), \
              patch('app.policy_admin.active_policy_version', return_value='v1'), \
              patch("app.assignments.load_policy", return_value=DEFAULT_POLICY), \
-             patch("app.assignments.load_capacity_ledger", return_value=(CapacityLedger(), 1)) as capacity:
+             patch("app.assignments.load_capacity_ledgers", side_effect=lambda _connection, person_ids, *_: {
+                 person_id: (CapacityLedger(), 1) for person_id in person_ids
+             }) as capacity:
             result = AssignmentStore(SimpleNamespace(read=read), SimpleNamespace(staffing_policy_version="v1")).workspace(
                 user, date(2026, 9, 14), "TEAM_SKILLS")
         self.assertEqual([p["person_id"] for p in result["people"]], ["member"])
         self.assertEqual(capacity.call_count, 1)
-        self.assertEqual(capacity.call_args.args[1], "member")
+        self.assertEqual(set(capacity.call_args.args[1]), {"member"})
         for key in ("assignments", "days", "requests"):
             self.assertEqual(result[key], [])
 
@@ -161,10 +169,13 @@ class TeamPrivacyTests(unittest.TestCase):
         with patch("app.assignments.rows", side_effect=query), \
              patch('app.policy_admin.active_policy_version', return_value='v1'), \
              patch("app.assignments.load_policy", return_value=DEFAULT_POLICY), \
-             patch("app.assignments.load_capacity_ledger", return_value=(CapacityLedger(), 1)) as capacity:
+             patch("app.assignments.load_capacity_ledgers", side_effect=lambda _connection, person_ids, *_: {
+                 person_id: (CapacityLedger(), 1) for person_id in person_ids
+             }) as capacity:
             result = AssignmentStore(SimpleNamespace(read=read), SimpleNamespace(staffing_policy_version="v1")).workspace(
                 user, date(2026, 9, 14), resource)
-        return result, {call.args[1] for call in capacity.call_args_list}
+        loaded = set(capacity.call_args.args[1]) if capacity.called else set()
+        return result, loaded
 
     def test_member_all_resource_responses_are_own_with_basic_project_roster(self):
         for resource in ("REQUESTS", "ALLOCATION_CALENDAR", "REPORTS", "MY_AVAILABILITY"):
@@ -175,7 +186,7 @@ class TeamPrivacyTests(unittest.TestCase):
                     self.assertEqual([p["person_id"] for p in result["people"]], ["member"])
                     self.assertEqual({d["person_id"] for d in result["days"]}, {"member"})
                     lead = next(a for a in result["assignments"] if a["person_id"] == "lead")
-                    self.assertEqual(set(lead), {"assignment_id", "request_id", "person_id", "full_name", "role_in_pod", "status", "responsibilities"})
+                    self.assertEqual(set(lead), {"assignment_id", "request_id", "person_id", "full_name", "role_in_pod", "status", "responsibilities", "staffing_method"})
                     self.assertEqual(lead["full_name"], "lead name")
                     self.assertEqual(lead["responsibilities"], "Coordinate the POD and guide delivery of the request's deliverables.")
                     self.assertNotIn("PRIVATE-SKILL-EVIDENCE", lead["responsibilities"])
@@ -235,6 +246,12 @@ class TeamPrivacyTests(unittest.TestCase):
             result, loaded = self.workspace(role, "FULL", "admin")
             self.assertEqual(loaded, expected)
             self.assertEqual({p["person_id"] for p in result["people"]}, expected)
+
+    def test_full_administrator_report_includes_capacity_without_team_screen_access(self):
+        result, loaded = self.workspace("SYSTEM_ADMINISTRATOR", "FULL", "admin", "REPORTS", team=False)
+        expected = set(self.visible(actor("POD_CAPTAIN", "FULL", "admin")))
+        self.assertEqual(loaded, expected)
+        self.assertEqual({person["person_id"] for person in result["people"]}, expected)
 
 
 if __name__ == "__main__":

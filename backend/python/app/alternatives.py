@@ -9,7 +9,7 @@ from pydantic import Field
 from app.contracts import Contract, EntityId, PodRole, ProposedMember
 from app.errors import ServiceError
 from app.planning import EvidenceBundle, PlanOption, find_options
-from app.rules import effective_role
+from app.rules import eligible_for_slot
 
 
 class Replacement(Contract):
@@ -53,9 +53,8 @@ def replacement_options(bundle: EvidenceBundle, selected: PlanOption, limit: int
             continue
         candidates = []
         for person in sorted(bundle.candidates, key=lambda p: p.person_id):
-            role_codes = (bundle.policy.lead_role_code,) if role == PodRole.LEAD else bundle.policy.member_role_codes
             if (person.person_id in chosen or not person.active
-                or not any(effective_role(person, code, bundle.request) for code in role_codes)):
+                or not eligible_for_slot(person, role, bundle.request)):
                 continue
             viable = []
             for old in slots:

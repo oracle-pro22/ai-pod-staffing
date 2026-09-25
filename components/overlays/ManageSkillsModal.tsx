@@ -110,7 +110,7 @@ export function ManageSkillsModal({ initial, canEdit, onClose, onSaved }: {
         <div className="staffing-create-section-head"><h4>Skills and interests</h4><span>{draft.length} selected</span></div>
         <FormGroup label="Add a catalogue skill"><SkillCombobox options={profile.catalogue.filter((row) => !draft.some((item) => item.skillId === row.skillId))} disabled={disabled}
           onSelect={(skillId) => setDraft((rows) => rows.some((row) => row.skillId === skillId) ? rows : [...rows, { skillId, strength: null, interested: true, evidence: '' }])} /></FormGroup>
-        <p className="staffing-muted">Search by name and select a result. New entries start as interest only; add a rating if you have experience.</p>
+        <p className="staffing-muted">New entries start as interest only. Interest is a small future-work preference signal; it does not change proficiency or qualify someone for a required skill.</p>
         <div className="staffing-skills-edit-list">
           {draft.length ? draft.map((row) => <fieldset key={row.skillId} className="staffing-skills-edit-card" disabled={disabled}>
             <legend>{names.get(row.skillId) ?? row.skillId}</legend>
@@ -119,7 +119,7 @@ export function ManageSkillsModal({ initial, canEdit, onClose, onSaved }: {
                 onChange={(value) => change(row.skillId, { strength: value ? Number(value) : null })}
                 options={[{ value: '', label: 'Not rated — interest only' }, ...[1, 2, 3, 4, 5].map((value) => ({ value: String(value), label: `${value} / 5` })),
                   ...(row.strength !== null && !Number.isInteger(row.strength) ? [{ value: String(row.strength), label: `${row.strength} / 5 — existing rating` }] : [])]} /></FormGroup>
-              <label className="staffing-skills-interest"><input type="checkbox" checked={row.interested} onChange={(event) => change(row.skillId, { interested: event.target.checked })} /> Interested in this skill</label>
+              <label className="staffing-skills-interest"><input type="checkbox" disabled={disabled || row.strength === null} checked={row.interested} onChange={(event) => change(row.skillId, { interested: event.target.checked })} /> Interested in future work using this skill</label>
               <Button type="button" onClick={() => setDraft((rows) => rows.filter((item) => item.skillId !== row.skillId))} aria-label={`Remove ${names.get(row.skillId) ?? row.skillId}`}>Remove</Button>
             </div>
             <FormGroup label={`Evidence${row.strength === null ? ' (optional)' : ' (required)'} — ${names.get(row.skillId) ?? row.skillId}`}><TextArea value={row.evidence} maxLength={2000} onChange={(event) => change(row.skillId, { evidence: event.target.value })} placeholder="Briefly describe relevant work or experience" /></FormGroup>

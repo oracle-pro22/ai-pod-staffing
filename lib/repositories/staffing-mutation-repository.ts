@@ -5,9 +5,9 @@ import oracledb, { type Connection } from 'oracledb';
 
 import { withOracleTransaction } from '@/lib/db/oracle';
 import { conflictError, forbiddenError, validationError } from '@/lib/errors/staffing-api-error';
-import { ROLE_CODES } from '@/types/roles';
 import { PREVIEW_PERSON_IDS } from '@/lib/preview-person-ids';
-import { assertIdentityMapping } from '@/lib/auth/identity-mapping';
+import { contextPermissions } from '@/lib/auth/context-permissions';
+import { ACTIVE_IDENTITY_ACCOUNT_SQL } from '@/lib/auth/identity-mapping';
 import type {
   AvailabilityCreatedResult,
   CreateAvailabilityPayload,
@@ -40,16 +40,9 @@ async function authorizeCreate(
   context: StaffingMutationContext,
   resourceCode: 'REQUESTS' | 'MY_AVAILABILITY',
 ): Promise<'FULL' | 'SCOPED' | 'OWN'> {
-  await assertIdentityMapping(connection, context);
-  const permission = (await rows(connection, `
-    SELECT rp.access_scope, rp.can_view, rp.can_create
-      FROM app_roles ar
-      JOIN role_permissions rp ON rp.role_code = ar.role_code
-     WHERE ar.role_name = :roleName
-       AND ar.role_code = :roleCode
-       AND ar.active_flag = 'Y'
-       AND rp.resource_code = :resourceCode
-  `, { roleName: context.role, roleCode: ROLE_CODES[context.role], resourceCode }))[0];
+  const permission = (await contextPermissions(connection, context, resourceCode)).find(row =>
+    text(row, 'can_view') === 'Y' && text(row, 'can_create') === 'Y'
+    && (resourceCode !== 'MY_AVAILABILITY' || text(row, 'access_scope') === 'OWN'));
 
   const scope = text(permission ?? {}, 'access_scope');
   if (text(permission ?? {}, 'can_view') !== 'Y' || text(permission ?? {}, 'can_create') !== 'Y' || !['FULL', 'SCOPED', 'OWN'].includes(scope)) throw forbiddenError();
@@ -91,9 +84,9 @@ export async function createStaffingRequest(
         JOIN people p ON p.person_id=ur.person_id AND p.active_flag='Y'
         WHERE ur.identity_subject=:identitySubject AND ur.person_id=:personId AND ur.role_code='POD_CAPTAIN'
         AND ur.active_flag='Y' AND ur.effective_from<=TRUNC(SYSDATE)
-        AND (ur.effective_to IS NULL OR ur.effective_to>=TRUNC(SYSDATE))`,
+        AND (ur.effective_to IS NULL OR ur.effective_to>=TRUNC(SYSDATE)) AND ${ACTIVE_IDENTITY_ACCOUNT_SQL}`,
         { identitySubject: context.actor, personId: context.responsibleCaptainId });
-      if (linked.length !== 1 || context.role !== 'POD Captain') throw forbiddenError();
+      if (linked.length !== 1 || (!context.authenticated && context.role !== 'POD Captain')) throw forbiddenError();
       if (!input.estimatedStartDate || !input.estimatedCompletionDate) throw validationError('Provide both planned start and completion dates for staffing.');
     }
 
@@ -114,6 +107,7 @@ export async function createStaffingRequest(
     if (!requestSourcePerson) throw validationError('The selected request source is no longer available.');
     const requestSourceName = text(requestSourcePerson, 'full_name');
 
+    const normalizeCatalogueName = (value: string) => value.toLocaleLowerCase('en-US').replace(/[^a-z0-9]+/g, ' ').trim();
     const mappedDeliverables = input.deliverables.filter((item) => !item.custom);
     const mappedDeliverableIds = [...new Set(mappedDeliverables.map((item) => item.id))];
     let catalogueDeliverables: Row[] = [];
@@ -130,11 +124,18 @@ export async function createStaffingRequest(
         throw validationError('A selected deliverable has been retired or does not belong to this project type. Refresh the catalogue and select it again.');
       }
     }
-    const catalogueDeliverablesById = new Map(catalogueDeliverables.map((row) => [text(row, 'deliverable_id'), row]));
+    const allProjectDeliverables = await rows(connection, `SELECT deliverable_id,deliverable_name,customer_note
+      FROM deliverables WHERE project_type_id=:projectTypeId AND active_flag = 'Y'`, { projectTypeId: input.projectTypeId });
+    const catalogueDeliverablesById = new Map(allProjectDeliverables.map((row) => [text(row, 'deliverable_id'), row]));
+    const catalogueDeliverablesByName = new Map(allProjectDeliverables.map((row) => [normalizeCatalogueName(text(row, 'deliverable_name')), row]));
     const storedDeliverables = input.deliverables.map((item, index) => {
-      const mapped = catalogueDeliverablesById.get(item.id);
-      return item.custom
-        ? { id: `CUSTOM-DEL-${index + 1}`, name: item.name, note: item.note, custom: true }
+      const exact = item.custom ? catalogueDeliverablesByName.get(normalizeCatalogueName(item.name)) : undefined;
+      const mapped = exact ?? catalogueDeliverablesById.get(item.id);
+      return item.custom && !exact
+        ? { id: `CUSTOM-DEL-${index + 1}`, name: item.name, note: item.note, custom: true, resolution: 'REQUEST_SCOPED' }
+        : item.custom
+          ? { id: text(mapped ?? {}, 'deliverable_id'), name: text(mapped ?? {}, 'deliverable_name'), note: text(mapped ?? {}, 'customer_note'), custom: false,
+              requestedName: item.name, resolution: 'EXACT_NAME' }
         : { id: item.id, name: text(mapped ?? {}, 'deliverable_name'), note: text(mapped ?? {}, 'customer_note'), custom: false };
     });
 
@@ -152,7 +153,18 @@ export async function createStaffingRequest(
         throw validationError('One or more selected capabilities are no longer available.');
       }
     }
-    const catalogueCapabilitiesById = new Map(catalogueCapabilities.map((row) => [text(row, 'interest_id'), row]));
+    const allCatalogueCapabilities = await rows(connection, `SELECT interest_id,interest_name
+      FROM interests`);
+    const catalogueCapabilitiesById = new Map(allCatalogueCapabilities.map((row) => [text(row, 'interest_id'), row]));
+    const catalogueCapabilitiesByName = new Map(allCatalogueCapabilities.map((row) => [normalizeCatalogueName(text(row, 'interest_name')), row]));
+    const resolvedCapabilities = input.requiredCapabilities.map((item) => {
+      const exact = item.custom ? catalogueCapabilitiesByName.get(normalizeCatalogueName(item.name)) : undefined;
+      return exact ? { ...item, id: text(exact, 'interest_id'), name: text(exact, 'interest_name'), custom: false,
+        originalName: item.name, resolution: 'EXACT_NAME', mandatory: true } : item;
+    });
+    if (!resolvedCapabilities.some((item) => !item.custom && item.mandatory !== false)) {
+      throw validationError('Add at least one catalogue capability. New “Other” capabilities remain unverified preferences until they can be mapped safely.');
+    }
 
     const mappedLinks = new Map<string, string>();
     if (mappedDeliverableIds.length && mappedCapabilityIds.length) {
@@ -176,7 +188,7 @@ export async function createStaffingRequest(
     const counts = podCounts(input.requestedPodSize);
     const firstMapped = storedDeliverables.find((item) => !item.custom);
     const firstDeliverable = storedDeliverables[0];
-    const skills = input.requiredCapabilities.map((item) => item.custom ? item.name : text(catalogueCapabilitiesById.get(item.id) ?? {}, 'interest_name')).join(', ');
+    const skills = resolvedCapabilities.map((item) => item.custom ? item.name : text(catalogueCapabilitiesById.get(item.id) ?? {}, 'interest_name')).join(', ');
     if (skills.length > 1000) throw validationError('The combined capability names are too long.');
 
     await connection.execute(`
@@ -229,7 +241,7 @@ export async function createStaffingRequest(
       updatedBy: context.actor,
     });
 
-    for (const [index, capability] of input.requiredCapabilities.entries()) {
+    for (const [index, capability] of resolvedCapabilities.entries()) {
       const mapped = catalogueCapabilitiesById.get(capability.id);
       const linkedDeliverableId = capability.custom ? null : mappedLinks.get(capability.id) ?? null;
       const capabilitySource = capability.custom ? 'CUSTOM' : linkedDeliverableId ? 'MAPPED' : 'CATALOGUE';
@@ -237,11 +249,11 @@ export async function createStaffingRequest(
       await connection.execute(`
         INSERT INTO requirements (
           request_id, deliverable_id, interest_id, skill_name, custom_capability_name,
-          capability_source, required_strength, display_order, requirement_source,
+          capability_source, required_strength, mandatory_flag, display_order, requirement_source,
           source_version, created_by
         ) VALUES (
           :requestId, :deliverableId, :interestId, :skillName, :customCapabilityName,
-          :capabilitySource, :requiredStrength, :displayOrder, :requirementSource,
+          :capabilitySource, :requiredStrength, :mandatoryFlag, :displayOrder, :requirementSource,
           :sourceVersion, :createdBy
         )
       `, {
@@ -252,8 +264,11 @@ export async function createStaffingRequest(
         customCapabilityName: capability.custom ? capability.name : null,
         capabilitySource,
         requiredStrength: capability.requiredStrength,
+        mandatoryFlag: capability.mandatory === false ? 'N' : 'Y',
         displayOrder: index + 1,
-        requirementSource: capability.custom ? 'Request entry' : linkedDeliverableId ? 'Customer catalogue' : 'Customer taxonomy',
+        requirementSource: capability.resolution === 'EXACT_NAME'
+          ? `Request entry; exact catalogue match for “${capability.originalName}”`.slice(0, 250)
+          : capability.custom ? 'Request entry; unverified preference' : linkedDeliverableId ? 'Customer catalogue' : 'Customer taxonomy',
         sourceVersion: text(project, 'source_version'),
         createdBy: context.actor,
       });
@@ -275,10 +290,10 @@ export async function createAvailabilityEvent(
 ): Promise<AvailabilityCreatedResult> {
   return withOracleTransaction(async (connection) => {
     const scope = await authorizeCreate(connection, context, 'MY_AVAILABILITY');
-    if (scope !== 'OWN' || !['POD Lead', 'POD Member'].includes(context.role)
-      || (!context.authenticated && context.actor !== `PREVIEW:${context.role.toUpperCase().replaceAll(' ', '_')}`)) throw forbiddenError();
+    if (scope !== 'OWN' || (!context.authenticated && (!['POD Lead', 'POD Member'].includes(context.role)
+      || context.actor !== `PREVIEW:${context.role.toUpperCase().replaceAll(' ', '_')}`))) throw forbiddenError();
     const ownPersonId = context.authenticated ? context.personId : context.role === 'POD Lead' ? PREVIEW_PERSON_IDS.podLeadPersonId : PREVIEW_PERSON_IDS.podMemberPersonId;
-    if (input.personId !== ownPersonId) throw forbiddenError('You can only add non-availability for your own profile.');
+    if (input.personId !== ownPersonId) throw forbiddenError('You can only add availability for your own profile.');
     const person = (await rows(connection, `
       SELECT person_id
         FROM people
@@ -291,6 +306,7 @@ export async function createAvailabilityEvent(
       await connection.execute('ALTER SESSION DISABLE PARALLEL DML');
       await connection.execute('ALTER SESSION DISABLE PARALLEL QUERY');
       await connection.execute('SELECT person_id FROM people WHERE person_id=:personId FOR UPDATE WAIT 5', { personId: ownPersonId });
+      await authorizeCreate(connection, context, 'MY_AVAILABILITY');
     }
 
     try {
@@ -299,9 +315,10 @@ export async function createAvailabilityEvent(
             person_id, event_type, starts_on, ends_on, title, allocated_hours, created_by${context.authenticated ? ', capacity_kind' : ''}
         ) VALUES (
           :personId, :eventType, TO_DATE(:startsOn, 'YYYY-MM-DD'),
-            TO_DATE(:endsOn, 'YYYY-MM-DD'), :title, :allocatedHours, :createdBy${context.authenticated ? ", 'NON_AVAILABILITY'" : ''}
+            TO_DATE(:endsOn, 'YYYY-MM-DD'), :title, :allocatedHours, :createdBy${context.authenticated ? ', :capacityKind' : ''}
         )
-      `, { ...input, createdBy: context.actor });
+      `, { ...input, createdBy: context.actor,
+        capacityKind: input.eventType === 'External commitment' ? 'EXTERNAL_WORK' : 'NON_AVAILABILITY' });
     } catch (error) {
       if (error instanceof Error && /ORA-00001/.test(error.message)) {
         throw conflictError('This availability event is already recorded.');

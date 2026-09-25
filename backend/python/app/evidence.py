@@ -16,8 +16,26 @@ def collect_evidence(connection, request_id, policy_version, max_people=60):
     for key in ("project_description", "business_objectives", "expected_outcomes"):
         value = content[key]
         context[key] = (value.read() if hasattr(value, "read") else value) or ""
+    custom_preferences = rows(connection, """SELECT custom_capability_name FROM requirements
+        WHERE request_id=:requestId AND capability_source='CUSTOM' AND mandatory_flag='N'
+        ORDER BY display_order,requirement_id""", requestId=request_id)
+    context['request_specific_preferences'] = ', '.join(row['custom_capability_name'] for row in custom_preferences)
     catalogue = {}
     for deliverable_id in request.deliverable_ids:
+        if deliverable_id in request.custom_deliverables:
+            catalogue[deliverable_id] = {
+                'deliverable_id': deliverable_id,
+                'deliverable_name': request.custom_deliverables[deliverable_id],
+                'project_type_id': content['project_type_id'],
+                'customer_note': 'Request-specific deliverable; no catalogue delivery history is assumed.',
+                'request_scoped': True,
+                'mapped_capabilities': [
+                    {'skill_id': item.skill_id, 'interest_name': item.skill_id,
+                     'assessment_type': item.assessment_type, 'derived_role_code': item.derived_role_code}
+                    for item in request.requirements
+                ],
+            }
+            continue
         found = rows(connection, """SELECT deliverable_id,deliverable_name,project_type_id,customer_note
             FROM deliverables WHERE deliverable_id=:deliverableId AND active_flag='Y'""", deliverableId=deliverable_id)
         if len(found) != 1 or found[0]["project_type_id"] != content["project_type_id"]:
@@ -29,7 +47,10 @@ def collect_evidence(connection, request_id, policy_version, max_people=60):
     # Project requirements remain authoritative; catalogue defaults are context, not silent request edits.
     found_people = rows(connection, """SELECT p.person_id,p.full_name,p.skills_version,p.workload_version,
         p.availability_version,p.deliverable_experience_json FROM people p
-        WHERE p.active_flag='Y' AND EXISTS (SELECT 1 FROM app_user_roles ur JOIN app_roles ar ON ar.role_code=ur.role_code
+        WHERE p.active_flag='Y'
+          AND NOT EXISTS (SELECT 1 FROM roster_onboarding o WHERE o.person_id=p.person_id AND o.status NOT IN ('COMPLETE','REVIEW'))
+          AND EXISTS (SELECT 1 FROM app_user_roles ur JOIN app_roles ar ON ar.role_code=ur.role_code
+          JOIN app_accounts a ON a.person_id=ur.person_id AND a.identity_subject=ur.identity_subject AND a.active_flag='Y'
           WHERE ur.person_id=p.person_id AND ur.active_flag='Y' AND ar.active_flag='Y'
           AND ur.role_code IN ('POD_LEAD','POD_MEMBER') AND ur.effective_from<=:startDay
           AND (ur.effective_to IS NULL OR ur.effective_to>=:endDay)) ORDER BY p.person_id
@@ -42,6 +63,7 @@ def collect_evidence(connection, request_id, policy_version, max_people=60):
         person_id = person["person_id"]
         role_rows = rows(connection, """SELECT DISTINCT ur.role_code,ur.effective_from,ur.effective_to
             FROM app_user_roles ur JOIN app_roles ar ON ar.role_code=ur.role_code
+            JOIN app_accounts a ON a.person_id=ur.person_id AND a.identity_subject=ur.identity_subject AND a.active_flag='Y'
             WHERE ur.person_id=:personId AND ur.active_flag='Y' AND ar.active_flag='Y'
             ORDER BY ur.role_code,ur.effective_from""", personId=person_id)
         skill_rows = rows(connection, """SELECT pi.interest_id,pi.strength,pi.interested_flag,pi.evidence_note

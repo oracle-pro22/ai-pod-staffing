@@ -24,6 +24,8 @@ const { POST: login } = require('../app/api/auth/login/route.ts');
 const { POST: logout } = require('../app/api/auth/logout/route.ts');
 const { GET: personas } = require('../app/api/personas/route.ts');
 const { completeLogin } = require('../backend/staffing/login.ts');
+const { passwordWorkspaceError } = require('../backend/staffing/workspace-error.ts');
+const { StaffingApiError } = require('../lib/errors/staffing-api-error.ts');
 const saved = { ...process.env }, originalFetch = global.fetch;
 const token = 'aps1.' + 'a'.repeat(43);
 const origin = 'http://140.245.228.123:8005';
@@ -68,6 +70,45 @@ test('login works on configured VM origin and stores only an HttpOnly session co
 test('login rejects cross-origin and extra role/person fields without contacting API', async () => {
   assert.equal((await login(request('POST',{email:'alex@oracle.com',password:'test'}, {origin:'http://other.test'}))).status,403);
   assert.equal((await login(request('POST',{email:'alex@oracle.com',password:'test',role:'POD_CAPTAIN'}))).status,400);
+});
+
+test('VM login accepts the browser Host when the server request URL uses loopback', async () => {
+  global.fetch = async () => json({access_token:token,expires_in:3600});
+  const req = new NextRequest('http://localhost:8005/api/auth/login', {
+    method:'POST', headers:{host:'140.245.228.123:8005',origin},
+    body:JSON.stringify({email:'alex@oracle.com',password:'test-password'}),
+  });
+  assert.equal((await login(req)).status,200);
+});
+
+test('forwarded loopback login is rejected when the public VM origin is configured', async () => {
+  for (const host of ['127.0.0.1:8005','localhost:8005']) {
+    const response = await login(request('POST',{email:'alex@oracle.com',password:'test'}, {host,origin:`http://${host}`}));
+    assert.equal(response.status,403);
+  }
+  const failure = passwordWorkspaceError(new StaffingApiError('Open the configured application address.',403,'ORIGIN_REJECTED'));
+  assert.equal(failure.applicationUrl,origin);
+  assert.match(failure.message,/address/);
+  assert.doesNotMatch(failure.message,/backend|session/i);
+});
+
+test('password entry distinguishes session and connection failures without leaking error details', () => {
+  const expired = passwordWorkspaceError(new StaffingApiError('private session token',401,'SIGN_IN_REQUIRED'));
+  assert.match(expired.message,/session.*expired/);
+  const unavailable = passwordWorkspaceError(new StaffingApiError('private upstream details',503,'BACKEND_UNAVAILABLE'));
+  assert.match(unavailable.message,/service could not be reached/);
+  const unknown = passwordWorkspaceError(new Error('private database credentials'));
+  assert.doesNotMatch(JSON.stringify([expired,unavailable,unknown]),/private/);
+  assert.equal(unknown.applicationUrl,undefined);
+});
+
+test('origin error never renders a link containing credentials or an unsafe scheme', () => {
+  for (const value of ['http://user:secret@example.com','javascript:alert(1)','http://example.com/?token=secret']) {
+    process.env.STAFFING_APP_ORIGIN=value;
+    const failure = passwordWorkspaceError(new StaffingApiError('private details',403,'ORIGIN_REJECTED'));
+    assert.equal(failure.applicationUrl,undefined);
+    assert.doesNotMatch(failure.message,/secret|private|javascript/);
+  }
 });
 test('password cookie is authoritative and account switches invalidate old tabs', async () => {
   global.fetch = async (url,init) => { assert.equal(init.headers.Authorization,`Bearer ${token}`); return json({person_id:'P-001'}); };

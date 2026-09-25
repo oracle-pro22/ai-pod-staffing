@@ -68,33 +68,39 @@ class AdministratorWorkspaceTests(unittest.TestCase):
                 self.assertIn('AND (p.person_id=:profileViewerId)', sql)
                 return [] if admin_only else [{'person_id': 'P-standalone-admin'}]
             if 'AS total' in sql:
-                return [{'total': 0}]
+                return [
+                    {'person_id': person_id, 'total': 0}
+                    for key, person_id in binds.items() if key.startswith('activePerson')
+                ]
             return []
 
         with patch('app.assignments.rows', side_effect=query), patch('app.assignments.load_policy', return_value=DEFAULT_POLICY), \
              patch('app.assignments.ZoneInfo', return_value=timezone.utc), \
-             patch('app.assignments.load_capacity_ledger', return_value=(CapacityLedger(), 0)) as capacity:
+             patch('app.assignments.load_capacity_ledgers', side_effect=lambda _connection, person_ids, *_: {
+                 person_id: (CapacityLedger(), 0) for person_id in person_ids
+             }) as capacity:
             result = AssignmentStore(SimpleNamespace(read=read), SimpleNamespace(staffing_policy_version='draft')).workspace(
                 user, date(2026, 9, 14))
         self.assertEqual(user.person_id, 'P-standalone-admin')
         self.assertEqual(user.subject, 'unchanged-admin-identity')
         self.assertEqual(user.roles, {'SYSTEM_ADMINISTRATOR'})
-        return result, capacity.call_count
+        loaded = set(capacity.call_args.args[1]) if capacity.called else set()
+        return result, loaded
 
     def test_admin_stays_authenticated_but_not_in_employee_metrics(self):
         result, reads = self.workspace()
         self.assertEqual([person['person_id'] for person in result['people']], ['P-employee'])
-        self.assertEqual(reads, 1)
+        self.assertEqual(reads, {'P-employee'})
 
     def test_actor_only_path_does_not_reinsert_standalone_admin(self):
         result, reads = self.workspace(full_directory=False)
         self.assertEqual(result['people'], [])
-        self.assertEqual(reads, 0)
+        self.assertEqual(reads, set())
 
     def test_combined_role_employee_remains_visible(self):
         result, reads = self.workspace(admin_only=False)
         self.assertEqual({person['person_id'] for person in result['people']}, {'P-employee', 'P-standalone-admin'})
-        self.assertEqual(reads, 2)
+        self.assertEqual(reads, {'P-employee', 'P-standalone-admin'})
 
 
 if __name__ == '__main__':

@@ -4,6 +4,7 @@ import type { StaffingPerson, StaffingRecommendation, StaffingRequest, StaffingV
 import { ROLE_CODES } from '@/types/roles';
 
 export function selectIdentityPerson(data: StaffingViewModel, role: StaffingRole): StaffingPerson | null {
+  if (data.identity) return data.people.find(person => person.id === data.identity!.personId) ?? null;
   if (role === 'Administrator') return null;
   const personId = role === 'POD Captain' ? data.demoIdentity.podCaptainPersonId : identityPersonId(role, data.demoIdentity);
   return data.people.find((person) => person.id === personId) ?? null;
@@ -26,7 +27,7 @@ export function selectVisibleRequests(
   if (!person) return [];
   if (role === 'POD Captain') return requests.filter((request) => request.requestSourcePersonId === person.id);
   return requests.filter((request) => request.recommendations.some((item) => item.personId === person.id
-    && isApprovedAssignment(item) && (role !== 'POD Lead' || /^(pod[ _-]?)?lead$/i.test(item.roleInPod.trim()))));
+    && isApprovedAssignment(item)));
 }
 
 export function selectVisiblePeople(

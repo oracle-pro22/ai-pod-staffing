@@ -8,21 +8,18 @@ import { FormGroup, TextArea } from '@/components/ui/FormControls';
 import { Pill } from '@/components/ui/Pill';
 import { useStaffingApp } from '@/context/StaffingAppProvider';
 import { useLiveWorkspace } from '@/lib/use-live-workspace';
-import { canPerform } from '@/lib/role-policy';
 import { formatDate } from '@/lib/formatting';
 import { liveStatusLabel } from '@/lib/live-presentation';
 import { announceStaffingChange, CLOSURE_EXPLANATION, CLOSED_EXPLANATION, OVERDUE_EXPLANATION } from '@/lib/project-closure';
 
 export function FinalPodDetails({ requestId }: { requestId: string }) {
-  const { data, state, notify } = useStaffingApp();
+  const { notify } = useStaffingApp();
   const { snapshot, error, refresh } = useLiveWorkspace('REQUESTS');
   const [closing, setClosing] = useState(false), [reason, setReason] = useState(''), [busy, setBusy] = useState(false);
   const router = useRouter();
   const request = snapshot?.requests.find(r => r.request_id === requestId);
   const members = snapshot?.assignments.filter(a => a.request_id === requestId) ?? [];
-  const canClose = state.role === 'POD Lead' && request?.status === 'STAFFED'
-    && members.some(m => m.person_id === data.identity?.personId && m.role_in_pod === 'POD_LEAD' && m.status === 'CONFIRMED')
-    && canPerform(state.role, 'REQUESTS', 'canUpdate', data.authorization);
+  const canClose = request?.status === 'STAFFED' && request.can_close === true;
   async function closeProject() {
     if (!request || !canClose || busy || !reason.trim()) return;
     setBusy(true);

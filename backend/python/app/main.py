@@ -20,6 +20,8 @@ from app.policy_admin import PolicyAdminStore, UtilizationUpdate, active_policy_
 from app.assignments import AssignmentStore, CloseProject
 from app.personas import PersonaRepository, PersonaSelection, constrain_actor, mint_session, require_management
 from app.accounts import AccountStore, PasswordLogin
+from app.availability import AvailabilityInput, cancel_availability, create_availability, update_availability
+from app.roster_lifecycle import RosterLifecycle, AccessChange, OnboardingInput, require_ready, status as onboarding_status
 from app.selections import SelectionStore, SelectionUpdate
 from app.manual_store import ManualStore, ManualPreviewInput, ManualDecisionInput
 from datetime import date
@@ -43,6 +45,7 @@ def create_app(settings: Settings | None = None, database=None, verifier=None, a
     personas = PersonaRepository(database)
     policy_admin = PolicyAdminStore(database)
     accounts = accounts or AccountStore(database, settings)
+    roster = RosterLifecycle(database)
     selections = selections or SelectionStore(database, settings)
     manual = manual or ManualStore(database, settings)
 
@@ -85,7 +88,11 @@ def create_app(settings: Settings | None = None, database=None, verifier=None, a
 
     def current_actor(request: Request) -> Actor:
         if settings.backend_auth_mode == "password":
-            return authorization.resolve(accounts.subject(request.headers.get("authorization")))
+            actor = authorization.resolve(accounts.subject(request.headers.get("authorization")))
+            if request.url.path not in ('/v1/me', '/v1/onboarding'):
+                with database.read() as c:
+                    require_ready(c, actor.person_id)
+            return actor
         if settings.staffing_demo_personas_enabled:
             identity = verifier.persona(request.headers.get("authorization"))
             # Re-read active person/role mappings and permissions on every API
@@ -126,9 +133,42 @@ def create_app(settings: Settings | None = None, database=None, verifier=None, a
 
     @app.get("/v1/me")
     def me(actor: Actor = Depends(current_actor)):
+        state = {'status': 'LEGACY', 'revision': 0}
+        if settings.backend_auth_mode == 'password':
+            with database.read() as c:
+                state = onboarding_status(c, actor.person_id)
         return {"person_id": actor.person_id, "identity_subject": actor.subject, "roles": sorted(actor.roles),
                 "full_name": actor.full_name,
+                "onboarding": state,
                 "permissions": [asdict(row) for row in actor.permissions]}
+
+    @app.get('/v1/onboarding')
+    def onboarding(actor: Actor = Depends(current_actor)):
+        return roster.onboarding(actor)
+
+    @app.post('/v1/onboarding')
+    def submit_onboarding(body: OnboardingInput, actor: Actor = Depends(current_actor)):
+        return roster.submit(actor, body)
+
+    @app.post('/v1/availability', status_code=201)
+    def availability(body: AvailabilityInput, actor: Actor = Depends(current_actor)):
+        return create_availability(database, actor, body)
+
+    @app.patch('/v1/availability/{availability_id}')
+    def amend_availability(availability_id: int, body: AvailabilityInput, actor: Actor = Depends(current_actor)):
+        return update_availability(database, actor, availability_id, body)
+
+    @app.delete('/v1/availability/{availability_id}')
+    def remove_availability(availability_id: int, actor: Actor = Depends(current_actor)):
+        return cancel_availability(database, actor, availability_id)
+
+    @app.get('/v1/admin/accounts')
+    def roster_accounts(actor: Actor = Depends(current_actor)):
+        return roster.accounts(actor)
+
+    @app.post('/v1/admin/accounts/{account_id}/access')
+    def roster_access(account_id: str, body: AccessChange, actor: Actor = Depends(current_actor)):
+        return roster.access(actor, account_id, body)
 
     @app.get("/v1/policy")
     def policy(actor: Actor = Depends(current_actor)):

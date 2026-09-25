@@ -92,8 +92,9 @@ export async function readOracleStaffingSnapshot(): Promise<OracleStaffingSnapsh
              TO_CHAR(starts_on, 'YYYY-MM-DD') AS starts_on,
              TO_CHAR(ends_on, 'YYYY-MM-DD') AS ends_on,
              title,
-             allocated_hours, created_by, created_at, updated_at
+             allocated_hours, capacity_kind, created_by, created_at, updated_at
         FROM availability
+       WHERE status = 'ACTIVE'
        ORDER BY starts_on, person_id, availability_id
     `),
     requests: await rows(connection, `
@@ -113,7 +114,7 @@ export async function readOracleStaffingSnapshot(): Promise<OracleStaffingSnapsh
     `),
     requirements: await rows(connection, `
       SELECT requirement_id, request_id, deliverable_id, interest_id, skill_name,
-             custom_capability_name, capability_source, required_strength, display_order,
+             custom_capability_name, capability_source, required_strength, mandatory_flag, display_order,
              requirement_source, source_version, created_by, created_at
         FROM requirements
        ORDER BY request_id, display_order, requirement_id

@@ -92,13 +92,21 @@ class ManualStore:
         return found[0]
 
     def pool(self, c, request):
-        return rows(c, """SELECT DISTINCT p.person_id,p.full_name,ur.role_code FROM people p
+        records = rows(c, """SELECT DISTINCT p.person_id,p.full_name,ur.role_code FROM people p
             JOIN app_accounts a ON a.person_id=p.person_id AND a.active_flag='Y'
             JOIN app_user_roles ur ON ur.person_id=p.person_id AND ur.identity_subject=a.identity_subject AND ur.active_flag='Y'
             JOIN app_roles ar ON ar.role_code=ur.role_code AND ar.active_flag='Y'
             WHERE p.active_flag='Y' AND ur.role_code IN ('POD_LEAD','POD_MEMBER')
+            AND NOT EXISTS (SELECT 1 FROM roster_onboarding o WHERE o.person_id=p.person_id AND o.status NOT IN ('COMPLETE','REVIEW'))
             AND ur.effective_from<=:startDay AND (ur.effective_to IS NULL OR ur.effective_to>=:endDay)
             ORDER BY p.full_name,p.person_id,ur.role_code""", startDay=request['estimated_start_date'], endDay=request['estimated_completion_date'])
+        people = {}
+        for row in records:
+            person = people.setdefault(row['person_id'], {'person_id': row['person_id'],
+                'full_name': row['full_name'], 'role_codes': []})
+            if row['role_code'] not in person['role_codes']:
+                person['role_codes'].append(row['role_code'])
+        return list(people.values())
 
     def get(self, actor, request_id):
         with self.database.read() as c:

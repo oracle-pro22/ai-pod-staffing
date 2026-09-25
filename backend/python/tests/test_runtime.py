@@ -75,10 +75,9 @@ class RuntimeTests(unittest.TestCase):
                 verifier.subject("Bearer " + encode({**claims, **change}))
             self.assertEqual(error.exception.status, 401)
 
-    def test_role_grants_do_not_allow_another_captains_request(self):
+    def test_full_captain_can_decide_shared_request_but_not_edit_another_profile(self):
         require_captain_decision(captain(), "P-010")
-        with self.assertRaises(ServiceError):
-            require_captain_decision(captain(), "P-006")
+        require_captain_decision(captain(), "P-006")
         with self.assertRaises(ServiceError):
             require_own_person(captain(), "P-006")
 

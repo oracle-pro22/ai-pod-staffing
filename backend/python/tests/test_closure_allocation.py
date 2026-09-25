@@ -31,6 +31,7 @@ class ClosureAllocationTests(unittest.TestCase):
             INSERT INTO load_guardrails VALUES ('later-runtime','America/Los_Angeles');
             CREATE TABLE pod_assignments(assignment_id TEXT PRIMARY KEY,status TEXT,closed_at TEXT,policy_version TEXT);
             CREATE TABLE assignment_days(assignment_id TEXT,person_id TEXT,work_date TEXT,assigned_hours INTEGER);
+            CREATE TABLE roster_pod_claims(person_id TEXT,status TEXT,starts_on TEXT,ends_on TEXT,total_hours INTEGER);
         ''')
         self.db.executemany('INSERT INTO person_capacity_days VALUES (?,?,?,?,2)', [
             ('P-1', (MON + timedelta(days=i)).isoformat(), 8 if i % 7 < 5 else 0, 2 if i % 7 < 5 else 0)

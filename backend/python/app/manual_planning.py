@@ -12,7 +12,7 @@ from app.capacity import CapacityLedger, available_day_caps, calculate_capacity,
 from app.contracts import Contract, EntityId, PodRole, Proposal, ProposedMember
 from app.errors import ServiceError
 from app.planning import PlanOption, divide_hours, max_hours, score_plan_member, _member_deliverables, _responsibilities
-from app.rules import effective_role, minimum_member_contribution, validate_pod
+from app.rules import eligible_for_slot, minimum_member_contribution, validate_pod
 
 
 class ManualSlot(Contract):
@@ -22,7 +22,8 @@ class ManualSlot(Contract):
 
 
 def pod_only(ledger):
-    return CapacityLedger(weekly_hours=ledger.weekly_hours, confirmed_work=ledger.confirmed_work)
+    return CapacityLedger(weekly_hours=ledger.weekly_hours, confirmed_work=ledger.confirmed_work,
+                          reported_pod_work=ledger.reported_pod_work)
 
 
 def load_metrics(ledger, request, schedule):
@@ -33,7 +34,7 @@ def load_metrics(ledger, request, schedule):
     absence = {d.day: d.hours for d in ledger.absences}
     capacity = sum((max(Decimal(0), ledger.weekly_hours / 5 - absence.get(d, Decimal(0)))
                     for d in days if d.weekday() < 5), Decimal(0))
-    committed = sum((d.hours for d in (*ledger.confirmed_work, *ledger.external_work) if d.day in days), Decimal(0))
+    committed = sum((d.hours for d in (*ledger.confirmed_work, *ledger.reported_pod_work, *ledger.external_work) if d.day in days), Decimal(0))
     hours = sum((d.hours for d in schedule), Decimal(0))
     nonempty = [week for week in result.weeks if week.allocation_pct is not None]
     peak = max(nonempty, key=lambda w: w.allocation_pct) if nonempty else None
@@ -60,8 +61,7 @@ def manual_plan(bundle, slots):
     ledgers, caps = {}, []
     for slot in slots:
         person = people.get(slot.person_id)
-        role_codes = (policy.lead_role_code,) if slot.role == PodRole.LEAD else policy.member_role_codes
-        if person is None or not person.active or not any(effective_role(person, role, req) for role in role_codes):
+        if person is None or not eligible_for_slot(person, slot.role, req):
             raise ServiceError('ROLE_INELIGIBLE', 'Manual choices still require an active person and an eligible role for the entire request.', 409)
         original = bundle.ledgers.get(slot.person_id)
         if original is None:

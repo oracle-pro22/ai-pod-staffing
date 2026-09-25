@@ -1,0 +1,26 @@
+.roster-entry { min-height:100vh; background:#f7f6f2; color:#24231f; padding:24px; font-family:Arial,sans-serif; }
+.roster-entry>header { max-width:920px; margin:0 auto 24px; display:flex; justify-content:space-between; align-items:center; gap:16px; }
+.roster-entry>header span { display:block; font-size:14px; color:#706c64; margin-top:6px; }
+.roster-panel { max-width:920px; margin:auto; background:white; border:1px solid #e3ddd5; border-radius:18px; padding:28px; box-shadow:0 4px 18px #302d2610; }
+.roster-eyebrow { color:#c54330; font-size:12px; font-weight:bold; letter-spacing:.12em; }
+.roster-panel h1 { font-size:26px; margin:10px 0; }.roster-panel h2 { font-size:18px; margin:26px 0 12px; }
+.roster-panel p,.roster-panel li { line-height:1.55; font-size:14px; }.roster-panel nav { display:flex; flex-wrap:wrap; gap:8px; border-bottom:1px solid #e8e2dc; padding:12px 0 20px; }
+.roster-panel label { display:flex; flex-direction:column; gap:7px; font-size:14px; margin:12px 0; }
+.roster-panel input:not([type=checkbox]),.roster-panel select,.roster-panel textarea { box-sizing:border-box; width:100%; min-height:42px; border:1px solid #d6cfc5; border-radius:8px; padding:9px 12px; background:white; color:inherit; font:inherit; }
+.roster-panel textarea { min-height:80px; resize:vertical; }.roster-panel fieldset { min-width:0; border:1px solid #e3ddd5; border-radius:10px; padding:14px; margin:16px 0; background:#fcfbf9; }.roster-panel legend { font-size:14px; font-weight:bold; padding:0 5px; }
+.roster-panel legend small { display:block; margin-top:3px; color:#706c64; font-size:12px; font-weight:normal; }
+.roster-panel .staffing-person-combobox { width:100%; }
+.roster-panel .staffing-person-combobox .staffing-field { min-height:43px; border-color:#d9d3cc; border-radius:12px; padding:10px 13px; box-shadow:0 1px 2px rgba(31,27,23,.025); font-size:15px; }
+.roster-panel .staffing-person-combobox .staffing-field:hover:not(:disabled) { border-color:#bdb5ac; }
+.roster-panel .staffing-person-combobox .staffing-field:focus { border-color:#c86858; box-shadow:0 0 0 3px rgba(199,70,52,.1); outline:none; }
+.roster-panel .staffing-person-options { top:calc(100% + 7px); max-height:245px; border-color:#ded8d1; border-radius:13px; padding:7px; box-shadow:0 16px 36px rgba(37,32,27,.16); }
+.roster-panel .staffing-person-options button { min-height:0; border:0; border-radius:9px; padding:11px 12px; background:transparent; font-size:14px; text-align:left; }
+.roster-panel .staffing-person-options button:hover,.roster-panel .staffing-person-options button.active { color:#a83a2c; background:#fff0ec; }
+.roster-fields { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:16px; }.roster-panel .roster-check { flex-direction:row; align-items:center; gap:10px; }.roster-check input { width:18px; height:18px; flex-shrink:0; }
+.roster-help { margin:4px 0 14px; color:#706c64; font-size:13px; line-height:1.45; }
+.roster-entry button,.roster-management button { min-height:40px; border:1px solid #d6cfc5; border-radius:8px; padding:8px 14px; background:white; color:inherit; cursor:pointer; font:inherit; font-size:14px; }
+.roster-entry button[aria-current=step] { background:#e8f2f1; border-color:#2b706f; color:#225d5c; }.roster-entry .roster-primary { background:#c54330; color:white; border-color:#c54330; }
+.roster-entry button:disabled,.roster-management button:disabled { opacity:.55; cursor:not-allowed; }.roster-entry :focus-visible,.roster-management :focus-visible { outline:3px solid #347e8a; outline-offset:2px; }
+.roster-panel footer { display:flex; justify-content:flex-end; gap:10px; padding-top:20px; margin-top:24px; border-top:1px solid #e8e2dc; }.roster-error { color:#a32b22; background:#fff0ed; border-radius:8px; padding:12px; }.roster-notice { background:#fff5df; border-radius:8px; padding:12px; }
+.roster-management { margin-top:24px; }.roster-management input,.roster-management select { border:1px solid #d6cfc5; border-radius:8px; padding:9px; margin:6px 8px 6px 0; max-width:100%; }.roster-management form { padding:16px; background:#f9f7f3; border-radius:10px; margin:12px 0; }.roster-management table { width:100%; border-collapse:collapse; font-size:14px; }.roster-management td,.roster-management th { padding:12px; text-align:left; border-bottom:1px solid #e8e2dc; }.roster-management .roster-scroll { overflow:auto; }
+@media(max-width:600px) { .roster-entry { padding:12px; }.roster-panel { padding:18px; }.roster-panel h1 { font-size:23px; }.roster-panel nav button { flex:1; }.roster-fields { grid-template-columns:1fr; gap:0; } }

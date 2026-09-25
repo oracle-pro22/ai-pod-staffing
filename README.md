@@ -2,6 +2,27 @@
 
 AI Pod Staffing is a Next.js and Oracle application that creates staffing requests, uses a Supervisor with two specialist OCI Generative AI agents to prepare POD recommendations, and keeps the final decision with the POD Captain.
 
+## Real-roster rollout: Phases 1 and 2
+
+The [real-roster guide](docs/roster-phases-1-2.md) covers the read-only Excel/database audit and multi-role access changes. People use their highest-role interface while retaining their explicitly granted actions and staffing eligibility. Shared-Captain approvals require the documented Oracle migration and verification before deployment. These phases do **not** replace the existing roster, archive business data or enable first-login onboarding; those are later rollout phases, separate from the original MVP phases below.
+
+## Real-roster rollout: Phases 3 and 4
+
+For the subsequent real-roster rollout, [Phases 3 and 4](docs/roster-phases-3-4.md)
+add account access controls, first-login setup and guarded archive/recovery tools.
+**Install and verify `sql/oracle/roster_onboarding.sql` before running this code.**
+The tools do not automatically reset data or import the real roster; those remain
+explicit maintenance/import steps. Existing profiles are not silently enrolled.
+
+## Real-roster rollout: Phases 5 and 6
+
+[Phases 5 and 6](docs/roster-phases-5-6.md) provide the guarded real-team importer,
+read-only release checks and deployment/acceptance steps: 25 accounts, 18 enabled,
+7 disabled, exact Excel roles and mandatory first-login setup. Existing POD
+reports stay pending until real project details are verified. No new SQL migration
+is needed after the verified roster schemas. Reset/import remain explicit operator
+actions after backup and manifest review; installing code never changes the roster.
+
 ## New MVP Phase 1: email/password login
 
 Use the [Phase 1 setup and migration guide](docs/mvp-phase1.md) for the new Oracle-email/password entry page, shared initial password, scoped old-request archive, uniform existing person IDs and expanded 31-account roster (one Administrator). It supersedes the persona-picker setup below when password mode is enabled. The SQL/import steps are explicit; nothing resets the database at startup. Catalogue mappings and existing employee assessments are protected.

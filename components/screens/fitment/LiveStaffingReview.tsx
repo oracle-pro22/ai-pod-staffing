@@ -1,11 +1,13 @@
 'use client';
 import { staffingFetch } from '@/lib/staffing-fetch';
+import { browserId } from '@/lib/browser-id';
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { LiveFitmentPresentation } from './LiveFitmentPresentation';
 import { useStaffingApp } from '@/context/StaffingAppProvider';
 import { ManualPodEditor, type ManualSlot, type ManualPerson } from './ManualPodEditor';
+import { canCaptainAct } from '@/lib/live-permissions';
 
 export type RequestRow = { request_id: string; title: string; status: string; responsible_captain_id: string };
 type Identity = { person_id: string; roles: string[]; permissions: { role: string; resource: string; scope: string; actions: string[] }[] };
@@ -64,10 +66,7 @@ export function LiveStaffingReview({ executionView = false }: { executionView?: 
   const selected = requests.find(r => r.request_id === state.activeRequestId) ?? requests[0];
   const requestId = selected?.request_id;
   const running = execution?.status === 'QUEUED' || execution?.status === 'RUNNING';
-  const hasPermission = (resource: string, action: string) => state.role === 'POD Captain'
-    && identity?.person_id === selected?.responsible_captain_id
-    && identity?.permissions.some(p => p.role === 'POD_CAPTAIN' && p.resource === resource
-      && p.scope !== 'LOCKED' && p.actions.includes('view') && p.actions.includes(action));
+  const hasPermission = (resource: string, action: string) => canCaptainAct(identity, resource, action, selected?.responsible_captain_id);
   const canManual = Boolean(hasPermission('AI_FITMENT', 'approve') && selected && ['NEEDS_RECOMMENDATION', 'IN_REVIEW'].includes(selected.status));
   const manualDraft = manualState?.draft;
   const manualPod: Pod | null = manualDraft ? { ...manualDraft, proposal_id: manualDraft.draft_id,
@@ -111,7 +110,7 @@ export function LiveStaffingReview({ executionView = false }: { executionView?: 
   }, [requestId, refresh, canManual]);
 
   function operationKey(signature: string) {
-    if (!operationKeys.current.has(signature)) operationKeys.current.set(signature, crypto.randomUUID());
+    if (!operationKeys.current.has(signature)) operationKeys.current.set(signature, browserId());
     return operationKeys.current.get(signature)!;
   }
 

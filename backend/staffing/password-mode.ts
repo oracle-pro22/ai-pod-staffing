@@ -14,8 +14,7 @@ export function passwordModeEnabled() {
   return enabled;
 }
 
-export function requirePasswordOrigin(request: NextRequest, mutation = false) {
-  if (!passwordModeEnabled()) throw new StaffingApiError('Password sign-in is not enabled.', 404, 'PASSWORD_LOGIN_DISABLED');
+export function configuredPasswordOrigin(): URL {
   let configured: URL;
   try { configured = new URL(process.env.STAFFING_APP_ORIGIN || ''); }
   catch { throw new StaffingApiError('Set STAFFING_APP_ORIGIN to the application address.', 503, 'LOGIN_CONFIGURATION'); }
@@ -23,6 +22,12 @@ export function requirePasswordOrigin(request: NextRequest, mutation = false) {
       || configured.pathname !== '/' || configured.search || configured.hash) {
     throw new StaffingApiError('Invalid application origin.', 503, 'LOGIN_CONFIGURATION');
   }
+  return configured;
+}
+
+export function requirePasswordOrigin(request: NextRequest, mutation = false) {
+  if (!passwordModeEnabled()) throw new StaffingApiError('Password sign-in is not enabled.', 404, 'PASSWORD_LOGIN_DISABLED');
+  const configured = configuredPasswordOrigin();
   if (browserRequestOrigin(request).origin !== configured.origin) {
     throw new StaffingApiError('Open the configured application address.', 403, 'ORIGIN_REJECTED');
   }

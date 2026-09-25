@@ -14,6 +14,13 @@ export const ROLE_CODES: Record<StaffingRole, string> = {
   Administrator: 'SYSTEM_ADMINISTRATOR',
 };
 
+/** Display priority only. Staffing eligibility always uses explicit role grants. */
+export const ROLE_PRIORITY: readonly StaffingRole[] = ['Administrator', 'POD Captain', 'POD Lead', 'POD Member'];
+
+export function highestStaffingRole(roleCodes: readonly string[]): StaffingRole | undefined {
+  return ROLE_PRIORITY.find(role => roleCodes.includes(ROLE_CODES[role]));
+}
+
 /** Browser preview preferences only; never use legacy aliases to authorize APIs. */
 export function migratePreviewRole(value: unknown): StaffingRole {
   if (isStaffingRole(value)) return value;

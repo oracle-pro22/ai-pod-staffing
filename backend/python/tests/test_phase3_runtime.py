@@ -168,10 +168,11 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
         self.store.enqueue.assert_not_called()
 
-    def test_read_scope_is_own_captain_or_explicit_full_admin(self):
+    def test_full_captain_and_admin_read_shared_queue_but_not_narrow_grants(self):
         ExecutionStore.authorize_read(actor(), "P-010")
+        ExecutionStore.authorize_read(actor(), "P-OTHER")
         ExecutionStore.authorize_read(actor(role="SYSTEM_ADMINISTRATOR"), "P-OTHER")
-        for user in (actor(), actor(role="POD_LEAD"), actor(role="SYSTEM_ADMINISTRATOR", scope="OWN")):
+        for user in (actor(scope="OWN"), actor(role="POD_LEAD"), actor(role="SYSTEM_ADMINISTRATOR", scope="OWN")):
             with self.subTest(user=user), self.assertRaises(ServiceError):
                 ExecutionStore.authorize_read(user, "P-OTHER")
 

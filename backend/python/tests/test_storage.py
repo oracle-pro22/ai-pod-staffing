@@ -71,6 +71,15 @@ class StorageTests(unittest.TestCase):
         self.assertEqual(error.exception.code, "NEEDS_INFORMATION")
 
     @patch("app.storage.rows")
+    def test_custom_deliverable_is_preserved_as_request_scoped_work(self, query):
+        row = request_row()
+        row["deliverables_json"] = '[{"id":"CUSTOM-DEL-1","name":"New customer artifact","custom":true}]'
+        query.side_effect = [[row], [requirement()]]
+        result = load_request_snapshot(object(), "REQ-1")
+        self.assertEqual(result.deliverable_ids, ("CUSTOM-DEL-1",))
+        self.assertEqual(result.custom_deliverables, {"CUSTOM-DEL-1": "New customer artifact"})
+
+    @patch("app.storage.rows")
     def test_legacy_role_derived_rating_not_used(self, query):
         query.side_effect = [[request_row()], [requirement(assessment_type="ROLE_DERIVED", required_strength=5)]]
         result = load_request_snapshot(object(), "REQ-1")
@@ -80,12 +89,21 @@ class StorageTests(unittest.TestCase):
     @patch("app.storage.rows")
     def test_complete_capacity_ledger_returns_workload_version(self, query):
         query.side_effect = [[{"weekly_work_hours": 40, "workload_version": 7, "availability_version": 2}],
-                             capacity_rows(), [{"work_date": MON, "hours": 4}]]
+                             capacity_rows(), [{"work_date": MON, "hours": 4}], []]
         ledger, version = load_capacity_ledger(object(), "P-1", MON, MON)
         self.assertEqual(version, 7)
         self.assertEqual(ledger.confirmed_work[0].hours, Decimal(4))
-        self.assertIn("a.status='CONFIRMED'", query.call_args.args[1])
+        self.assertIn("a.status='CONFIRMED'", query.call_args_list[2].args[1])
         self.assertEqual(query.call_args.kwargs["endDay"], MON + timedelta(days=6))
+
+    @patch("app.storage.rows")
+    def test_self_reported_pod_hours_enter_capacity_without_an_assignment(self, query):
+        query.side_effect = [[{"weekly_work_hours": 40, "workload_version": 7, "availability_version": 2}],
+                             capacity_rows(), [],
+                             [{"starts_on": MON, "ends_on": MON, "total_hours": 6}]]
+        ledger, _ = load_capacity_ledger(object(), "P-1", MON, MON)
+        self.assertEqual(ledger.confirmed_work, ())
+        self.assertEqual(ledger.reported_pod_work[0].hours, Decimal(6))
 
     @patch("app.storage.rows")
     def test_missing_working_hours_are_unknown(self, query):

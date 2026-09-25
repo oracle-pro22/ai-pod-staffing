@@ -7,6 +7,7 @@ import { StaffingApiError } from '@/lib/errors/staffing-api-error';
 import { createStaffingRequest } from '@/lib/repositories/staffing-mutation-repository';
 import { validateCreateRequestPayload } from '@/lib/validation/staffing-mutations';
 import { agenticEnabled, verifiedCaptain } from '@/backend/staffing/bridge';
+import { highestStaffingRole } from '@/types/roles';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -18,7 +19,8 @@ export async function POST(request: NextRequest) {
     }
     const identity = agenticEnabled() ? await verifiedCaptain(request) : null;
     const context = identity
-      ? { role: 'POD Captain' as const, actor: identity.identity_subject, responsibleCaptainId: identity.person_id }
+      ? { role: highestStaffingRole(identity.roles)!, actor: identity.identity_subject,
+        personId: identity.person_id, authenticated: true, responsibleCaptainId: identity.person_id }
       : await staffingRequestContext(request);
     const body = await request.json().catch(() => {
       throw new StaffingApiError('The request body is not valid JSON.', 400, 'INVALID_JSON');

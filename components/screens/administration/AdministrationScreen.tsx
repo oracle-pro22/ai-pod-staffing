@@ -6,9 +6,10 @@ import { Notice } from '@/components/ui/Notice';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Pill } from '@/components/ui/Pill';
 import { useStaffingApp } from '@/context/StaffingAppProvider';
-import { canPerform, type PermissionAction } from '@/lib/role-policy';
+import { canPerform, configuredRolePermission, type PermissionAction } from '@/lib/role-policy';
 import { STAFFING_ROLES } from '@/types/roles';
 import { UtilizationSettings } from './UtilizationSettings';
+import { AccountAccess } from './AccountAccess';
 
 const ACTIONS: { label: string; resource: string; action: PermissionAction }[] = [
   { label: 'Submit requests', resource: 'REQUESTS', action: 'canCreate' },
@@ -36,9 +37,12 @@ export function AdministrationScreen() {
         <p className="staffing-muted">Permissions loaded from Oracle. POD Lead and POD Member access is limited to their assigned projects and team. Permission does not mean an on-hold workflow is implemented.</p>
         <div style={{ overflowX: 'auto' }}><table className="staffing-role-table">
           <thead><tr><th>Profile</th>{ACTIONS.map((item) => <th key={item.label}>{item.label}</th>)}</tr></thead>
-          <tbody>{STAFFING_ROLES.map((role) => <tr key={role}><th>{role}</th>{ACTIONS.map((item) => <td key={item.label}>{canPerform(role, item.resource, item.action, data.authorization) ? 'Allowed' : '—'}</td>)}</tr>)}</tbody>
+          <tbody>{STAFFING_ROLES.map((role) => <tr key={role}><th>{role}</th>{ACTIONS.map((item) => {
+            const permission = configuredRolePermission(role, item.resource, data.authorization);
+            return <td key={item.label}>{permission?.canView && permission.accessScope !== 'locked' && permission[item.action] ? 'Allowed' : '—'}</td>;
+          })}</tr>)}</tbody>
         </table></div>
-        {canPerform(state.role, 'ACCESS_MANAGEMENT', 'canUpdate', data.authorization) ? <Button onClick={pending}>Manage access</Button> : null}
+        {data.identity && canPerform(state.role, 'ACCESS_MANAGEMENT', 'canAdminister', data.authorization) ? <AccountAccess /> : null}
       </div> : null}
       {state.adminTab === 'taxonomy' ? <div className="staffing-admin-panel staffing-grid staffing-two-col"><div>
         <h3>Project and deliverable catalogue</h3><p className="staffing-muted">Current active catalogue from Oracle. Retired entries remain on historical requests.</p>

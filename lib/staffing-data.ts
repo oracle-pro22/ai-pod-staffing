@@ -309,12 +309,15 @@ export function buildStaffingViewModel(snapshot: StaffingSnapshot): StaffingView
       allocationPct: numberValue(row, 'allocation_pct'),
       activePods: numberValue(row, 'active_pods'),
       skills: (personSkills.get(personId) ?? []).sort((a, b) => b.strength - a.strength),
-      availability: (availabilityByPerson.get(personId) ?? []).map((event) => ({
+      availability: (availabilityByPerson.get(personId) ?? []).map((event, index) => ({
+        id: numberValue(event, 'availability_id') || index + 1,
         eventType: textValue(event, 'event_type'),
         startsOn: textValue(event, 'starts_on'),
         endsOn: textValue(event, 'ends_on'),
         title: textValue(event, 'title'),
         allocatedHours: numberValue(event, 'allocated_hours'),
+        capacityKind: textValue(event, 'capacity_kind') === 'EXTERNAL_WORK' || textValue(event, 'event_type') === 'Commitment'
+          ? 'EXTERNAL_WORK' as const : 'NON_AVAILABILITY' as const,
       })),
     };
   });

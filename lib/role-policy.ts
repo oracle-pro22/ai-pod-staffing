@@ -34,10 +34,39 @@ export function isScopedRole(role: StaffingRole): boolean {
   return SCOPED_ROLES.has(role);
 }
 
+export function configuredRolePermission(role: StaffingRole, resource: string, authorization?: Authorization) {
+  return (authorization?.roleCatalogue ?? authorization?.roles)
+    ?.find((item) => item.code === ROLE_CODES[role] && item.name === role && item.active)
+    ?.permissions.find((permission) => permission.resourceCode === resource);
+}
+
 export function rolePermission(role: StaffingRole, resource: string, authorization?: Authorization) {
+  if (authorization?.grantedRoleCodes !== undefined) {
+    const permissions = authorization.roles
+      .filter(item => item.active && authorization.grantedRoleCodes!.includes(item.code))
+      .flatMap(item => item.permissions.filter(permission => permission.resourceCode === resource
+        && permission.accessScope !== 'locked' && permission.canView));
+    if (!permissions.length) return undefined;
+    const scopes: ScreenAccess[] = ['full', 'scoped', 'own', 'locked'];
+    return {
+      resourceCode: resource,
+      accessScope: scopes.find(scope => permissions.some(permission => permission.accessScope === scope))!,
+      canView: true,
+      canCreate: permissions.some(permission => permission.canCreate),
+      canUpdate: permissions.some(permission => permission.canUpdate),
+      canApprove: permissions.some(permission => permission.canApprove),
+      canExport: permissions.some(permission => permission.canExport),
+      canAdminister: permissions.some(permission => permission.canAdminister),
+    };
+  }
+  // The unauthenticated prototype selects one preview role, never all catalogue roles.
   return authorization?.roles
     .find((item) => item.code === ROLE_CODES[role] && item.name === role && item.active)
     ?.permissions.find((permission) => permission.resourceCode === resource);
+}
+
+export function hasGrantedRole(role: StaffingRole, authorization?: Authorization): boolean {
+  return authorization?.grantedRoleCodes?.includes(ROLE_CODES[role]) ?? false;
 }
 
 export type PermissionAction = 'canView' | 'canCreate' | 'canUpdate' | 'canApprove' | 'canExport' | 'canAdminister';
@@ -48,6 +77,7 @@ export function canPerform(role: StaffingRole, resource: string, action: Permiss
 }
 
 export function defaultScreen(role: StaffingRole, authorization?: Authorization): ScreenId {
+  if (role === 'Administrator' && canAccessScreen(role, 'admin', authorization)) return 'admin';
   return NAVIGATION_ITEMS.find((item) => canAccessScreen(role, item.id, authorization))?.id ?? 'dashboard';
 }
 

@@ -57,6 +57,7 @@ class RequestSnapshot(Contract):
     lead_count: int = Field(default=1, ge=1, le=5, strict=True)
     member_count: int = Field(default=2, ge=0, le=20, strict=True)
     deliverable_ids: tuple[EntityId, ...] = Field(min_length=1, max_length=100)
+    custom_deliverables: dict[EntityId, str] = Field(default_factory=dict)
     requirements: tuple[Requirement, ...] = Field(min_length=1, max_length=100)
 
     @model_validator(mode="after")
@@ -65,6 +66,8 @@ class RequestSnapshot(Contract):
             raise ValueError("Provide an ordered schedule of at most 366 days")
         if len(set(self.deliverable_ids)) != len(self.deliverable_ids):
             raise ValueError("Deliverable IDs must be unique")
+        if not set(self.custom_deliverables) <= set(self.deliverable_ids):
+            raise ValueError("Custom deliverables must belong to the request")
         if len({row.skill_id for row in self.requirements}) != len(self.requirements):
             raise ValueError("Normalize duplicate capabilities before creating the snapshot")
         return self

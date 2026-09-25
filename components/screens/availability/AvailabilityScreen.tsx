@@ -13,27 +13,49 @@ import { useStaffingApp } from '@/context/StaffingAppProvider';
 import { canPerform } from '@/lib/role-policy';
 import { allocationTone, formatDate, formatShortDate } from '@/lib/formatting';
 import { selectIdentityPerson, selectVisiblePeople } from '@/lib/selectors';
+import { staffingFetch } from '@/lib/staffing-fetch';
+import { requestBusinessDate } from '@/lib/request-date-policy';
 
 export function AvailabilityScreen() {
-  const { data, state, dispatch } = useStaffingApp();
+  const { data, state, dispatch, notify } = useStaffingApp();
   const [personId, setPersonId] = useState('');
+  const [confirmCancel, setConfirmCancel] = useState<number | null>(null);
+  const [busy, setBusy] = useState<number | null>(null);
   const isAdmin = state.role === 'Administrator';
   const people = selectVisiblePeople(data, state.role);
-  const person = isAdmin ? people.find((item) => item.id === personId) ?? people[0] : selectIdentityPerson(data, state.role);
-  if (!person) return <div className="staffing-empty">No signed-in person is available.</div>;
-  const events = person.availability.map((event) => ({ ...event, id: `${person.id}-${event.startsOn}-${event.endsOn}-${event.eventType}`, personId: person.id }));
+  const ownPerson = selectIdentityPerson(data, state.role);
+  const person = isAdmin && personId ? people.find((item) => item.id === personId) : ownPerson;
+  if (!person) return <section className="staffing-screen"><PageHeader title={isAdmin ? 'People availability' : 'My availability'}
+    description={isAdmin ? 'Choose a person to inspect their recorded availability.' : 'View your recorded availability and current capacity.'}
+    actions={isAdmin ? <PersonCombobox people={people} value="" onChange={id => setPersonId(id)} placeholder="Search people by name" /> : undefined} />
+    <div className="staffing-empty">{isAdmin ? 'Select a person to view availability.' : 'No signed-in person is available.'}</div></section>;
+  const events = person.availability.filter((event) => event.endsOn >= requestBusinessDate());
+  const own = person.id === ownPerson?.id;
+  async function cancelEvent(eventId: number) {
+    if (confirmCancel !== eventId) { setConfirmCancel(eventId); return; }
+    setBusy(eventId);
+    try {
+      const response = await staffingFetch(`/api/availability/${eventId}`, { method: 'DELETE', headers: { 'x-staffing-role': state.role } });
+      const result = await response.json().catch(() => ({})) as { error?: string };
+      if (!response.ok) { notify('Event not cancelled', result.error || 'The event could not be cancelled.'); return; }
+      setConfirmCancel(null); notify('Availability cancelled', 'The event no longer affects future capacity.'); window.location.reload();
+    } catch { notify('Cancellation status unknown', 'Refresh before trying again.'); }
+    finally { setBusy(null); }
+  }
   return <section className="staffing-screen">
-    <PageHeader title={isAdmin ? 'People availability' : 'My availability'}
-      description={isAdmin ? 'Inspect recorded availability and capacity for any active person.' : 'View your recorded availability and current capacity.'}
-      actions={isAdmin ? <PersonCombobox people={people} value={person.id} onChange={id => { if (id) setPersonId(id); }} placeholder="Search people by name" />
-        : canPerform(state.role, 'MY_AVAILABILITY', 'canCreate', data.authorization)
-          ? <Button variant="primary" onClick={() => dispatch({ type: 'open-drawer', drawer: { id: 'add-availability', title: 'Add availability event' } })}>＋ Add availability event</Button> : undefined} />
+    <PageHeader title={person.id === ownPerson?.id ? 'My availability' : 'People availability'}
+      description={isAdmin ? 'Your availability opens first. You can also inspect other people’s recorded capacity.' : 'View your recorded availability and current capacity.'}
+      actions={<>{isAdmin && <PersonCombobox people={people} value={person.id} onChange={id => { if (id) setPersonId(id); }} placeholder="Search people by name" />}
+        {person.id === ownPerson?.id && canPerform(state.role, 'MY_AVAILABILITY', 'canCreate', data.authorization)
+          && <Button variant="primary" onClick={() => dispatch({ type: 'open-drawer', drawer: { id: 'add-availability', title: 'Add availability event' } })}>＋ Add availability event</Button>}</>} />
     <div className="staffing-availability-layout">
       <Card><CardHeader><div><h3>Upcoming availability events</h3><p>Visible to staffing recommendations once saved</p></div><Pill tone="green">Profile current</Pill></CardHeader>
         <CardBody className="staffing-leave-list">{events.length ? events.map(event => <div className="staffing-leave" key={event.id}>
           <div className="staffing-date-tile"><strong>{formatShortDate(event.startsOn)}</strong><span>{event.eventType}</span></div>
           <div><b>{event.title || event.eventType}</b><div className="staffing-row-sub">{formatDate(event.startsOn)} to {formatDate(event.endsOn)} • {event.allocatedHours || 0} hours</div></div>
-          <Pill tone="green">Database</Pill></div>) : <div className="staffing-empty compact">No availability events are recorded for this person.</div>}</CardBody>
+          <div className="staffing-inline-actions"><Pill tone={event.capacityKind === 'EXTERNAL_WORK' ? 'blue' : 'green'}>{event.capacityKind === 'EXTERNAL_WORK' ? 'External work' : 'Unavailable'}</Pill>
+            {own && <><Button size="small" disabled={busy === event.id} onClick={() => dispatch({ type: 'open-drawer', drawer: { id: 'add-availability', title: 'Edit availability event', payload: { event } } })}>Edit</Button>
+              <Button size="small" disabled={busy === event.id} onClick={() => void cancelEvent(event.id)}>{busy === event.id ? 'Cancelling…' : confirmCancel === event.id ? 'Confirm cancel' : 'Cancel event'}</Button></>}</div></div>) : <div className="staffing-empty compact">No upcoming availability events are recorded for this person.</div>}</CardBody>
       </Card>
       <Card padded><h3>{isAdmin ? `${person.name} — capacity` : 'My capacity'}</h3>
         <div className="staffing-capacity-heading"><span>{data.allocationPeriod ? 'This week’s planned allocation' : 'Current allocation'}</span><b>{personAllocationLabel(person)}</b></div>

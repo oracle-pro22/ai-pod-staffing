@@ -166,7 +166,7 @@ test('full leave is displayed honestly, not as zero overall allocation', () => {
   assert.doesNotMatch(html, /including those records: 0%/);
 });
 test('manual picker preserves role-sized slots and requires explicit preview', () => {
-  const people = [{ person_id: 'P-1', full_name: 'Lead One', role_code: 'POD_LEAD' }, { person_id: 'P-4', full_name: 'Member One', role_code: 'POD_MEMBER' }];
+  const people = [{ person_id: 'P-1', full_name: 'Lead One', role_codes: ['POD_LEAD'] }, { person_id: 'P-4', full_name: 'Member One', role_codes: ['POD_MEMBER'] }];
   const html = renderToStaticMarkup(React.createElement(ManualPodEditor, {
     people,
     selected: [], leadCount: 1, memberCount: 2, busy: false, onClose() {}, onPreview() {},
@@ -205,6 +205,26 @@ test('manual proxy preserves scoped paths, no-store, and refuses arbitrary role 
   }
   const res = await POST(new NextRequest('http://127.0.0.1:3001/api/agentic/manual/admin', { method: 'POST', body: '{}' }), { params: Promise.resolve({ path: ['manual', 'admin'] }) });
   assert.equal(res.status, 404);
+});
+
+test('roster endpoints remain explicitly allowlisted with no recovery/reset web endpoint', async () => {
+  backend = async (...args) => { forwarded.push(args); return { status: 'COMPLETE' }; };
+  for (const path of [['onboarding'], ['admin', 'accounts', 'ACC-1', 'access']]) {
+    forwarded = [];
+    const body = { reason: 'Operator review' };
+    const response = await POST(new NextRequest(`http://127.0.0.1:3001/api/agentic/${path.join('/')}`, { method: 'POST', body: JSON.stringify(body) }), { params: Promise.resolve({ path }) });
+    assert.equal(response.status, 200);
+    assert.deepEqual(forwarded[0].slice(1), [`/v1/${path.join('/')}`, 'POST', body]);
+    assert.match(response.headers.get('cache-control'), /no-store/);
+  }
+  forwarded = [];
+  const retired = await POST(new NextRequest('http://127.0.0.1:3001/api/agentic/baseline-pods/RC1/review', { method: 'POST', body: '{}' }),
+    { params: Promise.resolve({ path: ['baseline-pods', 'RC1', 'review'] }) });
+  assert.equal(retired.status, 404); assert.equal(forwarded.length, 0);
+  for (const path of [['admin', 'reset'], ['roster', 'archive'], ['admin', 'accounts', 'ACC-1', 'password']]) {
+    const response = await POST(new NextRequest('http://127.0.0.1:3001/api/agentic/unknown', { method: 'POST', body: '{}' }), { params: Promise.resolve({ path }) });
+    assert.equal(response.status, 404);
+  }
 });
 
 if (process.argv.includes('--preview') || process.argv.includes('--manual-preview')) {

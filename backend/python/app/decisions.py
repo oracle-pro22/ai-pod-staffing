@@ -1,6 +1,5 @@
 """Captain decisions and final assignments in one serialized Oracle transaction."""
 import hashlib
-from app.policy_admin import active_policy_version, require_current_policy
 from uuid import uuid4
 
 from app.capacity import calculate_capacity
@@ -8,11 +7,12 @@ from app.contracts import Proposal, ProposedMember
 from app.errors import ServiceError
 from app.evidence import collect_evidence
 from app.execution_store import execute
-from app.planning import EvidenceBundle, json_text
-from app.rules import member_schedule, validate_pod
-from app.storage import document, rows
 from app.notifications import prepare_assignment_notice
+from app.planning import EvidenceBundle, json_text
+from app.policy_admin import active_policy_version, require_current_policy
+from app.rules import member_schedule, validate_pod
 from app.selections import load_review, selection_for_approval
+from app.storage import document, rows
 
 
 def published_member(record, policy):
@@ -44,18 +44,20 @@ class DecisionStore:
     @staticmethod
     def authorize(connection, actor, captain_id):
         # Re-resolve current permissions inside the write transaction; neither dropdown nor body grants access.
-        if actor.person_id != captain_id:
-            raise ServiceError("FORBIDDEN", "Only this request's responsible Captain can decide.", 403)
         allowed = rows(connection, """SELECT ur.person_id FROM app_user_roles ur
             JOIN people p ON p.person_id=ur.person_id AND p.active_flag='Y'
             JOIN app_roles ar ON ar.role_code=ur.role_code AND ar.active_flag='Y'
             JOIN role_permissions rp ON rp.role_code=ar.role_code AND rp.resource_code='AI_FITMENT'
-            WHERE ur.identity_subject=:actorSubject AND ur.person_id=:captainId AND ur.role_code='POD_CAPTAIN'
+            WHERE ur.identity_subject=:actorSubject AND ur.person_id=:actorId AND ur.role_code='POD_CAPTAIN'
             AND ur.active_flag='Y' AND ur.effective_from<=TRUNC(SYSDATE)
             AND (ur.effective_to IS NULL OR ur.effective_to>=TRUNC(SYSDATE))
-            AND rp.can_view='Y' AND rp.can_approve='Y' AND rp.access_scope IN ('FULL','OWN','SCOPED')""",
-            actorSubject=actor.subject, captainId=captain_id)
-        if len(allowed) != 1:
+            AND rp.can_view='Y' AND rp.can_approve='Y'
+            AND (rp.access_scope='FULL' OR (rp.access_scope IN ('OWN','SCOPED') AND ur.person_id=:captainId))
+            AND (NOT EXISTS (SELECT 1 FROM app_accounts a WHERE a.identity_subject=ur.identity_subject OR a.person_id=ur.person_id)
+                 OR EXISTS (SELECT 1 FROM app_accounts a WHERE a.identity_subject=ur.identity_subject
+                            AND a.person_id=ur.person_id AND a.active_flag='Y'))""",
+            actorSubject=actor.subject, actorId=actor.person_id, captainId=captain_id)
+        if len(allowed) != 1 or allowed[0]["person_id"] != actor.person_id:
             raise ServiceError("FORBIDDEN", "Current Captain approval permission is required.", 403)
 
     def decide(self, actor, decision):

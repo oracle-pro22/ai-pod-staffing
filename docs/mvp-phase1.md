@@ -72,6 +72,12 @@ STAFFING_APP_ORIGIN=http://127.0.0.1:3001
 
 On the VM change only the application origin above to the address people actually open, for example `http://140.245.228.123:8005`. Use that exact host/port consistently. The Python API can still listen on 127.0.0.1:8015. Password mode does not require OIDC or the old fixed-person/management token. Existing bearer/OIDC/local modes remain available only when explicitly configured instead of password mode.
 
+The supplied `deploy/systemd/ai-pod-web.service` binds Next.js to `0.0.0.0:8005` for direct VM access. If using a local reverse proxy instead, bind it to `127.0.0.1` in the installed service. Pulling this repository does not update files under `~/.config/systemd/user/`; compare the installed unit before copying it and reloading systemd. Keep the Python API on loopback.
+
+Password sign-in validates the actual browser Host against `STAFFING_APP_ORIGIN`. An SSH-forwarded `localhost:8005` address does not match a configured public-IP origin. The login page now explains this mismatch and links to the configured address. It distinguishes expired sessions and unavailable backend connections rather than treating all failures as a backend outage. Do not remove the origin check to work around deployment problems.
+
+Check `.env.production.local` and `.env.local` for conflicting values: both can override `.env.production` in a production build. Rebuild with the intended public feature flags, and restart the web service after environment changes. A successful local HTTP response verifies the listener, while a successful login verifies the authenticated workflow; neither establishes external network reachability.
+
 Plain HTTP does not encrypt credentials; use the agreed VPN-only demo access. Use HTTPS if access expands beyond that environment. This release does not install a reverse proxy or change VM networking.
 
 ## 3. Generate and review a manifest (read-only)

@@ -251,6 +251,7 @@ function mockSave({ linked = true, failIntent = false } = {}) {
   const writes = [];
   execute = async (sql, binds) => {
     if (sql.includes('FROM app_roles ar')) return { rows: [{ ACCESS_SCOPE: 'FULL', CAN_VIEW: 'Y', CAN_CREATE: 'Y' }] };
+    if (sql.includes('AS db_user')) return { rows: [{ DB_USER: 'AI_POD_STAFFING', CURRENT_SCHEMA: 'AI_POD_STAFFING' }] };
     if (sql.includes('AS schema_user')) return { rows: [{ SCHEMA_USER: 'AI_POD_STAFFING', CURRENT_SCHEMA: 'AI_POD_STAFFING' }] };
     if (sql.includes('FROM app_user_roles ur')) return { rows: linked ? [{ PERSON_ID: 'P-CAPTAIN' }] : [] };
     if (sql.includes('FROM project_types')) return { rows: [{ PROJECT_TYPE_ID: 'PT-001', PROJECT_NAME: 'Launch', PROJECT_DESCRIPTION: 'Launch', SOURCE_VERSION: 'v1' }] };
@@ -273,6 +274,16 @@ test('request and automatic-staffing intent commit together with verified Captai
   assert.equal(writes.at(-1).binds.captainId, 'P-CAPTAIN');
   assert.equal(writes[0].binds.createdBy, 'signed-subject');
   assert.match(writes.at(-1).sql, /agent_enabled='Y'/);
+});
+
+test('an Administrator with an explicit Captain grant saves a request using their own verified identity', async () => {
+  const writes = mockSave();
+  const result = await createStaffingRequest(input, { role: 'Administrator', authenticated: true,
+    actor: 'signed-admin-captain', personId: 'P-CAPTAIN', responsibleCaptainId: 'P-CAPTAIN' });
+  assert.equal(result.agentPending, true);
+  assert.equal(committed, true);
+  assert.equal(writes[0].binds.createdBy, 'signed-admin-captain');
+  assert.equal(writes.at(-1).binds.captainId, 'P-CAPTAIN');
 });
 test('missing identity mapping cannot save request or staffing intent', async () => {
   const writes = mockSave({ linked: false });
@@ -297,6 +308,44 @@ test('live request context rejects a spoofed profile and uses verified person/su
   await assert.rejects(staffingRequestContext(request('GET', { Authorization: 'Bearer token', 'x-staffing-role': 'Administrator' })), { status: 403 });
   assert.deepEqual(await staffingRequestContext(request('GET', { Authorization: 'Bearer token', 'x-staffing-role': 'POD Member' })),
     { role: 'POD Member', actor: 'verified-subject', personId: 'P-REAL', authenticated: true });
+});
+
+test('authenticated context keeps the highest role even when a lower granted role header is supplied', async () => {
+  enabled();
+  const { staffingRequestContext } = require('../lib/auth/staffing-request-context.ts');
+  global.fetch = async () => Response.json({ person_id: 'REAL', identity_subject: 'verified',
+    roles: ['POD_MEMBER', 'POD_LEAD', 'POD_CAPTAIN', 'SYSTEM_ADMINISTRATOR'], permissions: [] });
+  for (const role of ['POD Member', 'POD Lead', 'POD Captain', 'Administrator']) {
+    assert.deepEqual(await staffingRequestContext(request('GET', { Authorization: 'Bearer token', 'x-staffing-role': role })),
+      { role: 'Administrator', actor: 'verified', personId: 'REAL', authenticated: true });
+  }
+});
+
+test('authenticated Administrator projection separates signed grants from the configuration catalogue', async () => {
+  enabled();
+  const { authenticatedViewModel } = require('../backend/staffing/view-model.ts');
+  const { canPerform } = require('../lib/role-policy.ts');
+  const identity = { person_id: 'SELF', roles: ['SYSTEM_ADMINISTRATOR', 'POD_LEAD'], permissions: [
+    { role: 'SYSTEM_ADMINISTRATOR', resource: 'ADMINISTRATION', scope: 'FULL', actions: ['view'] },
+    { role: 'POD_LEAD', resource: 'REQUESTS', scope: 'SCOPED', actions: ['view'] },
+    { role: 'POD_LEAD', resource: 'MY_SKILLS', scope: 'OWN', actions: ['view', 'update'] },
+  ] };
+  rawViewModel = { people: [], requests: [], metrics: {}, authorization: { userRoles: [], roles: [
+    { code: 'SYSTEM_ADMINISTRATOR', name: 'Administrator', active: true, permissions: [] },
+    { code: 'POD_LEAD', name: 'POD Lead', active: true, permissions: [] },
+    { code: 'POD_CAPTAIN', name: 'POD Captain', active: true, permissions: [
+      { resourceCode: 'AI_FITMENT', accessScope: 'full', canView: true, canApprove: true },
+    ] },
+  ] } };
+  global.fetch = async url => Response.json(String(url).endsWith('/v1/me') ? identity
+    : { requests: [], assignments: [], people: [], summary: { pending_review: 0 } });
+  const model = await authenticatedViewModel(request('GET', { Authorization: 'Bearer token' }));
+  assert.equal(model.identity.role, 'Administrator');
+  assert.deepEqual(model.authorization.grantedRoleCodes, identity.roles);
+  assert.equal(model.authorization.roleCatalogue.length, 3);
+  assert.equal(model.authorization.roles.length, 2);
+  assert.equal(canPerform('Administrator', 'AI_FITMENT', 'canApprove', model.authorization), false);
+  assert.equal(canPerform('Administrator', 'MY_SKILLS', 'canUpdate', model.authorization), true);
 });
 
 test('server view model removes unrelated records, preview recommendations and subject mappings', async () => {

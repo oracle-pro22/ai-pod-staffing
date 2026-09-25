@@ -42,11 +42,13 @@ export type PersonSkill = {
 };
 
 export type AvailabilityEvent = {
+  id: number;
   eventType: string;
   startsOn: string;
   endsOn: string;
   title: string;
   allocatedHours: number;
+  capacityKind: 'NON_AVAILABILITY' | 'EXTERNAL_WORK';
 };
 
 export type StaffingPerson = {
@@ -68,6 +70,9 @@ export type RequiredCapability = {
   requiredStrength: number | null;
   source: string;
   custom?: boolean;
+  mandatory?: boolean;
+  originalName?: string;
+  resolution?: 'EXACT_NAME';
 };
 
 export type StaffingRecommendation = {
@@ -189,7 +194,11 @@ export type StaffingViewModel = {
     podLeadPersonId: string;
   };
   authorization: {
+    /** Present only on an authenticated server projection; never infer grants from the role catalogue. */
+    grantedRoleCodes?: string[];
     roles: StaffingRoleDefinition[];
+    /** Administrator-only configuration catalogue; not the signed-in person's capabilities. */
+    roleCatalogue?: StaffingRoleDefinition[];
     userRoles: StaffingUserRole[];
   };
   integrity: {

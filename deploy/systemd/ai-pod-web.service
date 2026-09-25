@@ -7,7 +7,8 @@ Type=simple
 WorkingDirectory=/home/opc/AIML_INTERNAL_INITIATIVES/AI_POD_STAFFING
 Environment=NODE_ENV=production
 # Verify command -v node on your VM; edit this path if Node is installed elsewhere.
-ExecStart=/usr/bin/node /home/opc/AIML_INTERNAL_INITIATIVES/AI_POD_STAFFING/node_modules/next/dist/bin/next start -H 127.0.0.1 -p 8005
+# Direct VM access uses all interfaces. Use 127.0.0.1 instead when served only behind a local reverse proxy.
+ExecStart=/usr/bin/node /home/opc/AIML_INTERNAL_INITIATIVES/AI_POD_STAFFING/node_modules/next/dist/bin/next start -H 0.0.0.0 -p 8005
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=40

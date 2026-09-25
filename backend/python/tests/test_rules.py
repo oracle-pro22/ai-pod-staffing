@@ -223,7 +223,7 @@ class EligibilityTests(unittest.TestCase):
         lead = person(deliverables=[{"deliverable_id": "DEL-001", "experience_level": "SUPPORTED",
                                      "contribution_scope": "CONTRIBUTOR", "experience": "Helped deliver it"}])
         self.assertIn("SUPPORT_REQUIRED", codes(people=(lead,)))
-        mentor = person(person_id="P-007", deliverables=[{
+        mentor = person(person_id="P-007", roles=[{"code": "POD_MEMBER", "starts_on": MON}], deliverables=[{
             "deliverable_id": "DEL-001", "experience_level": "MENTOR",
             "contribution_scope": "END_TO_END", "experience": "Delivered and mentored teams",
         }])

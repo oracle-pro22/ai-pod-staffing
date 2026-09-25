@@ -3,18 +3,17 @@ import oracledb, { type Connection } from 'oracledb';
 import { withOracleTransaction } from '@/lib/db/oracle';
 import { StaffingApiError, conflictError, forbiddenError, validationError } from '@/lib/errors/staffing-api-error';
 import { PREVIEW_PERSON_IDS } from '@/lib/preview-person-ids';
-import { ROLE_CODES } from '@/types/roles';
 import type { StaffingMutationContext } from '@/types/mutations';
 import type { SelfSkillsProfile } from '@/types/self-skills';
 import { validateSelfSkillsPatch } from './validation';
 import { readDeliverableCatalogue, readDeliverableExperience, saveDeliverableExperience } from './deliverables';
-import { assertIdentityMapping } from '@/lib/auth/identity-mapping';
+import { contextPermissions } from '@/lib/auth/context-permissions';
 
 type Row = Record<string, unknown>;
 const options = { outFormat: oracledb.OUT_FORMAT_OBJECT } as const;
 
 function previewPerson(context: StaffingMutationContext): string {
-  if (context.authenticated && context.personId && ['POD Lead', 'POD Member'].includes(context.role)) return context.personId;
+  if (context.authenticated && context.personId) return context.personId;
   if ((process.env.STAFFING_DATA_SOURCE ?? 'oracle').trim().toLowerCase() !== 'oracle') {
     throw new StaffingApiError('Skills management requires Oracle.', 503, 'ORACLE_REQUIRED');
   }
@@ -27,16 +26,9 @@ function previewPerson(context: StaffingMutationContext): string {
 }
 
 async function authorize(connection: Connection, context: StaffingMutationContext, write: boolean) {
-  await assertIdentityMapping(connection, context);
-  const result = await connection.execute<Row>(`
-    SELECT rp.access_scope, rp.can_view, rp.can_create, rp.can_update
-      FROM role_permissions rp JOIN app_roles ar ON ar.role_code = rp.role_code
-     WHERE ar.role_code = :roleCode AND ar.role_name = :roleName AND ar.active_flag = 'Y'
-       AND rp.resource_code = 'MY_SKILLS'
-  `, { roleCode: ROLE_CODES[context.role], roleName: context.role }, options);
-  const row = result.rows?.[0];
-  if (!row || row.ACCESS_SCOPE !== 'OWN' || row.CAN_VIEW !== 'Y'
-    || (write && (row.CAN_CREATE !== 'Y' || row.CAN_UPDATE !== 'Y'))) throw forbiddenError();
+  const permissions = await contextPermissions(connection, context, 'MY_SKILLS');
+  if (!permissions.some(row => row.ACCESS_SCOPE === 'OWN' && row.CAN_VIEW === 'Y'
+    && (!write || (row.CAN_CREATE === 'Y' && row.CAN_UPDATE === 'Y')))) throw forbiddenError();
 }
 
 async function person(connection: Connection, personId: string, lock = false) {
@@ -130,6 +122,7 @@ export async function updateSelfSkills(value: unknown, context: StaffingMutation
       await connection.execute('ALTER SESSION DISABLE PARALLEL QUERY');
       await authorize(connection, context, true);
       await person(connection, personId, true);
+      if (context.authenticated) await authorize(connection, context, true);
       // Start a fresh read AFTER any lock wait; do not compare a pre-wait snapshot.
       const employee = await person(connection, personId);
       if (Number(employee.SKILLS_VERSION) !== patch.version) throw conflictError('Your skills changed in another session. Reload before saving again.');

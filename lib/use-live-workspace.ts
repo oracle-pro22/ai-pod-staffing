@@ -16,6 +16,12 @@ export function useLiveWorkspace(resource: string, week = '') {
   }, []);
   useEffect(() => {
     const controller = new AbortController();
+    let timedOut = false;
+    const timer = window.setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+      setError('Workspace data took too long to load. Try again; if it repeats, check the backend and database connection.');
+    }, 20000);
     activeRequest.current = controller;
     setSnapshot(null); setError('');
     staffingFetch(`/api/agentic/workspace?resource=${encodeURIComponent(resource)}${week ? `&week=${week}` : ''}`, {
@@ -24,8 +30,9 @@ export function useLiveWorkspace(resource: string, week = '') {
       const body = await r.json();
       if (!r.ok) throw new Error(typeof body.error === 'string' ? body.error : body.error?.message || 'Unable to load workspace.');
       if (!controller.signal.aborted) setSnapshot(body.data);
-    }).catch(e => { if (!controller.signal.aborted) setError(e.message); });
-    return () => controller.abort();
+    }).catch(e => { if (!controller.signal.aborted && !timedOut) setError(e.message); })
+      .finally(() => window.clearTimeout(timer));
+    return () => { window.clearTimeout(timer); controller.abort(); };
   }, [resource, week, revision]);
   return { snapshot, error, refresh: () => setRevision(n => n + 1) };
 }

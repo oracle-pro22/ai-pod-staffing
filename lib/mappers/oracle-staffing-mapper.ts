@@ -229,11 +229,13 @@ export function buildOracleStaffingViewModel(snapshot: OracleStaffingSnapshot): 
         };
       }).sort((a, b) => b.strength - a.strength),
       availability: (availabilityByPerson.get(id) ?? []).map((event) => ({
+        id: number(event, 'availability_id'),
         eventType: text(event, 'event_type'),
         startsOn: isoDate(event, 'starts_on'),
         endsOn: isoDate(event, 'ends_on'),
         title: text(event, 'title'),
         allocatedHours: number(event, 'allocated_hours'),
+        capacityKind: text(event, 'capacity_kind') as 'NON_AVAILABILITY' | 'EXTERNAL_WORK',
       })),
     };
   });
@@ -261,6 +263,7 @@ export function buildOracleStaffingViewModel(snapshot: OracleStaffingSnapshot): 
       requiredStrength: nullableNumber(requirement, 'required_strength'),
       source: text(requirement, 'requirement_source'),
       custom: text(requirement, 'capability_source').toUpperCase() === 'CUSTOM',
+      mandatory: text(requirement, 'mandatory_flag').toUpperCase() !== 'N',
     }));
     return {
       id,

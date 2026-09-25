@@ -2,11 +2,13 @@ import { WorkspaceRouter } from '@/components/screens/WorkspaceRouter';
 import { AppShell } from '@/components/shell/AppShell';
 import { StaffingAppProvider } from '@/context/StaffingAppProvider';
 import { dataSource } from '@/lib/staffing-data-source';
-import { agenticEnabled } from '@/backend/staffing/bridge';
+import { agenticEnabled, staffingBackend, type BackendIdentity } from '@/backend/staffing/bridge';
+import { OnboardingEntry } from '@/components/entry/OnboardingEntry';
+import type { OnboardingState } from '@/types/onboarding';
 import { authenticatedViewModel } from '@/backend/staffing/view-model';
 import { headers } from 'next/headers';
 import { NextRequest } from 'next/server';
-import { workspaceError } from '@/backend/staffing/workspace-error';
+import { passwordWorkspaceError, workspaceError } from '@/backend/staffing/workspace-error';
 import { PersonaEntry } from '@/components/entry/PersonaEntry';
 import { PERSONA_COOKIE, PERSONA_PAGE_HEADER, personaModeEnabled, personaSessionKey, requirePersonaMode } from '@/backend/staffing/persona-mode';
 import { PASSWORD_COOKIE, passwordModeEnabled, requirePasswordOrigin } from '@/backend/staffing/password-mode';
@@ -22,21 +24,33 @@ export default async function Home() {
     const origin = process.env.STAFFING_APP_ORIGIN || `http://${incoming.get('host') || 'invalid'}`;
     try {
       const request = new NextRequest(origin, { headers: incoming });
+      let verifiedIdentity: BackendIdentity | undefined;
       if (passwordModeEnabled()) {
         requirePasswordOrigin(request);
         const selected = request.cookies.get(PASSWORD_COOKIE)?.value;
         if (!selected) return <PasswordEntry />;
         request.headers.set(PERSONA_PAGE_HEADER, personaSessionKey(selected));
+        const [setup, identity] = await Promise.all([
+          staffingBackend(request, '/v1/onboarding') as Promise<OnboardingState>,
+          staffingBackend(request, '/v1/me') as Promise<BackendIdentity>,
+        ]);
+        verifiedIdentity = identity;
+        if (setup.status === 'DRAFT') {
+          return <OnboardingEntry initial={setup} sessionKey={personaSessionKey(selected)} />;
+        }
       } else if (personaModeEnabled()) {
         requirePersonaMode(request);
         const selected = request.cookies.get(PERSONA_COOKIE)?.value;
         if (!selected) return <PersonaEntry />;
         request.headers.set(PERSONA_PAGE_HEADER, personaSessionKey(selected));
       }
-      data = await authenticatedViewModel(request);
+      data = await authenticatedViewModel(request, verifiedIdentity);
     }
     catch (error) {
-      if (passwordModeEnabled()) return <PasswordEntry initialError="Your workspace could not be loaded. Sign in again, or retry when the backend is available." />;
+      if (passwordModeEnabled()) {
+        const failure = passwordWorkspaceError(error);
+        return <PasswordEntry initialError={failure.message} applicationUrl={failure.applicationUrl} />;
+      }
       if (process.env.STAFFING_DEMO_PERSONAS_ENABLED === 'true') {
         return <PersonaEntry initialError="Your workspace could not be loaded. Choose your profile again, or retry once the backend is available." />;
       }

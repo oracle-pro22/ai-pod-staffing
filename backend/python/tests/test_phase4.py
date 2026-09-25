@@ -128,12 +128,29 @@ class DecisionTests(unittest.TestCase):
         self.assertEqual(error.exception.code, "DECISIONS_DISABLED")
         self.assertFalse(self.committed)
 
-    def test_other_captain_cannot_decide(self):
+    def test_actor_person_must_match_current_subject_mapping(self):
         self.actor.person_id = "P-OTHER"
         with self.assertRaises(ServiceError) as error:
             self.decide()
         self.assertEqual(error.exception.code, "FORBIDDEN")
         self.assertFalse(self.committed)
+
+    def test_other_current_captain_approves_without_changing_request_owner(self):
+        self.actor.person_id = "P-OTHER"
+        self.actor.subject = "other-captain-subject"
+        original_read = self.read
+        def current_read(connection, sql, **binds):
+            if sql.startswith("SELECT ur.person_id"):
+                self.assertEqual(binds["actorId"], "P-OTHER")
+                self.assertEqual(binds["captainId"], "P-010")
+                return [{"person_id": "P-OTHER"}]
+            return original_read(connection, sql, **binds)
+        with patch("app.decisions.rows", side_effect=current_read):
+            self.assertEqual(self.decide()["status"], "APPROVED")
+        decision = next(b for sql, b in self.committed if "INSERT INTO approval_decisions" in sql)
+        self.assertEqual(decision["captainId"], "P-OTHER")
+        self.assertEqual(decision["actorSubject"], "other-captain-subject")
+        self.assertFalse(any("SET responsible_captain_id" in sql for sql, _ in self.committed))
 
     def test_stale_revision_prevents_decision(self):
         self.revision = 2

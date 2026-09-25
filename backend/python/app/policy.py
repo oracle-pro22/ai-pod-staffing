@@ -41,7 +41,7 @@ class StaffingPolicy(Contract):
     maximum_allocation_pct: Decimal = Field(default=Decimal("100"), gt=0, le=100, allow_inf_nan=False)
     weights: Weights = Field(default_factory=Weights)
     lead_role_code: str = "POD_LEAD"
-    member_role_codes: tuple[str, ...] = ("POD_MEMBER", "POD_LEAD")
+    member_role_codes: tuple[str, ...] = ("POD_MEMBER",)
     maximum_agent_steps: int = Field(default=12, ge=1, le=30)
     scheduling: SchedulingRules | None = None
 

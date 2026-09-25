@@ -72,6 +72,10 @@ class AlternativeTests(unittest.TestCase):
             self.assertEqual(sum(day.hours for p in people for day in p.daily_schedule), D(24))
 
     def test_pinned_team_is_not_silently_replaced_and_roles_not_changed(self):
+        # This person can fill either slot only because both grants are explicit.
+        dual = self.data.candidates[0].model_copy(update={'roles': (*self.data.candidates[0].roles,
+            self.data.candidates[3].roles[0])})
+        self.data = self.data.model_copy(update={'candidates': (dual, *self.data.candidates[1:])})
         original = copy.deepcopy(self.data)
         chosen = exact_team(self.data, ('P-003',), ('P-001', 'P-009'))
         self.assertEqual(selected_ids(chosen), (('P-003',), ('P-001', 'P-009')))
