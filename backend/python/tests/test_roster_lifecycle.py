@@ -96,6 +96,15 @@ def test_no_admin_privilege_from_highest_role_alone_or_disabled_account():
         authorize(None, ADMIN, 'ACCESS_MANAGEMENT', 'administer', 'SYSTEM_ADMINISTRATOR')
 
 
+def test_full_admin_check_uses_oracle_compatible_resource_binding():
+    with patch('app.roster_lifecycle.rows', side_effect=[[{'active_flag': 'Y'}], [{'person_id': 'A'}]]) as query:
+        authorize(None, ADMIN, 'ACCESS_MANAGEMENT', 'administer', 'SYSTEM_ADMINISTRATOR')
+    sql, binds = query.call_args.args[1], query.call_args.kwargs
+    assert ':resourceCode' in sql
+    assert binds['resourceCode'] == 'ACCESS_MANAGEMENT'
+    assert 'resource' not in binds
+
+
 def access_query(*, lead=False, admins=('A',), pid='B', revision=1):
     def query(c, sql, **binds):
         if 'roster_access_control' in sql:
@@ -150,7 +159,7 @@ def onboarding_query(c, sql, **binds):
 
 def test_onboarding_writes_only_genuine_sources_and_capacity_atomically():
     db = Database()
-    body = setup_body(skills=[{'skill_id': 'SK1', 'strength': 3}],
+    body = setup_body(skills=[{'skill_id': 'SK1', 'strength': 3, 'evidence': 'Used in project delivery'}],
                       deliverables=[{'deliverable_id': 'D1', 'experience_level': 'SUPPORTED', 'contribution_scope': 'CONTRIBUTOR'}],
                       work=[work(), work(kind='LEAVE', title='Leave', total_hours=8)])
     with patch('app.roster_lifecycle.rows', side_effect=onboarding_query), patch('app.roster_lifecycle.execute') as write, patch('app.execution_store.execute') as clob, patch('app.roster_lifecycle.refresh') as refresh:
@@ -182,7 +191,7 @@ def test_capacity_failure_rolls_back_profile_submission():
 
 
 def test_role_derived_skill_or_second_submission_cannot_write():
-    for result, body in [({'status': 'COMPLETE', 'revision': 2}, setup_body()), ({'status': 'DRAFT', 'revision': 1}, setup_body(skills=[{'skill_id': 'POD_LEAD', 'strength': 5}]))]:
+    for result, body in [({'status': 'COMPLETE', 'revision': 2}, setup_body()), ({'status': 'DRAFT', 'revision': 1}, setup_body(skills=[{'skill_id': 'POD_LEAD', 'strength': 5, 'evidence': 'Reported experience'}]))]:
         with patch('app.roster_lifecycle.rows', side_effect=onboarding_query), patch('app.roster_lifecycle.status', return_value=result), patch('app.roster_lifecycle.execute') as write, patch('app.execution_store.execute') as clob:
             with pytest.raises(ServiceError):
                 RosterLifecycle(Database()).submit(PERSON, body)

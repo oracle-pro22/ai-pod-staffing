@@ -8,6 +8,9 @@ import { conflictError, forbiddenError, validationError } from '@/lib/errors/sta
 import { PREVIEW_PERSON_IDS } from '@/lib/preview-person-ids';
 import { contextPermissions } from '@/lib/auth/context-permissions';
 import { ACTIVE_IDENTITY_ACCOUNT_SQL } from '@/lib/auth/identity-mapping';
+import { validateCreateRequestPayload } from '@/lib/validation/staffing-mutations';
+import { convertedEffort, requestPodCounts, businessContextSummary } from '@/lib/request-limits';
+import { catalogueName, uniqueNameIndex, normalizeDeliverables, normalizeCapabilities } from '@/lib/request-normalization';
 import type {
   AvailabilityCreatedResult,
   CreateAvailabilityPayload,
@@ -59,20 +62,11 @@ function placeholders(prefix: string, values: string[]): { sql: string; binds: R
   return { sql, binds };
 }
 
-function effortHours(value: number, unit: string): number {
-  return value * ({ HOURS: 1, DAYS: 8, WEEKS: 40, MONTHS: 160 }[unit] ?? 1);
-}
-
-function podCounts(value: string): { leads: number; contributors: number } {
-  const match = value.match(/^(\d+)\s+leads?\s*\+\s*(\d+)\s+contributors?$/i);
-  if (!match) throw validationError('Requested pod size is not valid.');
-  return { leads: Number(match[1]), contributors: Number(match[2]) };
-}
-
 export async function createStaffingRequest(
   input: CreateRequestPayload,
   context: StaffingMutationContext,
 ): Promise<RequestCreatedResult> {
+  input = validateCreateRequestPayload(input);
   return withOracleTransaction(async (connection) => {
     await authorizeCreate(connection, context, 'REQUESTS');
     if (context.responsibleCaptainId) {
@@ -107,7 +101,6 @@ export async function createStaffingRequest(
     if (!requestSourcePerson) throw validationError('The selected request source is no longer available.');
     const requestSourceName = text(requestSourcePerson, 'full_name');
 
-    const normalizeCatalogueName = (value: string) => value.toLocaleLowerCase('en-US').replace(/[^a-z0-9]+/g, ' ').trim();
     const mappedDeliverables = input.deliverables.filter((item) => !item.custom);
     const mappedDeliverableIds = [...new Set(mappedDeliverables.map((item) => item.id))];
     let catalogueDeliverables: Row[] = [];
@@ -127,17 +120,17 @@ export async function createStaffingRequest(
     const allProjectDeliverables = await rows(connection, `SELECT deliverable_id,deliverable_name,customer_note
       FROM deliverables WHERE project_type_id=:projectTypeId AND active_flag = 'Y'`, { projectTypeId: input.projectTypeId });
     const catalogueDeliverablesById = new Map(allProjectDeliverables.map((row) => [text(row, 'deliverable_id'), row]));
-    const catalogueDeliverablesByName = new Map(allProjectDeliverables.map((row) => [normalizeCatalogueName(text(row, 'deliverable_name')), row]));
-    const storedDeliverables = input.deliverables.map((item, index) => {
-      const exact = item.custom ? catalogueDeliverablesByName.get(normalizeCatalogueName(item.name)) : undefined;
+    const catalogueDeliverablesByName = uniqueNameIndex(allProjectDeliverables, row => text(row, 'deliverable_name'));
+    const storedDeliverables = normalizeDeliverables(input.deliverables.map((item, index) => {
+      const exact = item.custom ? catalogueDeliverablesByName.get(catalogueName(item.name)) : undefined;
       const mapped = exact ?? catalogueDeliverablesById.get(item.id);
       return item.custom && !exact
         ? { id: `CUSTOM-DEL-${index + 1}`, name: item.name, note: item.note, custom: true, resolution: 'REQUEST_SCOPED' }
         : item.custom
-          ? { id: text(mapped ?? {}, 'deliverable_id'), name: text(mapped ?? {}, 'deliverable_name'), note: text(mapped ?? {}, 'customer_note'), custom: false,
+          ? { id: text(mapped ?? {}, 'deliverable_id'), name: text(mapped ?? {}, 'deliverable_name'), note: [text(mapped ?? {}, 'customer_note'), item.note].filter(Boolean).join('\n'), custom: false,
               requestedName: item.name, resolution: 'EXACT_NAME' }
-        : { id: item.id, name: text(mapped ?? {}, 'deliverable_name'), note: text(mapped ?? {}, 'customer_note'), custom: false };
-    });
+        : { id: item.id, name: text(mapped ?? {}, 'deliverable_name'), note: [...new Set([text(mapped ?? {}, 'customer_note'), item.note])].filter(Boolean).join('\n'), custom: false };
+    }));
 
     const mappedCapabilities = input.requiredCapabilities.filter((item) => !item.custom);
     const mappedCapabilityIds = [...new Set(mappedCapabilities.map((item) => item.id))];
@@ -156,20 +149,25 @@ export async function createStaffingRequest(
     const allCatalogueCapabilities = await rows(connection, `SELECT interest_id,interest_name
       FROM interests`);
     const catalogueCapabilitiesById = new Map(allCatalogueCapabilities.map((row) => [text(row, 'interest_id'), row]));
-    const catalogueCapabilitiesByName = new Map(allCatalogueCapabilities.map((row) => [normalizeCatalogueName(text(row, 'interest_name')), row]));
-    const resolvedCapabilities = input.requiredCapabilities.map((item) => {
-      const exact = item.custom ? catalogueCapabilitiesByName.get(normalizeCatalogueName(item.name)) : undefined;
+    const catalogueCapabilitiesByName = uniqueNameIndex(allCatalogueCapabilities, row => text(row, 'interest_name'));
+    const resolvedCapabilities = normalizeCapabilities(input.requiredCapabilities.map((item) => {
+      const exact = item.custom ? catalogueCapabilitiesByName.get(catalogueName(item.name)) : undefined;
       return exact ? { ...item, id: text(exact, 'interest_id'), name: text(exact, 'interest_name'), custom: false,
-        originalName: item.name, resolution: 'EXACT_NAME', mandatory: true } : item;
-    });
+        originalName: item.name, source: `Exact match: ${item.name}`.slice(0, 250), resolution: 'EXACT_NAME' } : item;
+    }));
     if (!resolvedCapabilities.some((item) => !item.custom && item.mandatory !== false)) {
       throw validationError('Add at least one catalogue capability. New “Other” capabilities remain unverified preferences until they can be mapped safely.');
     }
+    if (resolvedCapabilities.some(item => item.custom && item.mandatory !== false)) {
+      throw validationError('An unmatched “Other” capability can be kept as a preference, not a mandatory requirement. Select a catalogue capability for mandatory coverage.');
+    }
 
     const mappedLinks = new Map<string, string>();
-    if (mappedDeliverableIds.length && mappedCapabilityIds.length) {
-      const deliverableBinds = placeholders('linkedDeliverable', mappedDeliverableIds);
-      const capabilityBinds = placeholders('linkedCapability', mappedCapabilityIds);
+    const resolvedDeliverableIds = storedDeliverables.filter(item => !item.custom).map(item => item.id);
+    const resolvedCapabilityIds = resolvedCapabilities.filter(item => !item.custom).map(item => item.id);
+    if (resolvedDeliverableIds.length && resolvedCapabilityIds.length) {
+      const deliverableBinds = placeholders('linkedDeliverable', resolvedDeliverableIds);
+      const capabilityBinds = placeholders('linkedCapability', resolvedCapabilityIds);
       const links = await rows(connection, `
         SELECT deliverable_id, skill_id
           FROM deliverable_skills
@@ -185,7 +183,7 @@ export async function createStaffingRequest(
     const sequence = (await rows(connection, 'SELECT request_id_seq.NEXTVAL AS next_value FROM dual'))[0];
     const requestId = `REQ-${number(sequence ?? {}, 'next_value')}`;
     const unit = input.estimatedEffort.unit.toUpperCase();
-    const counts = podCounts(input.requestedPodSize);
+    const counts = requestPodCounts(input.requestedPodSize);
     const firstMapped = storedDeliverables.find((item) => !item.custom);
     const firstDeliverable = storedDeliverables[0];
     const skills = resolvedCapabilities.map((item) => item.custom ? item.name : text(catalogueCapabilitiesById.get(item.id) ?? {}, 'interest_name')).join(', ');
@@ -229,11 +227,11 @@ export async function createStaffingRequest(
       completionDate: input.estimatedCompletionDate || null,
       effortValue: input.estimatedEffort.value,
       effortUnit: unit,
-      estimatedHours: effortHours(input.estimatedEffort.value, unit),
+      estimatedHours: convertedEffort(input.estimatedEffort.value, unit),
       leadCount: counts.leads,
       contributorCount: counts.contributors,
       priority: input.priority.toUpperCase(),
-      businessContext: input.businessObjectives,
+      businessContext: businessContextSummary(input.businessObjectives),
       businessObjectives: input.businessObjectives,
       expectedOutcomes: input.expectedOutcomes || null,
       mappingVersion: text(project, 'source_version'),

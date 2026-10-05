@@ -5,6 +5,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from app.capacity import dates_between, spread_hours
+from app.availability_schedule import event_days
 from app.errors import ServiceError
 from app.execution_store import execute
 from app.storage import rows, calendar_day
@@ -60,7 +61,7 @@ def build_days(weekly_hours, start, end, events):
         hours = Decimal(str(event["allocated_hours"]))
         if hours <= 0:
             raise ServiceError("EVENT_HOURS", "Overlapping availability events need explicit positive total hours.", 409)
-        for work in spread_hours(hours, calendar_day(event["starts_on"]), calendar_day(event["ends_on"])):
+        for work in event_days(event):
             if work.day in result:
                 if event["capacity_kind"] == "NON_AVAILABILITY":
                     result[work.day]["available"] -= work.hours
@@ -81,7 +82,7 @@ def refresh(database, person_id, start, end, operator, commit=False):
         if commit:
             person = rows(connection, "SELECT weekly_work_hours,availability_version FROM people WHERE person_id=:personId", personId=person_id)
         first, last = start-timedelta(days=start.weekday()), end+timedelta(days=6-end.weekday())
-        events = rows(connection, "SELECT availability_id,capacity_kind,starts_on,ends_on,allocated_hours FROM availability WHERE person_id=:personId AND status='ACTIVE' AND starts_on<=:endDay AND ends_on>=:startDay", personId=person_id, startDay=first, endDay=last)
+        events = rows(connection, "SELECT availability_id,capacity_kind,starts_on,ends_on,allocated_hours,effective_until FROM availability WHERE person_id=:personId AND status='ACTIVE' AND starts_on<=:endDay AND ends_on>=:startDay", personId=person_id, startDay=first, endDay=last)
         days = build_days(person[0]["weekly_work_hours"], start, end, events)
         existing = rows(connection, "SELECT work_date,available_hours,external_committed_hours,source_version FROM person_capacity_days WHERE person_id=:personId AND work_date BETWEEN :startDay AND :endDay", personId=person_id, startDay=first, endDay=last)
         for saved in existing:

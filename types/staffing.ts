@@ -42,6 +42,9 @@ export type PersonSkill = {
 };
 
 export type AvailabilityEvent = {
+  status?: 'ACTIVE' | 'CANCELLED';
+  effectiveUntil?: string;
+  revision?: number;
   id: number;
   eventType: string;
   startsOn: string;
@@ -52,6 +55,7 @@ export type AvailabilityEvent = {
 };
 
 export type StaffingPerson = {
+  staffingEligible?: boolean;
   capacityStatus?: string;
   id: string;
   name: string;
@@ -177,6 +181,7 @@ export type StaffingMetrics = {
 };
 
 export type StaffingViewModel = {
+  allocationPolicy?: { version: string; maximumAllocationPct: number };
   allocationPeriod?: { start: string; end: string; timezone: string };
   identity?: { personId: string; role: import('./roles').StaffingRole; fullName?: string;
     sessionMode?: 'persona' | 'password'; sessionKey?: string };

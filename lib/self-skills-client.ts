@@ -47,8 +47,8 @@ export function skillsDraftError(profile: SelfSkillsProfile, draft: SkillAssessm
     if (!name) return 'Choose a skill from the current catalogue.';
     if (row.strength !== null && (!Number.isInteger(row.strength) || row.strength < 1 || row.strength > 5)) return `${name}: choose a proficiency from 1 to 5.`;
     if (row.strength === null && !row.interested) return `${name}: choose a proficiency or mark your interest.`;
-    if (row.strength !== null && !row.evidence) return `${name}: add a short evidence note for your rating.`;
-    if (new TextEncoder().encode(row.evidence).length > 2000) return `${name}: shorten the evidence note (maximum 2,000 UTF-8 bytes).`;
+    if (row.strength !== null && !row.evidence) return `${name}: describe your experience with this skill.`;
+    if (new TextEncoder().encode(row.evidence).length > 2000) return `${name}: shorten your experience description (maximum 2,000 UTF-8 bytes).`;
   }
   return null;
 }

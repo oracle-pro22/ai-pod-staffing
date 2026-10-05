@@ -21,7 +21,8 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ a
       throw new StaffingApiError('The request body is not valid JSON.', 400, 'INVALID_JSON');
     });
     const input = validateCreateAvailabilityPayload(body);
-    const data = await staffingBackend(request, `/v1/availability/${identifier(availabilityId)}`, 'PATCH', input);
+    if (!Number.isSafeInteger(body.revision) || body.revision < 1) throw new StaffingApiError('Refresh this event before editing.', 409, 'STALE_AVAILABILITY');
+    const data = await staffingBackend(request, `/v1/availability/${identifier(availabilityId)}`, 'PATCH', { ...input, revision: body.revision });
     return NextResponse.json({ data }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     return staffingApiErrorResponse(error);
@@ -31,7 +32,11 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ a
 export async function DELETE(request: NextRequest, context: { params: Promise<{ availabilityId: string }> }) {
   try {
     const { availabilityId } = await context.params;
-    const data = await staffingBackend(request, `/v1/availability/${identifier(availabilityId)}`, 'DELETE');
+    const body = await request.json().catch(() => null);
+    if (!body || !Number.isSafeInteger(body.revision) || body.revision < 1 || typeof body.effectiveOn !== 'string') {
+      throw new StaffingApiError('Refresh this event and choose when to end it.', 409, 'STALE_AVAILABILITY');
+    }
+    const data = await staffingBackend(request, `/v1/availability/${identifier(availabilityId)}`, 'DELETE', body);
     return NextResponse.json({ data }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     return staffingApiErrorResponse(error);

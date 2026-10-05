@@ -24,6 +24,19 @@ from app.storage import document, rows
 
 IMPORTED_TABLES = {'PEOPLE', 'APP_ACCOUNTS', 'APP_USER_ROLES', 'ROSTER_ONBOARDING'}
 EXPECTED_ROLES = {'SYSTEM_ADMINISTRATOR': 3, 'POD_CAPTAIN': 8, 'POD_LEAD': 25, 'POD_MEMBER': 24}
+NON_STAFFING_EMAILS = frozenset({'amy.s.lawrence@oracle.com'})
+ACCESS_ROLE_OVERLAYS = {'amy.s.lawrence@oracle.com': ('SYSTEM_ADMINISTRATOR',)}
+
+
+def staffing_eligible(person):
+    """Access roles and staffing eligibility are separate business controls."""
+    return person['email'].strip().casefold() not in NON_STAFFING_EMAILS
+
+
+def imported_roles(person):
+    """Apply approved access-only grants without treating them as staffing roles."""
+    email = person['email'].strip().casefold()
+    return tuple(dict.fromkeys((*person['roles'], *ACCESS_ROLE_OVERLAYS.get(email, ()))))
 
 
 def require(ok, message):
@@ -125,7 +138,8 @@ def verify_import(c, plan, archive, password=None, initial=True):
         e = expected[p['person_id']]
         require((p['full_name'], p['email_address'], p['external_identity_subject'], p['weekly_work_hours'], p['active_flag']) ==
                 (e['name'], e['email'], e['identity_subject'], 40, 'Y'), 'A person differs from the reviewed identity/contract.')
-        require(p['staffing_seed_batch'] == plan['batch'] and p['staffing_eligible_flag'] == 'Y',
+        expected_eligibility = 'Y' if staffing_eligible(e) else 'N'
+        require(p['staffing_seed_batch'] == plan['batch'] and p['staffing_eligible_flag'] == expected_eligibility,
                 'Person import provenance or eligibility flag changed.')
         if initial:
             require(document(p['deliverable_experience_json'] or '[]') == [] and p['allocation_pct'] == p['active_pods'] == 0,
@@ -137,7 +151,7 @@ def verify_import(c, plan, archive, password=None, initial=True):
                 'Account access differs from the approved roster.')
         if password is not None:
             require(check_password(password, a['password_hash']), 'An account password failed verification.')
-    desired = {(p['person_id'], p['identity_subject'], role, 'Y', 1) for p in expected.values() for role in p['roles']}
+    desired = {(p['person_id'], p['identity_subject'], role, 'Y', 1) for p in expected.values() for role in imported_roles(p)}
     actual = {(g['person_id'], g['identity_subject'], g['role_code'], g['active_flag'], g['effective']) for g in grants}
     require(actual == desired and len(grants) == len(desired), 'Role grants differ from the Excel; no role inheritance is allowed.')
     require(len(setup) == len(expected) and {r['person_id'] for r in setup} == set(expected), 'Missing first-login enrollment.')
@@ -184,14 +198,14 @@ def apply(c, source, plan, operator, password):
         clob_execute(c, """INSERT INTO people(person_id,full_name,initials,job_title,location,weekly_work_hours,
             email_address,external_identity_subject,allocation_pct,active_pods,active_flag,staffing_eligible_flag,
             skills_version,deliverable_experience_json,staffing_seed_batch)
-            VALUES(:pid,:name,:initials,'Not provided','Not provided',40,:email,:subject,0,0,'Y','Y',0,:experience,:batch)""",
+            VALUES(:pid,:name,:initials,'Not provided','Not provided',40,:email,:subject,0,0,'Y',:staffingEligible,0,:experience,:batch)""",
             {'pid': p['person_id'], 'name': p['name'], 'initials': initials, 'email': p['email'], 'subject': p['identity_subject'],
-             'experience': '[]', 'batch': plan['batch']}, ('experience',))
+             'staffingEligible': 'Y' if staffing_eligible(p) else 'N', 'experience': '[]', 'batch': plan['batch']}, ('experience',))
         execute(c, """INSERT INTO app_accounts(account_id,person_id,identity_subject,login_email,password_hash,active_flag,created_by)
             VALUES(:account,:person,:subject,:email,:password,:active,:operator)""", account=p['account_id'],
             person=p['person_id'], subject=p['identity_subject'], email=p['email'], password=hashes[p['person_id']],
             active='Y' if p['account_enabled'] else 'N', operator=operator)
-        for role in p['roles']:
+        for role in imported_roles(p):
             execute(c, """INSERT INTO app_user_roles(identity_subject,role_code,person_id,active_flag,effective_from,assigned_by)
                 VALUES(:subject,:role,:person,'Y',TRUNC(SYSDATE),:operator)""", subject=p['identity_subject'],
                 role=role, person=p['person_id'], operator=operator)
@@ -200,7 +214,7 @@ def apply(c, source, plan, operator, password):
     archive['roster_import'] = {'confirmation': plan['confirmation'], 'source_sha256': source['source_sha256'],
                                 'operator': operator, 'manifest': plan, 'status': 'IMPORTED'}
     save(c, archive, 'RESET')  # preserve the original recovery journal/state contract
-    return {**result, 'writes': 3*len(plan['people'])+sum(len(p['roles']) for p in plan['people'])+1,
+    return {**result, 'writes': 3*len(plan['people'])+sum(len(imported_roles(p)) for p in plan['people'])+1,
             'status': 'IMPORTED', 'agents_enabled': False, 'notifications_enabled': False}
 
 

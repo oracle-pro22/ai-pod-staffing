@@ -107,6 +107,21 @@ test('execution screen identifies Supervisor and both specialist responsibilitie
   assert.match(html, /Request \/ Evidence Analyst/);
   assert.match(html, /POD Planner and rules/);
 });
+test('fitment shows automatic waiting feedback until the queued recommendation arrives', () => {
+  const execution = { execution_id: 'EX-1', request_id: 'REQ-1', status: 'RUNNING', clarification_questions: [], events: [], proposals: [] };
+  const html = markup({ proposal: null, execution, running: true, canDecide: false });
+  assert.match(html, /staffing-fitment-waiting/);
+  assert.match(html, /Building the staffing recommendation/);
+  assert.match(html, /This page refreshes automatically/);
+  assert.match(html, /aria-busy="true"/);
+});
+test('successful request creation selects the new request and opens AI Fitment', () => {
+  const source = fs.readFileSync(path.join(root, 'components/overlays/CreateRequestModal.tsx'), 'utf8');
+  const success = source.slice(source.indexOf('formElement.reset()'), source.indexOf('} catch {'));
+  assert.match(success, /set-active-request[^\n]+result\.data\.requestId/);
+  assert.match(success, /set-screen[^\n]+screen: 'fitment'/);
+  assert.doesNotMatch(success, /screen: 'agent'/);
+});
 test('Next proxy permits only the scoped selection POST and preserves payload', async () => {
   forwarded = [];
   const body = { revision: 0, person_id: 'P-2', replaces: 'P-1', role: 'POD_LEAD', idempotency_key: 'choice-0000000001' };

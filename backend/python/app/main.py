@@ -19,13 +19,17 @@ from app.storage import load_policy
 from app.policy_admin import PolicyAdminStore, UtilizationUpdate, active_policy_version
 from app.assignments import AssignmentStore, CloseProject
 from app.personas import PersonaRepository, PersonaSelection, constrain_actor, mint_session, require_management
-from app.accounts import AccountStore, PasswordLogin
-from app.availability import AvailabilityInput, cancel_availability, create_availability, update_availability
+from app.accounts import AccountStore, PasswordChange, PasswordLogin
+from app.availability import AvailabilityEnd, AvailabilityInput, cancel_availability, create_availability, update_availability
 from app.roster_lifecycle import RosterLifecycle, AccessChange, OnboardingInput, require_ready, status as onboarding_status
 from app.selections import SelectionStore, SelectionUpdate
 from app.manual_store import ManualStore, ManualPreviewInput, ManualDecisionInput
+from app.schedule_dates import RescheduleInput, reschedule
+from app.employee_provisioning import EmployeeInput, provision_employee
+from app.admin_audit import AuditQuery, read_audit
+from app.request_clarification import ClarificationInput, get_clarification, answer_clarification
 from datetime import date
-from typing import Literal
+from typing import Annotated, Literal
 
 log = logging.getLogger("staffing.backend")
 
@@ -113,6 +117,10 @@ def create_app(settings: Settings | None = None, database=None, verifier=None, a
     def password_logout(request: Request):
         return accounts.logout(request.headers.get("authorization"))
 
+    @app.post("/v1/auth/password/change")
+    def password_change(body: PasswordChange, request: Request):
+        return accounts.change_password(request.headers.get("authorization"), body)
+
     @app.get("/v1/local-personas", dependencies=[Depends(local_persona_management)])
     def local_personas():
         return {"personas": personas.list()}
@@ -159,12 +167,20 @@ def create_app(settings: Settings | None = None, database=None, verifier=None, a
         return update_availability(database, actor, availability_id, body)
 
     @app.delete('/v1/availability/{availability_id}')
-    def remove_availability(availability_id: int, actor: Actor = Depends(current_actor)):
-        return cancel_availability(database, actor, availability_id)
+    def remove_availability(availability_id: int, body: AvailabilityEnd, actor: Actor = Depends(current_actor)):
+        return cancel_availability(database, actor, availability_id, body)
 
     @app.get('/v1/admin/accounts')
     def roster_accounts(actor: Actor = Depends(current_actor)):
         return roster.accounts(actor)
+
+    @app.get('/v1/admin/audit')
+    def audit_history(query: Annotated[AuditQuery, Query()], actor: Actor = Depends(current_actor)):
+        return read_audit(database, actor, query)
+
+    @app.post('/v1/admin/employees', status_code=201)
+    def create_employee(body: EmployeeInput, actor: Actor = Depends(current_actor)):
+        return provision_employee(database, settings, actor, body)
 
     @app.post('/v1/admin/accounts/{account_id}/access')
     def roster_access(account_id: str, body: AccessChange, actor: Actor = Depends(current_actor)):
@@ -198,6 +214,18 @@ def create_app(settings: Settings | None = None, database=None, verifier=None, a
     def proposal(proposal_id: str, actor: Actor = Depends(current_actor)):
         actor.require("AGENT_EXECUTION", "view")
         return executions.get_proposal(proposal_id, actor)
+
+    @app.post('/v1/requests/{request_id}/reschedule')
+    def reschedule_request(request_id: str, body: RescheduleInput, actor: Actor = Depends(current_actor)):
+        return reschedule(database, actor, request_id, body)
+
+    @app.get('/v1/requests/{request_id}/clarification')
+    def read_clarification(request_id: str, actor: Actor = Depends(current_actor)):
+        return get_clarification(database, actor, request_id)
+
+    @app.post('/v1/requests/{request_id}/clarification')
+    def save_clarification(request_id: str, body: ClarificationInput, actor: Actor = Depends(current_actor)):
+        return answer_clarification(database, settings, actor, request_id, body)
 
     @app.get("/v1/requests")
     def requests(actor: Actor = Depends(current_actor)):

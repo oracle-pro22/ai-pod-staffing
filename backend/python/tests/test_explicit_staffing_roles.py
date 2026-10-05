@@ -85,16 +85,17 @@ class AccountEvidenceTests(unittest.TestCase):
         self.db.row_factory = sqlite3.Row
         self.db.executescript('''
             CREATE TABLE people(person_id TEXT,full_name TEXT,active_flag TEXT,
-              skills_version INTEGER,workload_version INTEGER,availability_version INTEGER,deliverable_experience_json TEXT);
+              staffing_eligible_flag TEXT,skills_version INTEGER,workload_version INTEGER,availability_version INTEGER,deliverable_experience_json TEXT);
             CREATE TABLE app_accounts(person_id TEXT,identity_subject TEXT,active_flag TEXT);
             CREATE TABLE app_user_roles(person_id TEXT,identity_subject TEXT,role_code TEXT,active_flag TEXT,effective_from TEXT,effective_to TEXT);
             CREATE TABLE app_roles(role_code TEXT,active_flag TEXT);
             CREATE TABLE roster_onboarding(person_id TEXT,status TEXT);
         ''')
         self.db.executemany('INSERT INTO app_roles VALUES(?,?)', [('POD_LEAD','Y'),('POD_MEMBER','Y'),('POD_CAPTAIN','Y')])
-        for pid in range(1, 7):
+        for pid in range(1, 8):
             person = f'P-{pid:03}'
-            self.db.execute('INSERT INTO people VALUES(?,?,?,?,?,?,?)', (person,person,'N' if pid == 3 else 'Y',1,1,1,None))
+            self.db.execute('INSERT INTO people VALUES(?,?,?,?,?,?,?,?)',
+                (person,person,'N' if pid == 3 else 'Y','N' if pid == 7 else 'Y',1,1,1,None))
             if pid != 6:
                 self.db.execute('INSERT INTO app_accounts VALUES(?,?,?)', (person, f'acct:{person}', 'N' if pid == 2 else 'Y'))
             self.db.execute('INSERT INTO app_user_roles VALUES(?,?,?,?,?,?)', (person,
@@ -119,6 +120,11 @@ class AccountEvidenceTests(unittest.TestCase):
         with patch('app.manual_store.rows', side_effect=self.sql_rows):
             pool = store.pool(None, {'estimated_start_date': MON, 'estimated_completion_date': FRI})
         self.assertEqual(pool, [{'person_id': 'P-001', 'full_name': 'P-001', 'role_codes': ['POD_LEAD','POD_MEMBER']}])
+
+    def test_manual_pool_excludes_accessible_but_non_staffing_person(self):
+        with patch('app.manual_store.rows', side_effect=self.sql_rows):
+            pool = ManualStore(None, None).pool(None, {'estimated_start_date': MON, 'estimated_completion_date': FRI})
+        self.assertNotIn('P-007', {person['person_id'] for person in pool})
 
     def test_manual_pool_excludes_only_unfinished_setup(self):
         for state in ('DRAFT', 'REVIEW', 'COMPLETE'):

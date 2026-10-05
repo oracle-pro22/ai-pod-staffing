@@ -9,7 +9,7 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { Pill } from '@/components/ui/Pill';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { useStaffingApp } from '@/context/StaffingAppProvider';
-import { formatDate, statusTone } from '@/lib/formatting';
+import { allocationTone, formatDate, statusTone } from '@/lib/formatting';
 import { liveStatusLabel } from '@/lib/live-presentation';
 import { useLiveWorkspace } from '@/lib/use-live-workspace';
 import { staffingFetch } from '@/lib/staffing-fetch';
@@ -86,10 +86,15 @@ export function LiveReports() {
     </>} />
     <Card className="staffing-report-controls"><div><span className="staffing-report-eyebrow">Capacity reporting week</span><h3>{period}</h3>
       {snapshot && <p>{snapshot.timezone} · Request and POD status as of {formatDate(snapshot.as_of || snapshot.week_start)}</p>}</div>
-      <div className="staffing-inline-actions"><Button aria-label="Previous reporting week" disabled={!snapshot || Boolean(exporting)} onClick={() => changeWeek(-7)}>←</Button>
-        <label className="staffing-report-date"><span>Week containing</span><input className="staffing-field" aria-label="Week containing" type="date" value={week || snapshot?.week_start.slice(0,10) || ''} disabled={Boolean(exporting)} onChange={e => setWeek(e.target.value)} /></label>
-        <Button aria-label="Next reporting week" disabled={!snapshot || Boolean(exporting)} onClick={() => changeWeek(7)}>→</Button>
-        <Button disabled={Boolean(exporting)} onClick={() => setWeek('')}>This week</Button></div>
+      <div className="staffing-report-week-nav">
+        <label htmlFor="staffing-report-week">Week containing</label>
+        <div className="staffing-report-week-controls">
+          <Button className="staffing-report-week-arrow" size="small" aria-label="Previous reporting week" disabled={!snapshot || Boolean(exporting)} onClick={() => changeWeek(-7)}>←</Button>
+          <input id="staffing-report-week" className="staffing-field staffing-report-date" type="date" value={week || snapshot?.week_start.slice(0,10) || ''} disabled={Boolean(exporting)} onChange={e => setWeek(e.target.value)} />
+          <Button className="staffing-report-week-arrow" size="small" aria-label="Next reporting week" disabled={!snapshot || Boolean(exporting)} onClick={() => changeWeek(7)}>→</Button>
+          <Button size="small" disabled={Boolean(exporting)} onClick={() => setWeek('')}>This week</Button>
+        </div>
+      </div>
     </Card>
     {error && <Card padded><p role="alert">{error}</p><Button onClick={refresh}>Try again</Button></Card>}
     {!snapshot && !error && <Card padded><p role="status">Loading staffing reports…</p></Card>}
@@ -97,9 +102,10 @@ export function LiveReports() {
       <div className="staffing-grid staffing-kpi-grid">
         <KpiCard label="Staffed projects" value={metrics.staffed} badge={`${metrics.closed} closed`} tone="teal" detail={`${snapshot.request_scope || 'Visible requests'} · current status`} />
         <KpiCard label="Awaiting staffing" value={metrics.awaiting} badge={`${snapshot.summary.pending_review} ready for review`} tone="purple" detail="Requests not yet assigned a final POD" />
-        <KpiCard label="Weekly utilization" value={number(metrics.utilization, '%')} badge={metrics.unknown ? `${metrics.unknown} need refresh` : `${metrics.known} people`} tone={metrics.unknown ? 'amber' : 'blue'} detail={`${number(metrics.committed)}h committed / ${number(metrics.available)}h available${metrics.unknown ? ' · known data only' : ''}`} />
-        <KpiCard label={`Headroom to ${snapshot.maximum_allocation_pct ?? '—'}%`} value={number(metrics.headroom, 'h')} badge={`${metrics.aboveLimit} above limit`} tone={metrics.aboveLimit ? 'red' : 'green'} detail={`Weekly capacity below the limit${metrics.unknown ? ' · known data only' : ''}`} />
+        <KpiCard label="Weekly utilization" value={number(metrics.utilization, '%')} badge={metrics.unknown ? `${metrics.unknown} need refresh` : `${metrics.known} people`} tone={allocationTone(metrics.utilization, snapshot.maximum_allocation_pct, metrics.known > 0)} detail={`${number(metrics.committed)}h committed / ${number(metrics.available)}h available${metrics.unknown ? ' · known data only' : ''}`} />
+        <KpiCard label={`Headroom to ${snapshot.maximum_allocation_pct ?? '—'}%`} value={number(metrics.headroom, 'h')} badge={`${metrics.aboveLimit} above limit`} tone={metrics.headroom === null ? 'neutral' : metrics.aboveLimit ? 'red' : metrics.headroom === 0 ? 'amber' : 'teal'} detail={`Weekly capacity below the limit${metrics.unknown ? ' · known data only' : ''}`} />
       </div>
+      <p className="staffing-muted">{snapshot.policy_version && snapshot.maximum_allocation_pct ? `Active policy ${snapshot.policy_version} · Allocation limit ${snapshot.maximum_allocation_pct}%` : 'Policy unavailable; allocation colours and headroom cannot be evaluated.'}</p>
       <div className="staffing-report-tabs" aria-label="Report views">{TABS.map(item => <button key={item} type="button" aria-pressed={tab === item} className={tab === item ? 'active' : ''} onClick={() => selectTab(item)}>{item}</button>)}</div>
       <div className="staffing-report-scope"><span>{snapshot.request_scope || 'Authorized requests'} · {snapshot.requests.length} total</span><span>Capacity: {snapshot.people.length} visible people · Planned hours, not timesheets</span></div>
 
@@ -114,12 +120,12 @@ export function LiveReports() {
           <p className="staffing-muted">Proposal outcomes are historical totals for these requests; repeated runs are not additional projects.</p>
         </CardBody></Card>
         <Card><CardHeader><div><h3>Capacity watch</h3><p>Highest utilization in the selected week</p></div><Button size="small" onClick={() => selectTab('Capacity')}>View all</Button></CardHeader><CardBody>
-          {[...metrics.people].sort((a,b) => (b.allocation ?? -1)-(a.allocation ?? -1)).slice(0,5).map(person => <div className="staffing-capacity-row" key={person.person_id}>
+          {metrics.people.filter(p => p.staffing_eligible !== false).sort((a,b) => (b.allocation ?? -1)-(a.allocation ?? -1)).slice(0,5).map(person => <div className="staffing-capacity-row" key={person.person_id}>
             <Avatar initials={person.name.split(' ').map(part => part[0]).slice(0,2).join('')} />
-            <div><div className="staffing-cap-name"><b>{person.name}</b><span>{number(person.allocation,'%')}</span></div><ProgressBar value={person.allocation ?? 0} tone={person.over ? 'red' : person.headroom === 0 ? 'amber' : 'teal'} /></div>
-            <Pill tone={person.over ? 'red' : 'teal'}>{person.status}</Pill>
+            <div><div className="staffing-cap-name"><b>{person.name}</b><span>{number(person.allocation,'%')}</span></div><ProgressBar value={person.allocation ?? 0} tone={person.over ? 'red' : allocationTone(person.allocation, snapshot.maximum_allocation_pct, person.known && person.staffing_eligible !== false)} /></div>
+            <Pill tone={person.over ? 'red' : allocationTone(person.allocation, snapshot.maximum_allocation_pct, person.known && person.staffing_eligible !== false)}>{person.status}</Pill>
           </div>)}
-          {!metrics.people.length && <div className="staffing-empty compact">No people in your access scope.</div>}
+          {!metrics.people.some(p => p.staffing_eligible !== false) && <div className="staffing-empty compact">No staffable people in your access scope.</div>}
           <p className="staffing-muted">Weekly headroom is not a staffing guarantee. The agent also checks daily availability, skills, and project dates.</p>
         </CardBody></Card>
       </div>}
@@ -131,12 +137,12 @@ export function LiveReports() {
         <div className="staffing-report-table-wrap"><table className="staffing-report-table"><thead><tr><th>Person</th><th>Weekly allocation</th><th>Available</th><th>POD work</th><th>Reported POD</th><th>External</th><th>Leave</th><th>Headroom</th><th>Active PODs today</th><th>Capacity</th></tr></thead><tbody>
           {metrics.people.filter(p => p.name.toLowerCase().includes(search.trim().toLowerCase())
             && (capacityFilter === 'ALL' || (capacityFilter === 'OVER' && p.over) || (capacityFilter === 'REFRESH' && !p.known)
-              || (capacityFilter === 'WITHIN' && p.known && !p.over))).map(p => <tr key={p.person_id}><td><b>{p.name}</b><small>{p.person_id}</small></td><td><strong>{number(p.allocation,'%')}</strong><ProgressBar value={p.allocation ?? 0} tone={p.over ? 'red' : 'teal'} /></td><td>{number(p.available,'h')}</td><td>{number(p.pod,'h')}</td><td>{number(p.reportedPod,'h')}</td><td>{number(p.external,'h')}</td><td>{number(p.leave,'h')}</td><td>{number(p.headroom,'h')}</td><td>{p.active_pods}</td><td><Pill tone={p.over ? 'red' : !p.known || p.headroom === 0 ? 'amber' : 'teal'}>{p.status}</Pill></td></tr>)}
+              || (capacityFilter === 'WITHIN' && ['Within limit', 'At limit'].includes(p.status)))).map(p => <tr key={p.person_id}><td><b>{p.name}</b><small>{p.person_id}</small></td><td><strong>{number(p.allocation,'%')}</strong><ProgressBar value={p.allocation ?? 0} tone={p.over ? 'red' : allocationTone(p.allocation, snapshot.maximum_allocation_pct, p.known && p.staffing_eligible !== false)} /></td><td>{number(p.available,'h')}</td><td>{number(p.pod,'h')}</td><td>{number(p.reportedPod,'h')}</td><td>{number(p.external,'h')}</td><td>{number(p.leave,'h')}</td><td>{number(p.headroom,'h')}</td><td>{p.active_pods}</td><td><Pill tone={p.over ? 'red' : allocationTone(p.allocation, snapshot.maximum_allocation_pct, p.known && p.staffing_eligible !== false)}>{p.status}</Pill></td></tr>)}
           {!metrics.people.some(p => p.name.toLowerCase().includes(search.trim().toLowerCase())
             && (capacityFilter === 'ALL' || (capacityFilter === 'OVER' && p.over) || (capacityFilter === 'REFRESH' && !p.known)
-              || (capacityFilter === 'WITHIN' && p.known && !p.over))) && <tr><td colSpan={10}>No matching people.</td></tr>}
+              || (capacityFilter === 'WITHIN' && ['Within limit', 'At limit'].includes(p.status)))) && <tr><td colSpan={10}>No matching people.</td></tr>}
         </tbody></table></div>
-        <CardBody><p className="staffing-muted">Unknown capacity stays blank and is excluded from totals. Active POD counts are for today, not the selected historical week.</p></CardBody>
+        <CardBody><p className="staffing-muted">Unknown capacity stays blank. Non-staffable people remain visible for history but are excluded from staffing totals and headroom. Active POD counts are for today, not the selected historical week.</p></CardBody>
       </Card>}
 
       {tab === 'Projects & PODs' && <Card><CardHeader><div><h3>Projects & PODs</h3><p>{snapshot.request_scope || 'Authorized requests'} · current project state and final teams</p></div></CardHeader>

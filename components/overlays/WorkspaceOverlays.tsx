@@ -8,6 +8,7 @@ import { useRouter } from 'next/navigation';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { Drawer } from '@/components/ui/Drawer';
+import { DropdownField } from '@/components/ui/DropdownField';
 import { FormGroup, SelectField, TextField } from '@/components/ui/FormControls';
 import { Modal } from '@/components/ui/Modal';
 import { Notice } from '@/components/ui/Notice';
@@ -17,6 +18,16 @@ import { canPerform } from '@/lib/role-policy';
 import { selectIdentityPerson, selectVisiblePeople, selectVisibleRequests } from '@/lib/selectors';
 import { requestBusinessDate } from '@/lib/request-date-policy';
 import type { AvailabilityEvent } from '@/types/staffing';
+import { availabilityRemainingHours } from '@/lib/live-presentation';
+
+const AVAILABILITY_TYPE_OPTIONS = [
+  { value: 'OOO', label: 'Out of office' },
+  { value: 'Leave', label: 'Leave' },
+  { value: 'Travel', label: 'Travel' },
+  { value: 'Training', label: 'Training' },
+  { value: 'Reduced hours', label: 'Reduced hours' },
+  { value: 'External commitment', label: 'External commitment' },
+];
 
 export function WorkspaceOverlays() {
   return <><QuickAllocationDrawer /><AllocationGuardrailModal /><PersonDetailsDrawer /><AvailabilityDrawer /></>;
@@ -72,13 +83,21 @@ function AvailabilityDrawer() {
   const alive = useRef(true);
   const payload = state.drawer?.payload as ({ event?: AvailabilityEvent } | undefined);
   const editing = payload?.event;
+  const [eventType, setEventType] = useState('OOO');
   const [startsOn, setStartsOn] = useState(requestBusinessDate);
   const [endsOn, setEndsOn] = useState(requestBusinessDate);
-  const open = state.drawer?.id === 'add-availability' && canPerform(state.role, 'MY_AVAILABILITY', 'canCreate', data.authorization);
+  const [hours, setHours] = useState('8');
+  const ongoing = Boolean(editing && editing.startsOn < requestBusinessDate());
+  const open = state.drawer?.id === 'add-availability' && canPerform(state.role, 'MY_AVAILABILITY', editing ? 'canUpdate' : 'canCreate', data.authorization);
   const person = selectIdentityPerson(data, state.role);
   const close = () => { if (!busy.current) dispatch({ type: 'close-drawer' }); };
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
-  useEffect(() => { if (open) { setStartsOn(editing?.startsOn ?? requestBusinessDate()); setEndsOn(editing?.endsOn ?? requestBusinessDate()); } }, [open, editing]);
+  useEffect(() => { if (open) {
+    setEventType(editing?.eventType === 'Commitment' ? 'External commitment' : editing?.eventType ?? 'OOO');
+    const from = editing && editing.startsOn >= requestBusinessDate() ? editing.startsOn : requestBusinessDate();
+    setStartsOn(from); setEndsOn(editing?.effectiveUntil ?? editing?.endsOn ?? from);
+    setHours(String(editing ? availabilityRemainingHours(editing, from) : 8));
+  } }, [open, editing]);
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!person || !open || busy.current) return;
     const formElement = event.currentTarget;
@@ -102,6 +121,7 @@ function AvailabilityDrawer() {
           endsOn,
           title: String(form.get('title') || ''),
           allocatedHours: Number(form.get('hours') || 0),
+          ...(editing ? { revision: editing.revision } : {}),
         }),
       });
       const result = await response.json().catch(() => ({})) as { data?: unknown; error?: string };
@@ -125,11 +145,12 @@ function AvailabilityDrawer() {
   }
   return <Drawer open={open} title={editing ? 'Edit availability event' : 'Add availability event'} onClose={close} footer={<><Button type="button" onClick={close} disabled={saving}>Cancel</Button><Button type="submit" form="availabilityForm" variant="primary" disabled={saving}>{saving ? 'Saving…' : editing ? 'Save changes' : 'Save event'}</Button></>}>
     <form id="availabilityForm" onSubmit={save}><div className="staffing-form-grid">
-      <FormGroup label="Event type" full><SelectField name="eventType" disabled={saving} defaultValue={editing?.eventType}><option>OOO</option><option>Leave</option><option>Travel</option><option>Training</option><option>Reduced hours</option><option>External commitment</option></SelectField></FormGroup>
-      <FormGroup label="Start date"><TextField required disabled={saving} type="date" name="startsOn" min={requestBusinessDate()} value={startsOn} onChange={(event) => { const date = event.target.value; setStartsOn(date); if (endsOn < date) setEndsOn(date); }} /></FormGroup>
+      <FormGroup label="Event type" full className="staffing-availability-event-type"><DropdownField name="eventType" disabled={saving} value={eventType} onChange={setEventType} options={AVAILABILITY_TYPE_OPTIONS} /></FormGroup>
+      <FormGroup label={ongoing ? 'Adjust from (earlier days stay unchanged)' : 'Start date'}><TextField required disabled={saving} type="date" name="startsOn" min={requestBusinessDate()} max={ongoing ? editing?.effectiveUntil ?? editing?.endsOn : undefined} value={startsOn} onChange={(event) => { const date = event.target.value; setStartsOn(date); if (endsOn < date) setEndsOn(date); if (editing) setHours(String(availabilityRemainingHours(editing, date))); }} /></FormGroup>
       <FormGroup label="End date"><TextField required disabled={saving} type="date" name="endsOn" min={startsOn || requestBusinessDate()} value={endsOn} onChange={(event) => setEndsOn(event.target.value)} /></FormGroup>
       <FormGroup label="Title" full><TextField disabled={saving} name="title" maxLength={500} defaultValue={editing?.title} placeholder="What should schedulers see?" /></FormGroup>
-      <FormGroup label="Hours (total)" full><TextField disabled={saving} required type="number" min="0.01" step="0.01" name="hours" defaultValue={editing?.allocatedHours ?? 8} /></FormGroup>
+      <FormGroup label={ongoing ? 'Hours for the remaining period (total)' : 'Hours (total)'} full><TextField disabled={saving} required type="number" min="0.01" step="0.01" name="hours" value={hours} onChange={event => setHours(event.target.value)} /></FormGroup>
+      {ongoing && editing && <p role="status">{(availabilityRemainingHours(editing, editing.startsOn) - availabilityRemainingHours(editing, startsOn)).toFixed(2)} earlier hours will stay unchanged. The new total of {hours || '0'} hours applies only from {startsOn} through {endsOn}. Capacity is validated when you save.</p>}
       <div className="staffing-source-strip">Leave and other unavailable time reduce working capacity. External commitments remain working time but count toward allocation.</div>
     </div></form>
   </Drawer>;

@@ -64,7 +64,7 @@ class TeamPrivacyTests(unittest.TestCase):
         # Extra columns for executing the complete production workspace queries,
         # not just mocking a pre-filtered list of people.
         for table, columns in {
-            "people": ["full_name TEXT"],
+            "people": ["full_name TEXT", "staffing_eligible_flag TEXT DEFAULT 'Y'"],
             "requests": ["title TEXT", "project_type TEXT", "priority TEXT", "request_revision INTEGER", "responsible_captain_id TEXT", "created_at TEXT", "estimated_start_date TEXT", "estimated_completion_date TEXT"],
             "pod_assignments": ["assignment_id TEXT", "proposal_id TEXT", "starts_on TEXT", "ends_on TEXT",
                                 "assigned_hours INTEGER", "closed_at TEXT", "close_reason TEXT", "policy_version TEXT"],
@@ -152,7 +152,7 @@ class TeamPrivacyTests(unittest.TestCase):
 
     def test_query_failure_does_not_fall_back_to_directory(self):
         db = SimpleNamespace(read=lambda: self.db)
-        with patch("app.assignments.load_policy", side_effect=RuntimeError("database failed")), self.assertRaises(RuntimeError):
+        with patch('app.policy_admin.active_policy_version', return_value='v1'), patch("app.assignments.load_policy", side_effect=RuntimeError("database failed")), self.assertRaises(RuntimeError):
             AssignmentStore(db, SimpleNamespace(staffing_policy_version="v1")).workspace(actor("POD_MEMBER", "OWN"), resource="TEAM_SKILLS")
 
     def workspace(self, role, scope, pid, resource="REQUESTS", team=True):

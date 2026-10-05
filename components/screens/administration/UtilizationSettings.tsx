@@ -3,10 +3,13 @@
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { staffingFetch } from '@/lib/staffing-fetch';
+import { useRouter } from 'next/navigation';
+import { STAFFING_CHANGED_EVENT } from '@/lib/project-closure';
 
 type Policy = { version: string; maximum_allocation_pct: string | number; approved_by: string };
 
 export function UtilizationSettings() {
+  const router = useRouter();
   const [policy, setPolicy] = useState<Policy | null>(null);
   const [limit, setLimit] = useState('');
   const [reason, setReason] = useState('');
@@ -37,6 +40,8 @@ export function UtilizationSettings() {
       const payload = await response.json();
       if (!response.ok) throw new Error(typeof payload.error === 'string' ? payload.error : payload.error?.message || 'Unable to save utilization settings.');
       setPolicy(payload.data); setLimit(String(payload.data.maximum_allocation_pct)); setReason('');
+      window.dispatchEvent(new Event(STAFFING_CHANGED_EVENT));
+      router.refresh();
       setMessage('Limit saved. New runs use this policy immediately. Re-run pending proposals before approving them.');
     } catch (e) { setError(e instanceof Error ? e.message : 'Save failed. Refresh to check the current setting before retrying.'); }
     finally { setBusy(false); }

@@ -8,6 +8,8 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { SelectField } from '@/components/ui/FormControls';
 import { useStaffingApp } from '@/context/StaffingAppProvider';
 import { availabilityDayHours, shiftDay, weekDays } from '@/lib/live-presentation';
+import { allocationState } from '@/lib/allocation-policy';
+import { availabilityEventLabel } from '@/lib/formatting';
 import { useLiveWorkspace } from '@/lib/use-live-workspace';
 import { downloadExcelWorkbook } from '@/lib/export-xlsx';
 
@@ -26,9 +28,10 @@ export function LiveAllocationCalendar() {
   const people = (snapshot?.people ?? []).map(p => ({ ...p, profile: data.people.find(person => person.id === p.person_id) }))
     .filter(p => !skillId || p.profile?.skills.some(s => s.id === skillId))
     .filter(p => showAlternates || snapshot?.days.some(d => d.person_id === p.person_id))
-    .filter(p => capacity === 'Available' ? p.capacity_status === 'CURRENT' && p.allocation_pct !== null && p.allocation_pct < 70
-      : capacity === 'Constrained' ? p.capacity_status === 'CURRENT' && p.allocation_pct !== null && p.allocation_pct >= 70
-      : capacity === 'OOO / leave / travel' ? p.profile?.availability.some(e => days.some(day => day >= e.startsOn.slice(0, 10) && day <= (e.endsOn || e.startsOn).slice(0, 10)))
+    .filter(p => p.staffing_eligible !== false || snapshot?.days.some(d => d.person_id === p.person_id))
+    .filter(p => capacity === 'Available' ? p.staffing_eligible !== false && p.capacity_status === 'CURRENT' && p.allocation_pct !== null && allocationState(p.allocation_pct, snapshot?.maximum_allocation_pct) === 'within'
+      : capacity === 'Constrained' ? p.staffing_eligible !== false && p.capacity_status === 'CURRENT' && p.allocation_pct !== null && ['at', 'above'].includes(allocationState(p.allocation_pct, snapshot?.maximum_allocation_pct))
+      : capacity === 'Out of office / leave / travel' ? p.profile?.availability.some(e => e.status !== 'CANCELLED' && days.some(day => day >= e.startsOn.slice(0, 10) && day <= (e.effectiveUntil || e.endsOn || e.startsOn).slice(0, 10)))
       : capacity === 'Needs refresh' ? p.capacity_status !== 'CURRENT' : true)
     .sort((a, b) => (b.allocation_pct ?? -1) - (a.allocation_pct ?? -1));
 
@@ -54,27 +57,28 @@ export function LiveAllocationCalendar() {
       <SelectField aria-label="Filter by interest" value={skillId} onChange={e => setSkillId(e.target.value)}><option value="">All interests</option>
         {data.catalog.skills.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</SelectField>
       <SelectField aria-label="Filter by capacity" value={capacity} onChange={e => setCapacity(e.target.value)}>
-        {['All capacity', 'Available', 'Constrained', 'OOO / leave / travel', 'Needs refresh'].map(v => <option key={v}>{v}</option>)}</SelectField>
+        {['All capacity', 'Available', 'Constrained', 'Out of office / leave / travel', 'Needs refresh'].map(v => <option key={v}>{v}</option>)}</SelectField>
       <label className="staffing-checkbox-pill"><input type="checkbox" checked={showAlternates} onChange={e => setShowAlternates(e.target.checked)} /> Show alternates</label>
       <b className="staffing-week-label">{days.length ? `${dayLabel(days[0], true)} – ${dayLabel(days[4], true)}` : 'Loading week…'}</b>
     </div></Card>
+    {snapshot && <p className="staffing-muted">{snapshot.policy_version && snapshot.maximum_allocation_pct ? `Active policy ${snapshot.policy_version} · Available: below ${snapshot.maximum_allocation_pct}%; constrained: at or above it.` : 'Policy unavailable; available and constrained filters cannot be evaluated.'}</p>}
     {error && <Card padded><div role="alert">{error}</div><Button onClick={refresh}>Try again</Button></Card>}
     {!snapshot && !error && <Card padded><p role="status">Loading weekly allocations…</p></Card>}
     {snapshot && <div className="staffing-calendar-wrap"><div className="staffing-schedule staffing-live-schedule" aria-label="Weekly allocation calendar">
       <div className="staffing-cell head person">Team member</div>{days.map(day => <div className="staffing-cell head" key={day}>{dayLabel(day)}</div>)}
       {people.map(p => <Fragment key={p.person_id}><div className="staffing-cell person"><div className="staffing-person-line">
         <Avatar initials={p.profile?.initials || p.person_id.slice(-2)} /><span><b>{p.profile?.name || snapshot.assignments.find(a => a.person_id === p.person_id)?.full_name || p.person_id}</b>
-          <small>{p.capacity_status !== 'CURRENT' ? 'Needs refresh' : p.allocation_pct === null ? 'No available hours' : `${p.allocation_pct}%`} • {p.profile?.skills[0]?.name || p.profile?.jobTitle || 'Team member'}</small></span>
+          <small>{p.staffing_eligible === false ? 'Not eligible for POD assignment' : p.capacity_status !== 'CURRENT' ? 'Needs refresh' : p.allocation_pct === null ? 'No available hours' : `${p.allocation_pct}%`} • {p.profile?.skills[0]?.name || p.profile?.jobTitle || 'Team member'}</small></span>
       </div></div>{days.map(day => {
         const work = snapshot.days.filter(d => d.person_id === p.person_id && d.work_date.slice(0, 10) === day);
-        const events = (p.profile?.availability ?? []).filter(e => day >= e.startsOn.slice(0, 10) && day <= (e.endsOn || e.startsOn).slice(0, 10));
+        const events = (p.profile?.availability ?? []).filter(e => e.status !== 'CANCELLED' && day >= e.startsOn.slice(0, 10) && day <= (e.effectiveUntil || e.endsOn || e.startsOn).slice(0, 10));
         const eventHours = events.map(e => availabilityDayHours(e, day));
         const hours = work.reduce((n, d) => n + Number(d.assigned_hours), 0) + eventHours.reduce<number>((n, h) => n + (h ?? 0), 0);
         return <div className="staffing-cell" key={day}>
           {work.map(d => <div className="staffing-booking write" key={d.assignment_id} title={`${d.request_id} · ${snapshot.requests.find(r => r.request_id === d.request_id)?.title || ''}`}>
             {snapshot.requests.find(r => r.request_id === d.request_id)?.title || d.request_id} • {d.assigned_hours}h</div>)}
           {events.map((e, i) => <div className={`staffing-booking ${/travel|leave|ooo/i.test(e.eventType) ? 'travel' : 'ooo'}`} key={`${e.startsOn}-${i}`}>
-            {e.title || e.eventType} • {eventHours[i] === null ? 'Hours not recorded' : `${eventHours[i]}h`}</div>)}
+            {availabilityEventLabel(e.title || e.eventType)} • {eventHours[i] === null ? 'Hours not recorded' : `${eventHours[i]}h`}</div>)}
           <span className="staffing-day-hours">{eventHours.some(h => h === null) ? 'Hours incomplete' : `${Number(hours.toFixed(2))}h`}</span>
         </div>;
       })}</Fragment>)}

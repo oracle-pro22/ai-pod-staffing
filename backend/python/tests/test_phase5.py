@@ -75,6 +75,36 @@ class CapacityRefreshTests(unittest.TestCase):
 
 
 class WorkspaceTests(unittest.TestCase):
+    def test_every_workspace_uses_active_policy_not_configured_default(self):
+        @contextmanager
+        def read(): yield None
+        policy = DEFAULT_POLICY.model_copy(update={'version': 'active-policy'})
+        for resource in ('REQUESTS', 'REPORTS', 'ALLOCATION_CALENDAR', 'TEAM_SKILLS', 'MY_AVAILABILITY'):
+            user = Actor('subject', 'ADMIN', frozenset({'SYSTEM_ADMINISTRATOR'}),
+                         (Permission('SYSTEM_ADMINISTRATOR', resource, 'FULL', frozenset({'view'})),))
+            def query(_conn, sql, **binds):
+                if 'AS pending_review' in sql:
+                    self.assertEqual(binds['activePolicy'], 'active-policy')
+                    return [{'pending_review': 0, 'approved': 0, 'rejected': 0}]
+                return []
+            with self.subTest(resource=resource), patch('app.assignments.rows', side_effect=query), \
+                 patch('app.policy_admin.active_policy_version', return_value='active-policy') as active, \
+                 patch('app.assignments.load_policy', return_value=policy) as load:
+                result = AssignmentStore(SimpleNamespace(read=read), SimpleNamespace(staffing_policy_version='stale-default')).workspace(
+                    user, date(2026, 10, 5), resource)
+            active.assert_called_once_with(None)
+            load.assert_called_once_with(None, 'active-policy')
+            self.assertEqual(result['policy_version'], 'active-policy')
+            self.assertEqual(result['maximum_allocation_pct'], policy.maximum_allocation_pct)
+
+    def test_missing_active_policy_fails_without_default_fallback(self):
+        @contextmanager
+        def read(): yield None
+        with patch('app.policy_admin.active_policy_version', side_effect=ServiceError('POLICY_NOT_CONFIGURED', 'Missing', 503)), \
+             patch('app.assignments.load_policy') as load, self.assertRaises(ServiceError):
+            AssignmentStore(SimpleNamespace(read=read), SimpleNamespace(staffing_policy_version='old')).workspace(actor())
+        load.assert_not_called()
+
     def test_own_calendar_filters_assignments_and_days_and_never_loads_directory(self):
         statements = []
         @contextmanager
@@ -88,7 +118,7 @@ class WorkspaceTests(unittest.TestCase):
                 self.assertEqual(binds, {'profileViewerId': 'P-006'})
                 return [{'person_id': 'P-006'}]
             return []
-        with patch('app.assignments.rows', side_effect=query), patch('app.assignments.load_policy', return_value=DEFAULT_POLICY), patch('app.assignments.ZoneInfo', return_value=timezone.utc), patch('app.assignments.load_capacity_ledgers', return_value={'P-006': (CapacityLedger(),0)}):
+        with patch('app.policy_admin.active_policy_version', return_value='active-policy'), patch('app.assignments.rows', side_effect=query), patch('app.assignments.load_policy', return_value=DEFAULT_POLICY), patch('app.assignments.ZoneInfo', return_value=timezone.utc), patch('app.assignments.load_capacity_ledgers', return_value={'P-006': (CapacityLedger(),0)}):
             result = AssignmentStore(SimpleNamespace(read=read), SimpleNamespace(staffing_policy_version='draft')).workspace(user, date(2026,9,16), 'ALLOCATION_CALENDAR')
         self.assertEqual(result['week_start'], date(2026,9,14))
         self.assertEqual(len(result['people']), 1)
@@ -105,7 +135,7 @@ class WorkspaceTests(unittest.TestCase):
             if 'AS total' in sql: return [{'person_id':'P-006','total':1}]
             if "p.active_flag='Y' AND NOT" in sql: return [{'person_id': 'P-006'}]
             return []
-        with patch('app.assignments.rows', side_effect=query), patch('app.assignments.load_policy', return_value=DEFAULT_POLICY), patch('app.assignments.ZoneInfo', return_value=timezone.utc), patch('app.assignments.load_capacity_ledgers', return_value={'P-006': ServiceError('CAPACITY_STALE','Refresh',409)}):
+        with patch('app.policy_admin.active_policy_version', return_value='active-policy'), patch('app.assignments.rows', side_effect=query), patch('app.assignments.load_policy', return_value=DEFAULT_POLICY), patch('app.assignments.ZoneInfo', return_value=timezone.utc), patch('app.assignments.load_capacity_ledgers', return_value={'P-006': ServiceError('CAPACITY_STALE','Refresh',409)}):
             result = AssignmentStore(SimpleNamespace(read=read), SimpleNamespace(staffing_policy_version='draft')).workspace(actor(), date(2026,9,16))
         self.assertIsNone(result['people'][0]['allocation_pct'])
         self.assertEqual(result['people'][0]['capacity_status'], 'CAPACITY_STALE')

@@ -12,6 +12,9 @@ import { Modal } from '@/components/ui/Modal';
 import { PersonCombobox } from '@/components/ui/PersonCombobox';
 import { useStaffingApp } from '@/context/StaffingAppProvider';
 import { requestBusinessDate } from '@/lib/request-date-policy';
+import { validateCreateRequestPayload } from '@/lib/validation/staffing-mutations';
+import { catalogueName, uniqueNameIndex } from '@/lib/request-normalization';
+import { EFFORT_HOURS, REQUEST_LIMITS } from '@/lib/request-limits';
 import { canPerform } from '@/lib/role-policy';
 import type {
   CatalogDeliverable,
@@ -67,6 +70,7 @@ export function CreateRequestModal() {
   const [priority, setPriority] = useState('Medium');
   const [requestedPodSize, setRequestedPodSize] = useState('1 lead + 2 contributors');
   const [effortUnit, setEffortUnit] = useState('days');
+  const [effortValue, setEffortValue] = useState('5');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -95,6 +99,7 @@ export function CreateRequestModal() {
     setPriority('Medium');
     setRequestedPodSize('1 lead + 2 contributors');
     setEffortUnit('days');
+    setEffortValue('5');
     setRephrasing({ businessObjectives: false, expectedOutcomes: false });
   }, [open]);
 
@@ -127,8 +132,7 @@ export function CreateRequestModal() {
     if (capabilityChoice === 'other') {
       const name = customCapability.trim();
       if (!name) return;
-      const normalize = (value: string) => value.toLocaleLowerCase('en-US').replace(/[^a-z0-9]+/g, ' ').trim();
-      const exact = data.catalog.skills.find((skill) => normalize(skill.name) === normalize(name));
+      const exact = uniqueNameIndex(data.catalog.skills, skill => skill.name).get(catalogueName(name));
       setCapabilities((current) => mergeCapabilities(current, [exact
         ? { id: exact.id, name: exact.name, requiredStrength: null, source: `Exact catalogue match for “${name}”`, mandatory: true }
         : { id: `CUSTOM-SKILL-${Date.now()}`, name, requiredStrength: null, source: 'Request entry', custom: true, mandatory: false }]));
@@ -173,7 +177,7 @@ export function CreateRequestModal() {
           'Content-Type': 'application/json',
           'x-staffing-role': state.role,
         },
-        body: JSON.stringify({
+        body: JSON.stringify(validateCreateRequestPayload({
           title: String(form.get('title') || ''),
           projectTypeId: project.id,
           requestSourcePersonId,
@@ -187,11 +191,11 @@ export function CreateRequestModal() {
             value: Number(form.get('effortValue') || 0),
             unit: String(form.get('effortUnit') || ''),
           },
-          requestedPodSize: String(form.get('podSize') || ''),
+          requestedPodSize,
           requiredCapabilities: capabilities,
           businessObjectives,
           expectedOutcomes,
-        }),
+        })),
       });
       const result = await response.json().catch(() => ({})) as { data?: RequestCreatedResult; error?: string };
       if (!response.ok || !result.data) {
@@ -200,16 +204,14 @@ export function CreateRequestModal() {
       }
       formElement.reset();
       close();
+      dispatch({ type: 'set-active-request', requestId: result.data.requestId });
+      dispatch({ type: 'set-screen', screen: 'fitment' });
       router.refresh();
       notify('Request saved', result.data.agentPending
-        ? `${result.data.requestId} is ready for automatic staffing.`
-        : `${result.data.requestId} was created successfully.`);
-      if (result.data.agentPending) {
-        dispatch({ type: 'set-active-request', requestId: result.data.requestId });
-        dispatch({ type: 'set-screen', screen: 'agent' });
-      }
-    } catch {
-      notify('Request not saved', 'The database could not be reached. Please try again.');
+        ? `${result.data.requestId} is open in AI Fitment. The recommendation will appear automatically when staffing completes.`
+        : `${result.data.requestId} is open in AI Fitment and ready to run.`);
+    } catch (error) {
+      notify('Request not saved', error instanceof Error ? error.message : 'The database could not be reached. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -266,10 +268,13 @@ export function CreateRequestModal() {
           <div className="staffing-create-grid">
             <FormGroup label="Priority" className="third"><DropdownField name="priority" value={priority} onChange={setPriority} options={[{ value: 'Low', label: 'Low' }, { value: 'Medium', label: 'Medium' }, { value: 'High', label: 'High' }]} /></FormGroup>
             <FormGroup label="Needed by date" className="third"><TextField name="neededBy" required type="date" min={minimumDate} value={neededBy} onChange={(event) => setNeededBy(event.target.value)} /></FormGroup>
-            <FormGroup label="Requested pod size" className="third"><DropdownField name="podSize" value={requestedPodSize} onChange={setRequestedPodSize} options={[{ value: '1 lead + 2 contributors', label: '1 lead + 2 contributors' }, { value: '1 lead + 1 contributor', label: '1 lead + 1 contributor' }, { value: '1 lead + 3 contributors', label: '1 lead + 3 contributors' }]} /></FormGroup>
-            <FormGroup label="Estimated start date" className="third"><TextField name="startDate" type="date" required={process.env.NEXT_PUBLIC_STAFFING_AGENTIC_ENABLED === 'true'} min={minimumDate} value={estimatedStartDate} onChange={(event) => changeEstimatedStartDate(event.target.value)} /></FormGroup>
-            <FormGroup label="Estimated completion date" className="third"><TextField name="completionDate" type="date" required={process.env.NEXT_PUBLIC_STAFFING_AGENTIC_ENABLED === 'true'} min={estimatedStartDate || minimumDate} value={estimatedCompletionDate} onChange={(event) => setEstimatedCompletionDate(event.target.value)} /></FormGroup>
-            <FormGroup label="Estimated effort" className="third"><div className="staffing-effort-control"><TextField aria-label="Estimated effort value" name="effortValue" type="number" min="1" defaultValue="5" /><DropdownField aria-label="Estimated effort unit" name="effortUnit" value={effortUnit} onChange={setEffortUnit} options={[{ value: 'days', label: 'Days' }, { value: 'weeks', label: 'Weeks' }, { value: 'months', label: 'Months' }]} /></div></FormGroup>
+            <FormGroup label="Requested POD size" className="third"><div className="staffing-effort-control">
+              <DropdownField aria-label="Number of POD Leads" value={requestedPodSize.split(' ')[0]} onChange={value => setRequestedPodSize(`${value} leads + ${requestedPodSize.split(' ')[3]} contributors`)} options={Array.from({ length: REQUEST_LIMITS.leads }, (_, i) => ({ value: String(i + 1), label: `${i + 1} Lead${i ? 's' : ''}` }))} />
+              <DropdownField aria-label="Number of POD Members" value={requestedPodSize.split(' ')[3]} onChange={value => setRequestedPodSize(`${requestedPodSize.split(' ')[0]} leads + ${value} contributors`)} options={Array.from({ length: REQUEST_LIMITS.members + 1 }, (_, i) => ({ value: String(i), label: `${i} Member${i === 1 ? '' : 's'}` }))} />
+            </div><small>1–5 Leads and 0–20 Members; feasibility still depends on available people.</small></FormGroup>
+            <FormGroup label="Estimated start date" className="third"><TextField name="startDate" type="date" required min={minimumDate} value={estimatedStartDate} onChange={(event) => changeEstimatedStartDate(event.target.value)} /></FormGroup>
+            <FormGroup label="Estimated completion date" className="third"><TextField name="completionDate" type="date" required min={estimatedStartDate || minimumDate} value={estimatedCompletionDate} onChange={(event) => setEstimatedCompletionDate(event.target.value)} /><small>At most 366 days after the start; include a weekday.</small></FormGroup>
+            <FormGroup label="Estimated effort" className="third"><div className="staffing-effort-control"><TextField aria-label="Estimated effort value" name="effortValue" type="number" required min="0.01" max={REQUEST_LIMITS.hours / EFFORT_HOURS[effortUnit]} step="0.01" value={effortValue} onChange={event => setEffortValue(event.target.value)} /><DropdownField aria-label="Estimated effort unit" name="effortUnit" value={effortUnit} onChange={setEffortUnit} options={[{ value: 'hours', label: 'Hours' }, { value: 'days', label: 'Days' }, { value: 'weeks', label: 'Weeks' }, { value: 'months', label: 'Months' }]} /></div><small>{Math.round(Number(effortValue) * EFFORT_HOURS[effortUnit] * 100) / 100} total person-hours. Maximum 100,000 hours; precision 0.01 hour.</small></FormGroup>
           </div>
         </CreateSection>
 

@@ -207,7 +207,8 @@ const input = {
   deliverables: [{ id: 'DEL-072', name: 'Spoofed name', custom: false }],
   requiredCapabilities: [{ id: 'SK-014', name: 'Spoofed capability', custom: false, requiredStrength: 3 }],
   estimatedEffort: { value: 2, unit: 'days' }, requestedPodSize: '1 lead + 2 contributors',
-  priority: 'Medium', businessObjectives: 'Objective', neededBy: '2026-12-01',
+  priority: 'Medium', businessObjectives: 'Objective', neededBy: '2099-12-01',
+  estimatedStartDate: '2099-11-02', estimatedCompletionDate: '2099-11-06',
 };
 function permissionQuery(binds) {
   return permissionRows.filter((row) => row.ROLE_CODE === binds.roleCode && row.RESOURCE_CODE === binds.resourceCode);
@@ -255,6 +256,81 @@ function mockSave(retired = false) {
   };
   return writes;
 }
+
+test('frontend and save validator enforce converted effort, schedule and POD bounds', () => {
+  const { validateCreateRequestPayload } = require('../lib/validation/staffing-mutations.ts');
+  const { convertedEffort, requestPodCounts, validateRequestSchedule } = require('../lib/request-limits.ts');
+  assert.equal(convertedEffort(625, 'months'), 100000);
+  assert.equal(convertedEffort(12500, 'days'), 100000);
+  assert.equal(convertedEffort(0.01, 'hours'), 0.01);
+  assert.deepEqual(requestPodCounts('5 leads + 20 contributors'), { leads: 5, contributors: 20 });
+  assert.equal(requestPodCounts('1 lead + 0 contributors').contributors, 0);
+  for (const [hours, unit] of [[0,'hours'], [-1,'days'], [625.01,'months'], [100001,'hours'], [0.0001,'days'], [0.00125,'days'], [Infinity,'hours'], [1,'years']]) {
+    assert.throws(() => convertedEffort(hours, unit), { status: 400 });
+  }
+  for (const size of ['0 leads + 2 contributors', '6 leads + 1 contributor', '1 lead + 21 contributors', '1.5 leads + 2 contributors']) {
+    assert.throws(() => requestPodCounts(size), { status: 400 });
+  }
+  validateRequestSchedule('2026-10-05', '2027-10-06'); // 366 days apart.
+  for (const dates of [['2026-10-05','2027-10-07'], ['2026-10-10','2026-10-11'], ['2026-02-30','2026-03-02'], ['', '2026-10-05']]) {
+    assert.throws(() => validateRequestSchedule(...dates), { status: 400 });
+  }
+  assert.equal(validateCreateRequestPayload({ ...input, estimatedEffort: { value: 625, unit: 'months' } }).estimatedEffort.value, 625);
+  for (const changes of [{ estimatedStartDate: '' }, { requestedPodSize: '6 leads + 0 contributors' },
+    { estimatedEffort: { value: 1000, unit: 'months' } }, { deliverables: Array(101).fill(input.deliverables[0]) }]) {
+    assert.throws(() => validateCreateRequestPayload({ ...input, ...changes }), { status: 400 });
+  }
+});
+
+test('catalogue matching keeps punctuation and refuses ambiguous names', () => {
+  const { catalogueName, uniqueNameIndex, normalizeCapabilities } = require('../lib/request-normalization.ts');
+  assert.notEqual(catalogueName('C++'), catalogueName('C#'));
+  assert.equal(catalogueName('  Comms   Team  '), 'comms team');
+  const items = [{ id: 'A', name: 'Review' }, { id: 'B', name: 'review' }, { id: 'C', name: 'Unique' }];
+  const index = uniqueNameIndex(items, item => item.name);
+  assert.equal(index.has('review'), false);
+  assert.equal(index.get('unique').id, 'C');
+  const different = ['New capability A', 'New capability B'].map(name => ({ id: 'same-browser-id', name, custom: true, mandatory: false, requiredStrength: null, source: 'Typed' }));
+  assert.equal(normalizeCapabilities(different).length, 2);
+});
+
+test('long objectives keep their full text without overflowing the legacy context summary', () => {
+  const { businessContextSummary } = require('../lib/request-limits.ts');
+  const original = '🙂'.repeat(1000);
+  const summary = businessContextSummary(original);
+  assert.equal(new TextEncoder().encode(summary).length, 2000);
+  assert.equal(summary, '🙂'.repeat(500));
+});
+
+test('catalogue and Other resolving to the same IDs save one deliverable and requirement', async () => {
+  const writes = mockSave();
+  await createStaffingRequest({ ...input,
+    deliverables: [input.deliverables[0], { id: 'CUSTOM-DEL-1', name: 'Executive Communication Support', note: 'Keep this customer context', custom: true }],
+    requiredCapabilities: [input.requiredCapabilities[0], { id: 'CUSTOM-SKILL-1', name: 'Comms Team', requiredStrength: 3, source: 'Typed name', custom: true, mandatory: true }],
+  }, { role: 'POD Captain', actor: 'test' });
+  const saved = JSON.parse(writes[0].binds.deliverablesJson);
+  assert.equal(saved.length, 1);
+  assert.match(saved[0].note, /Keep this customer context/);
+  assert.ok(saved[0].requestedNames.includes('Executive Communication Support'));
+  assert.equal(writes.length, 2);
+  assert.equal(writes[1].binds.interestId, 'SK-014');
+});
+
+test('conflicting resolved capability constraints never silently weaken or save', async () => {
+  for (const change of [{ requiredStrength: 5, mandatory: true }, { requiredStrength: 3, mandatory: false }]) {
+    const writes = mockSave();
+    await assert.rejects(createStaffingRequest({ ...input,
+      requiredCapabilities: [input.requiredCapabilities[0], { id: 'CUSTOM-SKILL-1', name: 'Comms Team', source: 'Typed', custom: true, ...change }],
+    }, { role: 'POD Captain', actor: 'test' }), /different requirements/);
+    assert.equal(writes.length, 0);
+  }
+});
+
+test('direct repository callers cannot bypass agent limits', async () => {
+  const writes = mockSave();
+  await assert.rejects(createStaffingRequest({ ...input, estimatedEffort: { value: 1000, unit: 'months' } }, { role: 'POD Captain', actor: 'test' }), /100,000/);
+  assert.equal(writes.length, 0);
+});
 test('new request uses canonical DB names, current revision and mapped capability links', async () => {
   const writes = mockSave();
   const result = await createStaffingRequest(input, { role: 'POD Captain', actor: 'test' });
@@ -271,7 +347,7 @@ test('Other entries resolve safely or remain request-scoped without blocking a v
   let writes = mockSave();
   await createStaffingRequest({ ...input,
     deliverables: [{ id: 'CUSTOM-DEL-1', name: 'Executive Communication Support', note: '', custom: true }],
-    requiredCapabilities: [{ id: 'CUSTOM-SKILL-1', name: 'Comms Team', requiredStrength: null, source: 'Request entry', custom: true }],
+    requiredCapabilities: [{ id: 'CUSTOM-SKILL-1', name: 'Comms Team', requiredStrength: null, source: 'Request entry', custom: true, mandatory: true }],
   }, { role: 'POD Captain', actor: 'test' });
   const exact = JSON.parse(writes[0].binds.deliverablesJson)[0];
   assert.equal(exact.id, 'DEL-072');
@@ -324,15 +400,18 @@ function adminFixture() {
   });
   return data;
 }
-const personInput = { fullName: '  New  Person ', jobTitle: 'Engineer', location: 'Bengaluru', email: 'NEW@example.COM', allocationPct: 0, activePods: 0 };
+const personInput = { fullName: '  New  Person ', jobTitle: 'Engineer', location: 'Bengaluru', email: 'NEW@oracle.COM', roles: ['POD_MEMBER'], enabled: true, staffingEligible: true };
 test('person validation normalizes names/email but rejects invalid and missing required data', () => {
-  assert.deepEqual(validateCreatePerson(personInput), { ...personInput, fullName: 'New Person', email: 'new@example.com' });
+  assert.deepEqual(validateCreatePerson(personInput), { ...personInput, fullName: 'New Person', email: 'new@oracle.com' });
   for (const input of [null, {}, {...personInput, allocationPct: -1}, {...personInput, allocationPct: 101},
     {...personInput, allocationPct: 1.111}, {...personInput, activePods: 1.5}, {...personInput, jobTitle: ''},
     {...personInput, location: ''}, {...personInput, fullName: 'a'.repeat(251)}, {...personInput, email: 'invalid'}]) {
     assert.throws(() => validateCreatePerson(input), { status: 400 });
   }
-  assert.equal(validateCreatePerson({...personInput, email: ''}).email, '');
+  for (const change of [{ email: '' }, { email: 'new@example.com' }, { roles: [] }, { roles: ['EXECUTIVE'] },
+    { roles: ['POD_MEMBER', 'POD_MEMBER'] }, { enabled: 'true' }, { staffingEligible: null }]) {
+    assert.throws(() => validateCreatePerson({...personInput, ...change}), { status: 400 });
+  }
 });
 test('expanded Administrator can open every screen without gaining Captain-only writes', () => {
   const data = adminFixture();
@@ -346,13 +425,13 @@ test('expanded Administrator can open every screen without gaining Captain-only 
   assert.match(renderProfile('Administrator', 'interests', data), /Add person/);
   assert.match(renderProfile('Administrator', 'availability', data), /People availability/);
 });
-test('create-person rejects every non-admin and an admin without the DB permission', async () => {
+test('retired directory-only writer rejects all callers without database writes', async () => {
   let queries = 0;
   execute = async () => { queries++; return { rows: [] }; };
   for (const role of ['POD Captain','POD Lead','POD Member']) await assert.rejects(createPerson(validateCreatePerson(personInput), { role }), { status: 403 });
   assert.equal(queries, 0);
-  await assert.rejects(createPerson(validateCreatePerson(personInput), { role: 'Administrator' }), { status: 403 });
-  assert.equal(queries, 1);
+  await assert.rejects(createPerson(validateCreatePerson(personInput), { role: 'Administrator' }), { code: 'EMPLOYEE_PROVISIONING_REQUIRED' });
+  assert.equal(queries, 0);
 });
 function personQueryMock({ emailExists = false, insertError, sequenceError, personNumber = '12' } = {}) {
   const inserts = [];
@@ -376,25 +455,19 @@ function personQueryMock({ emailExists = false, insertError, sequenceError, pers
   };
   return inserts;
 }
-test('person save inserts one active real row using numeric ID and no role/skills/assignment writes', async () => {
+test('old directory-only path cannot produce an incomplete application user', async () => {
   const inserts = personQueryMock();
-  const result = await createPerson(validateCreatePerson(personInput), { role: 'Administrator' });
-  assert.deepEqual(result, { personId: 'P-012', fullName: 'New Person' });
-  assert.equal(inserts.length, 1);
-  assert.equal(inserts[0].binds.initials, 'NP');
-  assert.equal(inserts[0].binds.email, 'new@example.com');
-  assert.match(inserts[0].statement, /'Y'/);
-  personQueryMock({ personNumber: '1001' });
-  assert.equal((await createPerson(validateCreatePerson(personInput), { role: 'Administrator' })).personId, 'P-1001');
+  await assert.rejects(createPerson(validateCreatePerson(personInput), { role: 'Administrator' }), { code: 'EMPLOYEE_PROVISIONING_REQUIRED' });
+  assert.equal(inserts.length, 0);
 });
-test('duplicate emails, concurrent unique violations and missing sequence fail with actionable errors', async () => {
+test('directory-only compatibility guard cannot be bypassed with duplicate or missing-sequence fixtures', async () => {
   const inserts = personQueryMock({ emailExists: true });
   await assert.rejects(createPerson(validateCreatePerson(personInput), { role: 'Administrator' }), { status: 409 });
   assert.equal(inserts.length, 0);
   personQueryMock({ insertError: { errorNum: 1 } });
   await assert.rejects(createPerson(validateCreatePerson(personInput), { role: 'Administrator' }), { status: 409 });
   personQueryMock({ sequenceError: { errorNum: 2289 } });
-  await assert.rejects(createPerson(validateCreatePerson(personInput), { role: 'Administrator' }), { status: 503, code: 'PEOPLE_SETUP_REQUIRED' });
+  await assert.rejects(createPerson(validateCreatePerson(personInput), { role: 'Administrator' }), { status: 409, code: 'EMPLOYEE_PROVISIONING_REQUIRED' });
 });
 test('request-source lookup queries active people and returns ID/name only', async () => {
   execute = async (statement) => {
@@ -472,6 +545,33 @@ test('screen rendering offers Captain actions but not Lead or Member mutations',
   assert.match(renderProfile('POD Lead', 'interests'), /My active POD team/);
   assert.doesNotMatch(renderProfile('POD Member', 'interests'), /Unassigned Person/);
 });
+
+test('dashboard renders staffed projects outside the pending staffing queue', () => {
+  const data = fixture();
+  data.requests = data.requests.slice(0, 2);
+  data.requests[0].status = 'Staffed';
+  data.requests[0].title = 'Ongoing project only';
+  data.requests[1].status = 'Needs recommendation';
+  data.requests[1].title = 'Needs a new POD';
+  const html = renderProfile('POD Captain', 'dashboard', data);
+  assert.match(html, /Pending staffing \(1\)/);
+  assert.match(html, /Staffed projects \(1\)/);
+  const pending = html.slice(html.indexOf('Pending staffing'), html.indexOf('Capacity watch'));
+  assert.match(pending, /Needs a new POD/);
+  assert.doesNotMatch(pending, /Ongoing project only/);
+  assert.doesNotMatch(html, /Past planned end/);
+  assert.match(html, /Filter demand by project type/);
+});
+
+test('audit viewer renders real read-only filters and loading state, without placeholder save actions', () => {
+  const React = require('react');
+  const { renderToStaticMarkup } = require('react-dom/server');
+  const { AuditHistory } = require('../components/screens/administration/AuditHistory.tsx');
+  const html = renderToStaticMarkup(React.createElement(AuditHistory));
+  for (const label of ['Read-only records from Oracle', 'Record type', 'Request ID', 'From date (UTC)', 'Actor name or identity', 'Loading saved history']) assert.ok(html.includes(label));
+  assert.doesNotMatch(html, /Feature in progress|Save changes/);
+  assert.match(html, /type="button"[^>]*>Clear/);
+});
 test('Administrator lands on administration rather than operational data; revoked profile fails closed', () => {
   const html = renderProfile('Administrator', 'requests');
   assert.match(html, /Administration|Roles &amp; access/);
@@ -485,7 +585,7 @@ test('Administrator lands on administration rather than operational data; revoke
 test('empty assignments have a usable Lead view, and new capability appears in taxonomy', () => {
   const data = fixture();
   data.requests = [];
-  assert.match(renderProfile('POD Lead', 'dashboard', data), /No active projects are assigned/);
+  assert.match(renderProfile('POD Lead', 'dashboard', data), /No requests are waiting for staffing/);
   assert.match(renderProfile('POD Lead', 'fitment', data), /No staffing request/);
   renderProfile('Administrator', 'admin');
   appContext.state.adminTab = 'taxonomy';
@@ -538,9 +638,12 @@ test('availability save inserts for the own profile and rejects another person, 
 test('availability dates reject backdating, reversed intervals, invalid types and excessive hours', () => {
   const { validateCreateAvailabilityPayload } = require('../lib/validation/staffing-mutations.ts');
   const { requestBusinessDate } = require('../lib/request-date-policy.ts');
+  const { availabilityEventLabel } = require('../lib/formatting.ts');
   const today = requestBusinessDate();
   const event = { personId: 'P-001', eventType: 'OOO', startsOn: today, endsOn: today, title: '', allocatedHours: 8 };
   assert.equal(validateCreateAvailabilityPayload(event).title, 'OOO');
+  assert.equal(availabilityEventLabel('OOO'), 'Out of office');
+  assert.equal(availabilityEventLabel('Leave'), 'Leave');
   for (const invalid of [{ startsOn: '2000-01-01' }, { endsOn: '2000-01-01' }, { eventType: 'Invalid' }, { allocatedHours: 25 }]) {
     assert.throws(() => validateCreateAvailabilityPayload({ ...event, ...invalid }), { status: 400 });
   }

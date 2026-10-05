@@ -10,6 +10,7 @@ import { canPerform, configuredRolePermission, type PermissionAction } from '@/l
 import { STAFFING_ROLES } from '@/types/roles';
 import { UtilizationSettings } from './UtilizationSettings';
 import { AccountAccess } from './AccountAccess';
+import { AuditHistory } from './AuditHistory';
 
 const ACTIONS: { label: string; resource: string; action: PermissionAction }[] = [
   { label: 'Submit requests', resource: 'REQUESTS', action: 'canCreate' },
@@ -23,18 +24,16 @@ const ACTIONS: { label: string; resource: string; action: PermissionAction }[] =
 ];
 
 export function AdministrationScreen() {
-  const { data, state, dispatch, setRole, notify } = useStaffingApp();
+  const { data, state, dispatch, setRole } = useStaffingApp();
   const tabs = [['roles', 'Roles & access'], ['taxonomy', 'Taxonomies'], ['rules', 'Agent rules'], ['audit', 'Audit trail']] as const;
-  const pending = () => notify('Feature in progress', 'This workflow will be available in a future release.');
   return <section className="staffing-screen">
     <PageHeader title="Administration" description="Review profile permissions, catalogue configuration, and integration status." actions={<>
       {!data.identity && <Button onClick={() => setRole('POD Member')}>Preview as POD Member</Button>}
-      {state.adminTab !== 'rules' && canPerform(state.role, 'BACKEND_CONFIGURATION', 'canUpdate', data.authorization) ? <Button variant="primary" onClick={pending}>Save changes</Button> : null}
     </>} />
     <Card padded>
       <div className="staffing-admin-tabs">{tabs.map(([id, label]) => <button type="button" className={state.adminTab === id ? 'active' : ''} key={id} onClick={() => dispatch({ type: 'set-admin-tab', tab: id })}>{label}</button>)}</div>
       {state.adminTab === 'roles' ? <div className="staffing-admin-panel">
-        <p className="staffing-muted">Permissions loaded from Oracle. POD Lead and POD Member access is limited to their assigned projects and team. Permission does not mean an on-hold workflow is implemented.</p>
+        <p className="staffing-muted">Permissions loaded from Oracle. POD Lead and POD Member access is limited to their assigned projects and team. The catalogue below is read-only; account access and utilization settings have their own save actions.</p>
         <div style={{ overflowX: 'auto' }}><table className="staffing-role-table">
           <thead><tr><th>Profile</th>{ACTIONS.map((item) => <th key={item.label}>{item.label}</th>)}</tr></thead>
           <tbody>{STAFFING_ROLES.map((role) => <tr key={role}><th>{role}</th>{ACTIONS.map((item) => {
@@ -60,8 +59,8 @@ export function AdministrationScreen() {
           ? <UtilizationSettings /> : <Notice title="Administrator access required">Only an Administrator can edit the utilization limit.</Notice>}
       </div> : null}
       {state.adminTab === 'audit' ? <div className="staffing-admin-panel">
-        <Notice title="Audit trail on hold">Immutable audit, approval history, and final assignment persistence are not enabled in the current model.</Notice>
-        <Button onClick={pending}>View audit trail</Button>
+        {data.identity && state.role === 'Administrator' && canPerform(state.role, 'ADMINISTRATION', 'canView', data.authorization)
+          ? <AuditHistory /> : <Notice title="Authenticated Administrator access required">Sign in as an authorized Administrator to view saved audit events, decisions and assignments. Preview mode does not load private history.</Notice>}
       </div> : null}
     </Card>
   </section>;

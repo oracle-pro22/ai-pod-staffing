@@ -1,9 +1,15 @@
 import type { EstimatedEffort, StaffingRequest } from '@/types/staffing';
 import type { Tone } from '@/types/ui';
+import { allocationState } from '@/lib/allocation-policy';
 
-export function personAllocationLabel(person: { allocationPct: number; capacityStatus?: string }): string {
+export function personAllocationLabel(person: { allocationPct: number; capacityStatus?: string; staffingEligible?: boolean }): string {
+  if (person.staffingEligible === false) return 'Not eligible for POD assignment';
   if (person.capacityStatus === 'NO_CAPACITY') return 'No available hours';
   return person.capacityStatus && person.capacityStatus !== 'CURRENT' ? 'Needs refresh' : `${person.allocationPct}%`;
+}
+
+export function availabilityEventLabel(value: string): string {
+  return value === 'OOO' ? 'Out of office' : value === 'Commitment' ? 'External commitment' : value;
 }
 
 function parseWorkbookDate(value: string): Date | null {
@@ -48,10 +54,9 @@ export function statusTone(status: string): Tone {
   return 'amber';
 }
 
-export function allocationTone(value: number): Tone {
-  if (value >= 80) return 'red';
-  if (value >= 70) return 'amber';
-  return '';
+export function allocationTone(value: number | null | undefined, limit?: unknown, known = true): Tone {
+  const state = allocationState(value, limit, known);
+  return state === 'above' ? 'red' : state === 'at' ? 'amber' : state === 'within' ? 'teal' : 'neutral';
 }
 
 export function unique<T>(values: T[]): T[] {

@@ -55,7 +55,7 @@ export function validateSelfSkillsPatch(value: unknown): SelfSkillsPatch {
       const evidence = String(row.evidence ?? '').trim();
       // Existing Oracle column uses byte semantics; avoid a late ORA-12899 for Unicode input.
       if (Buffer.byteLength(evidence, 'utf8') > 2000) throw validationError('Evidence must fit within 2,000 UTF-8 bytes.');
-      if (row.strength !== null && !evidence) throw validationError('Add a short evidence note for a proficiency rating.');
+      if (row.strength !== null && !evidence) throw validationError('Describe your experience with this skill before saving a proficiency rating.');
       return { skillId: id, strength: row.strength as number | null, interested: row.interested, evidence };
     }),
     removeSkillIds: removals.map(uniqueId),

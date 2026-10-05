@@ -7,6 +7,7 @@ import { canAccessScreen, screenLabel } from '@/lib/role-policy';
 
 import { RoleSelector } from './RoleSelector';
 import { ChangePersonaButton } from './PersonaSession';
+import { PasswordAccountMenu } from './PasswordAccountMenu';
 
 export function Topbar({ onMenu }: { onMenu: () => void }) {
   const { data, state, dispatch, notify } = useStaffingApp();
@@ -37,7 +38,7 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
           />
         </label>
         <RoleSelector />
-        {data.identity?.sessionMode === 'password' ? <ChangePersonaButton password /> : data.identity?.sessionMode === 'persona' ? <ChangePersonaButton /> : data.identity &&
+        {data.identity?.sessionMode === 'password' ? <PasswordAccountMenu /> : data.identity?.sessionMode === 'persona' ? <ChangePersonaButton /> : data.identity &&
           <form method="post" action="/api/auth/logout"><button type="submit" className="staffing-btn">Sign out</button></form>}
         <button
           type="button"

@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
 
   if (matchedPerson) {
     const strongest = matchedPerson.skills.slice(0, 3).map((skill) => `${skill.name} (${skill.strength}/5)`).join(', ') || 'no mapped skills';
-    const events = matchedPerson.availability.map((event) => `${event.title}, ${event.startsOn} to ${event.endsOn}`).join('; ') || 'no recorded availability events';
+    const events = matchedPerson.availability.filter(event => event.status !== 'CANCELLED').map((event) => `${event.title}, ${event.startsOn} to ${event.effectiveUntil ?? event.endsOn}`).join('; ') || 'no recorded availability events';
     answer = `${matchedPerson.name}: allocation ${personAllocationLabel(matchedPerson)} across ${matchedPerson.activePods} active pods. Strongest customer skills: ${strongest}. Availability: ${events}.`;
   } else if (matchedRequest) {
     const skills = matchedRequest.requiredSkills.map((skill) => skill.name).join(', ');
@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
     answer = `${matchedRequest.id} is a ${matchedRequest.projectType.name} request for ${matchedRequest.deliverable.name}. Required skills: ${skills}. Status: ${matchedRequest.status}. ${recommendationLabel}: ${pod}.`;
   } else if (/available|capacity|headroom|allocation/.test(query)) {
     const available = [...visiblePeople]
-      .filter(person => !person.capacityStatus || person.capacityStatus === 'CURRENT')
+      .filter(person => person.staffingEligible !== false && (!person.capacityStatus || person.capacityStatus === 'CURRENT'))
       .sort((a, b) => a.allocationPct - b.allocationPct)
       .slice(0, 4)
       .map((person) => `${person.name} (${person.allocationPct}%)`)

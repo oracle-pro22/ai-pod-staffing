@@ -66,6 +66,11 @@ class OnboardingInput(Contract):
             raise ValueError('Work entries must fit the confirmed period')
         if len({s.skill_id for s in self.skills}) != len(self.skills) or len({d.deliverable_id for d in self.deliverables}) != len(self.deliverables):
             raise ValueError('Duplicate assessments')
+        for skill in self.skills:
+            if skill.strength is not None and not skill.evidence.strip():
+                raise ValueError('Describe your experience with each rated skill.')
+            if len(skill.evidence.strip().encode('utf-8')) > 2000:
+                raise ValueError('Your experience with this skill must fit within 2,000 UTF-8 bytes.')
         if len({(w.kind, w.title, w.starts_on, w.ends_on) for w in self.work}) != len(self.work):
             raise ValueError('Duplicate work entries')
         totals = {}
@@ -107,12 +112,12 @@ def authorize(c, actor, resource, action, role):
     current_account(c, actor)
     demand(rows(c, f"""SELECT ur.person_id FROM app_user_roles ur JOIN app_roles ar
         ON ar.role_code=ur.role_code AND ar.active_flag='Y'
-        JOIN role_permissions rp ON rp.role_code=ar.role_code AND rp.resource_code=:resource
+        JOIN role_permissions rp ON rp.role_code=ar.role_code AND rp.resource_code=:resourceCode
         WHERE ur.identity_subject=:subject AND ur.person_id=:pid AND ur.role_code=:role
         AND ur.active_flag='Y' AND ur.effective_from<=TRUNC(SYSDATE)
         AND (ur.effective_to IS NULL OR ur.effective_to>=TRUNC(SYSDATE))
         AND rp.can_view='Y' AND rp.can_{action}='Y' AND rp.access_scope='FULL'""",
-        resource=resource, subject=actor.subject, pid=actor.person_id, role=role), 'Your permission changed.', 'FORBIDDEN', 403)
+        resourceCode=resource, subject=actor.subject, pid=actor.person_id, role=role), 'Your permission changed.', 'FORBIDDEN', 403)
 
 
 def audit(c, actor, entity, action, reason):
@@ -217,7 +222,7 @@ class RosterLifecycle:
                 execute(c, """INSERT INTO person_interests(person_id,interest_id,strength,interested_flag,evidence_note,source)
                     VALUES(:pid,:skill,:strength,:interested,:evidence,'Self-assessment')""",
                     pid=actor.person_id, skill=skill.skill_id, strength=skill.strength,
-                    interested='Y' if skill.interested else 'N', evidence=skill.evidence or None)
+                    interested='Y' if skill.interested else 'N', evidence=skill.evidence.strip() or None)
             experiences = [{'deliverableId': d.deliverable_id, 'experienceLevel': d.experience_level.value,
                 'contributionScope': d.contribution_scope, 'interested': d.interested, 'experience': d.experience} for d in body.deliverables]
             from app.execution_store import execute as clob_execute
@@ -232,7 +237,7 @@ class RosterLifecycle:
                 else:
                     execute(c, """INSERT INTO availability(person_id,event_type,starts_on,ends_on,title,allocated_hours,capacity_kind,created_by)
                         VALUES(:pid,:kind,:startDay,:endDay,:title,:hours,:capacityKind,:actor)""",
-                        pid=actor.person_id, kind='Leave' if w.kind == 'LEAVE' else 'Commitment', startDay=w.starts_on,
+                        pid=actor.person_id, kind='Leave' if w.kind == 'LEAVE' else 'External commitment', startDay=w.starts_on,
                         endDay=w.ends_on, title=w.title, hours=w.total_hours,
                         capacityKind='NON_AVAILABILITY' if w.kind == 'LEAVE' else 'EXTERNAL_WORK', actor=actor.subject)
             refresh(SameConnection(c), actor.person_id, body.starts_on, body.ends_on, actor.subject, commit=True)

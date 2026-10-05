@@ -22,6 +22,7 @@ const { personaModeEnabled, personaSessionKey, PERSONA_PAGE_HEADER } = require('
 const { staffingBackend, agenticEnabled } = require('../backend/staffing/bridge.ts');
 const { POST: login } = require('../app/api/auth/login/route.ts');
 const { POST: logout } = require('../app/api/auth/logout/route.ts');
+const { POST: changePassword } = require('../app/api/auth/password/route.ts');
 const { GET: personas } = require('../app/api/personas/route.ts');
 const { completeLogin } = require('../backend/staffing/login.ts');
 const { passwordWorkspaceError } = require('../backend/staffing/workspace-error.ts');
@@ -35,6 +36,9 @@ function request(method='POST', body, headers={}) {
 }
 function selected(method='GET', headers={}) {
   return request(method, undefined, {cookie: `${PASSWORD_COOKIE}=${token}`, [PERSONA_PAGE_HEADER]: personaSessionKey(token), ...headers});
+}
+function selectedBody(body, headers={}) {
+  return request('POST', body, {cookie: `${PASSWORD_COOKIE}=${token}`, [PERSONA_PAGE_HEADER]: personaSessionKey(token), ...headers});
 }
 function json(value,status=200) { return new Response(JSON.stringify(value), {status, headers:{'Content-Type':'application/json'}}); }
 test.beforeEach(() => {
@@ -120,6 +124,26 @@ test('logout revokes the server session before clearing the browser cookie', asy
   global.fetch = async (url,init) => { assert.match(String(url),/password\/logout$/); assert.equal(init.headers.Authorization,`Bearer ${token}`); called=true; return json({ok:true}); };
   const response = await logout(selected('POST'));
   assert.equal(response.status,200); assert.equal(called,true); assert.equal(response.cookies.get(PASSWORD_COOKIE).value,'');
+});
+test('password change forwards only the two passwords, then clears the revoked session cookie', async () => {
+  global.fetch = async (url,init) => {
+    assert.match(String(url),/password\/change$/);
+    assert.equal(init.headers.Authorization,`Bearer ${token}`);
+    assert.deepEqual(JSON.parse(init.body),{current_password:'CurrentPass1!',new_password:'Replacement2$'});
+    return json({ok:true,sessions_revoked:true});
+  };
+  const response = await changePassword(selectedBody({currentPassword:'CurrentPass1!',newPassword:'Replacement2$',confirmPassword:'Replacement2$'}));
+  assert.equal(response.status,200);
+  assert.deepEqual(await response.json(),{ok:true,sessionsRevoked:true});
+  assert.equal(response.cookies.get(PASSWORD_COOKIE).value,'');
+});
+test('password change rejects mismatch or extra fields before contacting the backend', async () => {
+  let calls=0; global.fetch=async()=>{ calls++; return json({}); };
+  for (const body of [
+    {currentPassword:'CurrentPass1!',newPassword:'Replacement2$',confirmPassword:'different'},
+    {currentPassword:'CurrentPass1!',newPassword:'Replacement2$',confirmPassword:'Replacement2$',role:'Administrator'},
+  ]) assert.equal((await changePassword(selectedBody(body))).status,400);
+  assert.equal(calls,0);
 });
 test('organization callback and management options cannot bypass password mode', async () => {
   await assert.rejects(() => completeLogin(request('GET')), {code:'LOGIN_DISABLED'});

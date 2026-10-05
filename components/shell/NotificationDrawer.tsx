@@ -1,5 +1,6 @@
 'use client';
 
+import { capacityAttention } from '@/lib/allocation-policy';
 import { Button } from '@/components/ui/Button';
 import { Drawer } from '@/components/ui/Drawer';
 import { useStaffingApp } from '@/context/StaffingAppProvider';
@@ -12,7 +13,7 @@ export function NotificationDrawer() {
   const pending = requests.flatMap((request) => selectScopedRecommendations(request, data, state.role))
     .filter((item) => /pending/i.test(item.decisionStatus));
   const constrained = selectVisiblePeople(data, state.role)
-    .filter((person) => person.allocationPct >= 70);
+    .filter(person => capacityAttention(person, data.allocationPolicy?.maximumAllocationPct));
   const close = () => dispatch({ type: 'close-drawer' });
 
   return (
@@ -23,7 +24,7 @@ export function NotificationDrawer() {
       </div>
       <div className="staffing-audit-item">
         <i className="staffing-audit-dot" />
-        <div><b>{constrained.length} people are at or above 70%</b><div className="staffing-row-sub">{constrained.map((person) => person.name).join(', ') || 'No constrained people'}</div></div>
+        <div><b>{data.allocationPolicy ? `${constrained.length} people are at or above ${data.allocationPolicy.maximumAllocationPct}%` : 'Allocation policy unavailable'}</b><div className="staffing-row-sub">{constrained.map((person) => person.name).join(', ') || 'No constrained people'}</div></div>
       </div>
       <div className="staffing-audit-item">
         <i className="staffing-audit-dot" />

@@ -1,4 +1,5 @@
-import { validationError } from '@/lib/errors/staffing-api-error';
+import { validationError } from '@/lib/errors/staffing-error';
+import { convertedEffort, requestPodCounts, validateRequestSchedule, REQUEST_LIMITS } from '@/lib/request-limits';
 import { isBeforeRequestBusinessDate, requestBusinessDate } from '@/lib/request-date-policy';
 import type { CreateAvailabilityPayload, CreateRequestPayload } from '@/types/mutations';
 import type { EffortUnit, RequestDeliverable, RequiredCapability } from '@/types/staffing';
@@ -39,12 +40,13 @@ function dateText(value: unknown, label: string, required = false): string {
 
 function positiveNumber(value: unknown, label: string): number {
   const result = Number(value);
-  if (!Number.isFinite(result) || result <= 0 || result > 10000) throw validationError(`${label} must be greater than zero.`);
+  if (!Number.isFinite(result) || result <= 0) throw validationError(`${label} must be greater than zero.`);
   return result;
 }
 
 function deliverables(value: unknown): RequestDeliverable[] {
   if (!Array.isArray(value) || value.length === 0) throw validationError('Add at least one deliverable.');
+  if (value.length > REQUEST_LIMITS.entries) throw validationError('Choose at most 100 deliverables.');
   const seen = new Set<string>();
   return value.map((item, index) => {
     const entry = record(item);
@@ -62,6 +64,7 @@ function deliverables(value: unknown): RequestDeliverable[] {
 
 function capabilities(value: unknown): RequiredCapability[] {
   if (!Array.isArray(value) || value.length === 0) throw validationError('Add at least one required capability.');
+  if (value.length > REQUEST_LIMITS.entries) throw validationError('Choose at most 100 capabilities.');
   const seen = new Set<string>();
   return value.map((item, index) => {
     const entry = record(item);
@@ -96,8 +99,9 @@ export function validateCreateRequestPayload(value: unknown): CreateRequestPaylo
   if (!PRIORITIES.has(priority)) throw validationError('Priority must be Low, Medium, or High.');
 
   const neededBy = dateText(input.neededBy, 'Needed by date', true);
-  const estimatedStartDate = dateText(input.estimatedStartDate, 'Estimated start date');
-  const estimatedCompletionDate = dateText(input.estimatedCompletionDate, 'Estimated completion date');
+  const estimatedStartDate = dateText(input.estimatedStartDate, 'Estimated start date', true);
+  const estimatedCompletionDate = dateText(input.estimatedCompletionDate, 'Estimated completion date', true);
+  validateRequestSchedule(estimatedStartDate, estimatedCompletionDate);
   const today = requestBusinessDate();
   if (isBeforeRequestBusinessDate(neededBy, today)) {
     throw validationError('Needed by date cannot be earlier than today.');
@@ -117,9 +121,8 @@ export function validateCreateRequestPayload(value: unknown): CreateRequestPaylo
   if (!EFFORT_UNITS.has(unit)) throw validationError('Estimated effort unit is not valid.');
 
   const requestedPodSize = requiredText(input.requestedPodSize, 'Requested pod size', 100);
-  if (!/^\d+\s+leads?\s*\+\s*\d+\s+contributors?$/i.test(requestedPodSize)) {
-    throw validationError('Requested pod size is not valid.');
-  }
+  requestPodCounts(requestedPodSize);
+  convertedEffort(positiveNumber(effort.value, 'Estimated effort'), unit);
 
   return {
     title: requiredText(input.title, 'Request title', 500),

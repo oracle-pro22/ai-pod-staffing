@@ -56,8 +56,10 @@ export function shiftDay(value: string, offset: number) {
 // Availability stores total event hours, not hours per day. Match the backend's
 // weekday distribution and preserve cents instead of duplicating multi-day hours.
 export function availabilityDayHours(event: AvailabilityEvent, day: string): number | null {
+  if (event.status === 'CANCELLED') return null;
   const start = event.startsOn.slice(0, 10), end = (event.endsOn || event.startsOn).slice(0, 10);
   if (day < start || day > end) return null;
+  if (event.effectiveUntil && day > event.effectiveUntil) return null;
   const total = Number(event.allocatedHours);
   if (!Number.isFinite(total) || total <= 0) return null;
   const dates: string[] = [];
@@ -69,4 +71,13 @@ export function availabilityDayHours(event: AvailabilityEvent, day: string): num
   if (index < 0) return null;
   const cents = Math.round(total * 100);
   return (Math.floor(cents / dates.length) + (index < cents % dates.length ? 1 : 0)) / 100;
+}
+
+export function availabilityRemainingHours(event: AvailabilityEvent, from: string): number {
+  const end = event.effectiveUntil && event.effectiveUntil < event.endsOn ? event.effectiveUntil : event.endsOn;
+  let cents = 0;
+  for (let day = event.startsOn, i = 0; day <= end && i < 367; day = shiftDay(day, 1), i++) {
+    if (day >= from) cents += Math.round((availabilityDayHours(event, day) ?? 0) * 100);
+  }
+  return cents / 100;
 }

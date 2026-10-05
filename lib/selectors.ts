@@ -2,6 +2,7 @@ import { canAccessScreen, identityPersonId, rolePermission } from '@/lib/role-po
 import type { StaffingRole } from '@/types/roles';
 import type { StaffingPerson, StaffingRecommendation, StaffingRequest, StaffingViewModel } from '@/types/staffing';
 import { ROLE_CODES } from '@/types/roles';
+import { capacityAttention } from '@/lib/allocation-policy';
 
 export function selectIdentityPerson(data: StaffingViewModel, role: StaffingRole): StaffingPerson | null {
   if (data.identity) return data.people.find(person => person.id === data.identity!.personId) ?? null;
@@ -82,7 +83,7 @@ export function selectScopedRecommendations(
 export function selectDashboardMetrics(data: StaffingViewModel, role: StaffingRole) {
   const requests = selectVisibleRequests(data, role);
   const people = selectVisiblePeople(data, role);
-  const knownPeople = people.filter(person => !person.capacityStatus || person.capacityStatus === 'CURRENT');
+  const knownPeople = people.filter(person => person.staffingEligible !== false && (!person.capacityStatus || person.capacityStatus === 'CURRENT'));
   const activeRequests = requests.filter((request) => request.status.toLowerCase() !== 'closed');
   const staffedRequests = activeRequests.filter((request) => request.status.toLowerCase() === 'staffed');
   const pendingRecommendations = requests.reduce(
@@ -97,7 +98,7 @@ export function selectDashboardMetrics(data: StaffingViewModel, role: StaffingRo
     averageAllocationPct: knownPeople.length
       ? Math.round(knownPeople.reduce((total, person) => total + person.allocationPct, 0) / knownPeople.length)
       : 0,
-    constrainedPeople: people.filter((person) => person.allocationPct >= 70).length,
+    constrainedPeople: knownPeople.filter((person) => capacityAttention(person, data.allocationPolicy?.maximumAllocationPct)).length,
     staffingProgressPct: activeRequests.length ? Math.round((staffedRequests.length / activeRequests.length) * 100) : 0,
     staffedRequests: staffedRequests.length,
     pendingRecommendations: data.identity ? data.metrics.pendingRecommendations : pendingRecommendations,

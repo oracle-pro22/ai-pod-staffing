@@ -8,10 +8,13 @@ import { LiveFitmentPresentation } from './LiveFitmentPresentation';
 import { useStaffingApp } from '@/context/StaffingAppProvider';
 import { ManualPodEditor, type ManualSlot, type ManualPerson } from './ManualPodEditor';
 import { canCaptainAct } from '@/lib/live-permissions';
+import { RescheduleRequest } from './RescheduleRequest';
+import { AnswerClarification } from './AnswerClarification';
+import { requestBusinessDate } from '@/lib/request-date-policy';
 
-export type RequestRow = { request_id: string; title: string; status: string; responsible_captain_id: string };
+export type RequestRow = { request_id: string; title: string; status: string; responsible_captain_id: string; request_revision?: number; starts_on?: string; ends_on?: string; needed_by?: string; total_hours?: number };
 type Identity = { person_id: string; roles: string[]; permissions: { role: string; resource: string; scope: string; actions: string[] }[] };
-export type Execution = { execution_id: string; request_id: string; status: string; last_error_code?: string; last_error_summary?: string;
+export type Execution = { execution_id: string; request_id: string; request_revision?: number; status: string; last_error_code?: string; last_error_summary?: string; clarification_fields?: string[];
   clarification_questions: string[]; events: { event_sequence: number; stage: string; status: string; summary: string }[];
   proposals: { proposal_id: string; status: string }[] };
 export type Member = { person_id: string; full_name: string; role_in_pod: string; planned_hours: number; score: number | null;
@@ -205,11 +208,23 @@ export function LiveStaffingReview({ executionView = false }: { executionView?: 
     finally { setBusy(false); mutating.current = false; }
   }
 
+  const expiredDates = Boolean(selected?.starts_on && selected.starts_on < requestBusinessDate());
+  const previousRevision = Boolean(execution?.request_id === requestId && execution?.request_revision !== undefined
+    && selected?.request_revision !== undefined && execution.request_revision < selected.request_revision);
+  // Rejection remains available for an expired proposal. The server rejects
+  // approval until dates are updated, without disabling unrelated decisions.
   const canDecide = Boolean(hasPermission('AI_FITMENT', 'approve') && reviewedProposal?.status === 'READY_FOR_REVIEW'
     && reviewedProposal.request_id === requestId && reviewedProposal.stale === 'N' && !running);
   const initialMembers = manualDraft?.members ?? (proposal?.status === 'READY_FOR_REVIEW' && proposal.stale === 'N' && proposal.selection_review ? proposal.selection_review.members : []);
-  return <><LiveFitmentPresentation executionView={executionView} request={selected}
-    requests={requests} execution={execution?.request_id === requestId ? execution : null}
+  return <>{expiredDates && selected && ['NEEDS_RECOMMENDATION', 'IN_REVIEW'].includes(selected.status) && hasPermission('AI_FITMENT', 'approve') &&
+    <RescheduleRequest key={`${selected.request_id}:${selected.request_revision}`} request={selected} disabled={busy || running} onSaved={() => { setRefresh(n => n + 1); router.refresh(); }} />}
+    {selected && execution?.request_id === requestId && execution.status === 'NEEDS_INFORMATION'
+      && execution.request_revision === selected.request_revision && Boolean(execution.clarification_fields?.length)
+      && canManual && hasPermission('AGENT_EXECUTION', 'create') && <AnswerClarification
+        key={`${selected.request_id}:${selected.request_revision}:${execution.execution_id}`} requestId={selected.request_id}
+        disabled={busy || running || expiredDates} onSaved={message => { notify('Clarification saved', message); setRefresh(n => n + 1); router.refresh(); }} />}
+    <LiveFitmentPresentation executionView={executionView} request={selected}
+    requests={requests} execution={execution?.request_id === requestId && !previousRevision ? execution : null}
     proposal={(executionView ? proposal : reviewedProposal)?.request_id === requestId ? (executionView ? proposal : reviewedProposal) : null} loading={loading} busy={busy}
     running={running} error={error} canRun={Boolean(hasPermission('AGENT_EXECUTION', 'create')) && !manualDraft}
     canDecide={canDecide} decision={decision} reason={reason}
@@ -219,6 +234,7 @@ export function LiveStaffingReview({ executionView = false }: { executionView?: 
     canManual={canManual && Boolean(manualState) && !running} onManual={() => setManualOpen(true)} onDiscardManual={discardManual}
     onCancelDecision={() => { if (!busy) { setDecision(null); setReason(''); } }}
     onSelect={requestId => dispatch({ type: 'set-active-request', requestId })} />
+    {previousRevision && <p role="status">Updated request saved. Waiting for an agent run for this revision. Agents must be enabled and the worker running; you can also use Re-run.</p>}
     {manualOpen && manualState && <ManualPodEditor key={manualDraft?.draft_id ?? requestId} people={manualState.people} selected={initialMembers}
       slots={manualDraft?.slots} leadCount={manualState.lead_count}
       memberCount={manualState.member_count}

@@ -92,9 +92,9 @@ export async function readOracleStaffingSnapshot(): Promise<OracleStaffingSnapsh
              TO_CHAR(starts_on, 'YYYY-MM-DD') AS starts_on,
              TO_CHAR(ends_on, 'YYYY-MM-DD') AS ends_on,
              title,
-             allocated_hours, capacity_kind, created_by, created_at, updated_at
+             allocated_hours, capacity_kind, status, TO_CHAR(effective_until,'YYYY-MM-DD') effective_until, revision, created_by, created_at, updated_at
         FROM availability
-       WHERE status = 'ACTIVE'
+       WHERE status IN ('ACTIVE','CANCELLED')
        ORDER BY starts_on, person_id, availability_id
     `),
     requests: await rows(connection, `

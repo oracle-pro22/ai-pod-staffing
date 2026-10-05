@@ -3,6 +3,7 @@ import hashlib
 import hmac
 import re
 import secrets
+from uuid import uuid4
 
 from pydantic import Field, SecretStr, field_validator
 
@@ -29,6 +30,20 @@ class PasswordLogin(Contract):
     @classmethod
     def email_address(cls, value):
         return normalize_email(value)
+
+
+class PasswordChange(Contract):
+    current_password: SecretStr = Field(min_length=1, max_length=1024)
+    new_password: SecretStr = Field(min_length=1, max_length=128)
+
+
+def require_strong_password(password: str):
+    if len(password) < 10:
+        raise ServiceError("WEAK_PASSWORD", "Use at least 10 characters.", 400)
+    if not any(value.islower() for value in password) or not any(value.isupper() for value in password):
+        raise ServiceError("WEAK_PASSWORD", "Include an uppercase and a lowercase letter.", 400)
+    if not any(value.isdigit() for value in password) or not any(not value.isalnum() for value in password):
+        raise ServiceError("WEAK_PASSWORD", "Include a number and a special character.", 400)
 
 
 def hash_password(password: str) -> str:
@@ -128,3 +143,34 @@ class AccountStore:
         with self.database.write() as c:
             execute(c, "UPDATE app_sessions SET revoked_at=SYSTIMESTAMP WHERE token_hash=:token AND revoked_at IS NULL", token=digest)
         return {"ok": True}
+
+    def change_password(self, authorization: str | None, body: PasswordChange):
+        self.require_enabled()
+        digest = session_hash(authorization)
+        current = body.current_password.get_secret_value()
+        replacement = body.new_password.get_secret_value()
+        with self.database.write() as c:
+            found = rows(c, """SELECT a.account_id,a.identity_subject,a.password_hash FROM app_sessions s
+                JOIN app_accounts a ON a.account_id=s.account_id AND a.active_flag='Y'
+                JOIN people p ON p.person_id=a.person_id AND p.active_flag='Y'
+                WHERE s.token_hash=:token AND s.revoked_at IS NULL AND s.expires_at>SYSTIMESTAMP
+                FOR UPDATE OF a.password_hash WAIT 5""", token=digest)
+            if len(found) != 1:
+                raise ServiceError("UNAUTHENTICATED", "Your session ended. Sign in again.", 401)
+            account = found[0]
+            if not check_password(current, account["password_hash"]):
+                raise ServiceError("CURRENT_PASSWORD_INCORRECT", "The current password is incorrect.", 400)
+            require_strong_password(replacement)
+            if check_password(replacement, account["password_hash"]):
+                raise ServiceError("PASSWORD_REUSED", "Choose a password different from your current password.", 400)
+            execute(c, """UPDATE app_accounts SET password_hash=:passwordHash,failed_attempts=0,locked_until=NULL
+                WHERE account_id=:accountId""", passwordHash=hash_password(replacement), accountId=account["account_id"])
+            execute(c, """UPDATE app_sessions SET revoked_at=SYSTIMESTAMP
+                WHERE account_id=:accountId AND revoked_at IS NULL""", accountId=account["account_id"])
+            audit_id = uuid4().hex
+            execute(c, """INSERT INTO audit_events(audit_event_id,entity_type,entity_id,action_type,
+                actor_subject,correlation_id,reason)
+                VALUES(:auditId,'ACCOUNT',:accountId,'PASSWORD_CHANGED',:actor,:auditId,
+                'Password changed by account owner; all sessions revoked.')""",
+                auditId=audit_id, accountId=account["account_id"], actor=account["identity_subject"])
+        return {"ok": True, "sessions_revoked": True}

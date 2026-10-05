@@ -6,6 +6,7 @@ import { AskAiPod } from '@/components/chat/AskAiPod';
 import { AddPersonModal } from '@/components/overlays/AddPersonModal';
 import { RequestOverlays } from '@/components/overlays/RequestOverlays';
 import { WorkspaceOverlays } from '@/components/overlays/WorkspaceOverlays';
+import { ChangePasswordModal } from '@/components/overlays/ChangePasswordModal';
 import { ToastHost } from '@/components/ui/ToastHost';
 import { useStaffingApp } from '@/context/StaffingAppProvider';
 
@@ -41,6 +42,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <RequestOverlays />
       <AddPersonModal key={`add-person-${state.role}`} />
       <WorkspaceOverlays key={`workspace-overlays-${state.role}`} />
+      <ChangePasswordModal />
       <ToastHost />
     </div>
   );

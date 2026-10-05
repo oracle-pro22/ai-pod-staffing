@@ -5,7 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from app.accounts import AccountStore, PasswordLogin, check_password, hash_password, normalize_email, session_hash
+from app.accounts import AccountStore, PasswordChange, PasswordLogin, check_password, hash_password, normalize_email, session_hash
 from app.auth import Actor, Permission
 from app.config import Settings
 from app.errors import ServiceError
@@ -120,10 +120,43 @@ def test_logout_revokes_the_same_digest(store):
     assert 'revoked_at=SYSTIMESTAMP' in sql.call_args.args[1]
 
 
+def test_password_change_replaces_hash_audits_without_secrets_and_revokes_every_session(store):
+    existing = account(password_hash=hash_password('CurrentPass1!'))
+    body = PasswordChange(current_password='CurrentPass1!', new_password='Replacement2$')
+    assert 'CurrentPass1!' not in repr(body) and 'Replacement2$' not in repr(body)
+    with patch('app.accounts.rows', return_value=[existing]) as read, patch('app.accounts.execute') as sql:
+        assert store.change_password('Bearer aps1.' + 'a' * 43, body) == {'ok': True, 'sessions_revoked': True}
+    statements = [(call.args[1], call.kwargs) for call in sql.call_args_list]
+    account_update = next(item for item in statements if 'UPDATE app_accounts SET password_hash' in item[0])
+    assert check_password('Replacement2$', account_update[1]['passwordHash'])
+    assert not check_password('CurrentPass1!', account_update[1]['passwordHash'])
+    assert any('UPDATE app_sessions SET revoked_at=SYSTIMESTAMP' in statement for statement, _ in statements)
+    audit = next(item for item in statements if 'INSERT INTO audit_events' in item[0])
+    assert 'PASSWORD_CHANGED' in audit[0] and audit[1]['actor'] == existing['identity_subject']
+    assert all('CurrentPass1!' not in str(item) and 'Replacement2$' not in str(item) for item in statements)
+    assert read.call_args.kwargs['token'] == session_hash('Bearer aps1.' + 'a' * 43)
+    assert store.database.committed == 1
+
+
+def test_password_change_rejects_wrong_weak_and_reused_passwords_before_writing(store):
+    existing = account(password_hash=hash_password('CurrentPass1!'))
+    cases = [
+        (PasswordChange(current_password='wrong', new_password='Replacement2$'), 'CURRENT_PASSWORD_INCORRECT'),
+        (PasswordChange(current_password='CurrentPass1!', new_password='weak'), 'WEAK_PASSWORD'),
+        (PasswordChange(current_password='CurrentPass1!', new_password='CurrentPass1!'), 'PASSWORD_REUSED'),
+    ]
+    for body, code in cases:
+        with patch('app.accounts.rows', return_value=[existing]), patch('app.accounts.execute') as sql, pytest.raises(ServiceError) as error:
+            store.change_password('Bearer aps1.' + 'a' * 43, body)
+        assert error.value.code == code
+        sql.assert_not_called()
+
+
 def test_password_api_uses_current_role_mapping_not_browser_claims():
     accounts = MagicMock()
     accounts.subject.return_value = 'acct:ACC-1'
     accounts.login.return_value = {'access_token': 'aps1.' + 'a' * 43, 'expires_in': 28800}
+    accounts.change_password.return_value = {'ok': True, 'sessions_revoked': True}
     authorization = MagicMock()
     authorization.resolve.return_value = Actor('acct:ACC-1', 'P-001', frozenset({'POD_MEMBER'}),
         (Permission('POD_MEMBER', 'TEAM_SKILLS', 'OWN', frozenset({'view'})),))
@@ -137,6 +170,10 @@ def test_password_api_uses_current_role_mapping_not_browser_claims():
     assert client.post('/v1/local-personas/session', json={'person_id': 'P-009', 'role_code': 'POD_CAPTAIN'}).status_code == 404
     invalid = client.post('/v1/auth/password/login', json={'email': 'alex@oracle.com', 'password': 'do-not-echo', 'person_id': 'P-009'})
     assert invalid.status_code == 422 and 'do-not-echo' not in invalid.text
+    changed = client.post('/v1/auth/password/change', headers={'authorization': 'Bearer aps1.' + 'a' * 43},
+                          json={'current_password': 'current-secret', 'new_password': 'Replacement2$'})
+    assert changed.status_code == 200 and changed.json()['sessions_revoked'] is True
+    accounts.change_password.assert_called_once()
 
 
 def test_login_endpoint_is_disabled_in_other_modes():

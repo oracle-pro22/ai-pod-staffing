@@ -39,13 +39,16 @@ class DecisionTests(unittest.TestCase):
             finally:
                 self.commands.clear()
         self.store = DecisionStore(SimpleNamespace(write=write), self.settings)
+        # These fixtures describe September work. Freeze business time rather
+        # than letting the calendar invalidate all transaction regressions.
         self.patches = [patch("app.decisions.rows", side_effect=self.read), patch("app.decisions.execute", side_effect=self.execute),
                         patch("app.selections.rows", side_effect=self.read),
                         patch("app.manual_store.rows", side_effect=self.read),
                         patch('app.policy_admin.rows', side_effect=lambda *_a, **_kw: [{'policy_version': self.data.policy.version}]),
                         patch("app.decisions.collect_evidence", side_effect=self.collect),
                         patch("app.notifications.rows", return_value=[{"email_address": "person@example.test"}]),
-                        patch("app.notifications.execute", side_effect=self.execute)]
+                        patch("app.notifications.execute", side_effect=self.execute),
+                        patch('app.schedule_dates.business_date', return_value=initial.request.starts_on)]
         for p in self.patches:
             p.start()
             self.addCleanup(p.stop)

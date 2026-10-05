@@ -13,6 +13,7 @@ from app.policy_admin import active_policy_version, require_current_policy
 from app.rules import member_schedule, validate_pod
 from app.selections import load_review, selection_for_approval
 from app.storage import document, rows
+from app.schedule_dates import require_future_schedule
 
 
 def published_member(record, policy):
@@ -111,6 +112,7 @@ class DecisionStore:
             if decision.action == "APPROVED":
                 require_current_policy(connection, policy_version)
                 fresh = collect_evidence(connection, request_id, policy_version, self.settings.staffing_max_candidates)
+                require_future_schedule(fresh.request, fresh.policy)
                 fresh.policy.require_published()
                 selected_review = selection_for_approval(connection, proposal, decision.selection_id, fresh)
                 snapshot = rows(connection, "SELECT evidence_snapshot_json FROM agent_executions WHERE execution_id=:executionId", executionId=proposal["execution_id"])[0]

@@ -230,6 +230,9 @@ export function buildOracleStaffingViewModel(snapshot: OracleStaffingSnapshot): 
       }).sort((a, b) => b.strength - a.strength),
       availability: (availabilityByPerson.get(id) ?? []).map((event) => ({
         id: number(event, 'availability_id'),
+        effectiveUntil: text(event, 'effective_until') || undefined,
+        revision: number(event, 'revision') || 1,
+        status: text(event, 'status') === 'CANCELLED' ? 'CANCELLED' as const : 'ACTIVE' as const,
         eventType: text(event, 'event_type'),
         startsOn: isoDate(event, 'starts_on'),
         endsOn: isoDate(event, 'ends_on'),
@@ -339,7 +342,7 @@ export function buildOracleStaffingViewModel(snapshot: OracleStaffingSnapshot): 
       openRequests: requests.filter((request) => request.status.toLowerCase() !== 'closed').length,
       staffedRequests: requests.filter((request) => request.status.toLowerCase() === 'staffed').length,
       averageAllocationPct,
-      constrainedPeople: people.filter((person) => person.allocationPct >= 70).length,
+      constrainedPeople: 0, // No active policy in the catalogue snapshot; authenticated projection supplies it.
       pendingRecommendations: requests.flatMap((request) => request.recommendations)
         .filter((recommendation) => recommendation.decisionStatus.toLowerCase().includes('pending')).length,
     },

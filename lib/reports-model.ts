@@ -1,5 +1,6 @@
 import type { LiveWorkspace } from '@/types/assignments';
 import { liveStatusLabel } from '@/lib/live-presentation';
+import { policyLimit } from '@/lib/allocation-policy';
 
 export function reportNumber(value: unknown): number | null {
   if (value === null || value === undefined || value === '' || typeof value === 'boolean') return null;
@@ -8,7 +9,7 @@ export function reportNumber(value: unknown): number | null {
 }
 
 export function capacityRows(snapshot: LiveWorkspace) {
-  const limit = reportNumber(snapshot.maximum_allocation_pct);
+  const limit = policyLimit(snapshot.maximum_allocation_pct);
   return snapshot.people.map(person => {
     const week = person.weeks?.[0];
     const available = reportNumber(week?.available_hours), committed = reportNumber(week?.committed_hours);
@@ -18,28 +19,28 @@ export function capacityRows(snapshot: LiveWorkspace) {
     const reportedPod = known ? reportNumber(week?.reported_pod_hours) ?? 0 : null;
     const external = known ? reportNumber(week?.external_hours) ?? 0 : null;
     const allocation = known && available > 0 ? committed / available * 100 : null;
-    const headroom = known && limit !== null ? Math.max(0, available * limit / 100 - committed) : null;
-    const over = known && limit !== null && committed > available * limit / 100 + 0.0000001;
+    const headroom = person.staffing_eligible !== false && known && limit !== null ? Math.max(0, available * limit / 100 - committed) : null;
+    const over = person.staffing_eligible !== false && known && limit !== null && committed > available * limit / 100 + 0.0000001;
     const at = known && limit !== null && !over && available > 0 && Math.abs(committed - available * limit / 100) < 0.0000001;
     return { ...person, name: person.full_name || person.person_id, available: known ? available : null,
       committed: known ? committed : null, leave, pod, reportedPod, external, known, allocation, headroom, over,
-      status: !known ? 'Needs refresh' : available === 0 && !over ? 'No working capacity' : over ? 'Above limit' : at ? 'At limit' : 'Within limit' };
+      status: person.staffing_eligible === false ? 'Not eligible for POD assignment' : !known ? 'Needs refresh' : limit === null ? 'Policy unavailable' : available === 0 && !over ? 'No working capacity' : over ? 'Above limit' : at ? 'At limit' : 'Within limit' };
   }).sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export function reportMetrics(snapshot: LiveWorkspace) {
-  const people = capacityRows(snapshot), known = people.filter(p => p.known);
+  const people = capacityRows(snapshot), staffable = people.filter(p => p.staffing_eligible !== false), known = staffable.filter(p => p.known);
   const available = known.reduce((sum, p) => sum + p.available!, 0);
   const committed = known.reduce((sum, p) => sum + p.committed!, 0);
   const pod = known.reduce((sum, p) => sum + (p.pod ?? 0), 0);
   const reportedPod = known.reduce((sum, p) => sum + (p.reportedPod ?? 0), 0);
   const external = known.reduce((sum, p) => sum + (p.external ?? 0), 0);
   const leave = known.reduce((sum, p) => sum + (p.leave ?? 0), 0);
-  return { people, known: known.length, unknown: people.length - known.length, available, committed,
+  return { people, known: known.length, unknown: staffable.length - known.length, available, committed,
     pod, reportedPod, external, leave,
     utilization: available > 0 ? committed / available * 100 : null,
-    headroom: known.length && reportNumber(snapshot.maximum_allocation_pct) !== null ? known.reduce((sum, p) => sum + (p.headroom ?? 0), 0) : null,
-    aboveLimit: people.filter(p => p.over).length,
+    headroom: known.length && policyLimit(snapshot.maximum_allocation_pct) !== null ? known.reduce((sum, p) => sum + (p.headroom ?? 0), 0) : null,
+    aboveLimit: staffable.filter(p => p.over).length,
     staffed: snapshot.requests.filter(r => r.status === 'STAFFED').length,
     awaiting: snapshot.requests.filter(r => ['NEEDS_RECOMMENDATION', 'IN_REVIEW'].includes(r.status)).length,
     closed: snapshot.requests.filter(r => r.status === 'CLOSED').length,

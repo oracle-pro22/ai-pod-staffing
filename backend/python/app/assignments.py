@@ -81,7 +81,7 @@ def _week_hours(entries, start, end):
     return sum((entry.hours for entry in entries if start <= entry.day <= end), start=0)
 
 
-def capacity_people(connection, person_ids, monday, sunday, today, policy, names=None):
+def capacity_people(connection, person_ids, monday, sunday, today, policy, names=None, eligibility=None):
     """Return scoped capacity with bounded, set-based database reads."""
     person_ids = tuple(sorted(set(person_ids)))
     if not person_ids:
@@ -96,7 +96,8 @@ def capacity_people(connection, person_ids, monday, sunday, today, policy, names
     people = []
     for person_id in person_ids:
         value = {"person_id": person_id, "allocation_pct": None, "capacity_status": "UNKNOWN",
-                 "active_pods": active_by_id.get(person_id, 0)}
+                 "active_pods": active_by_id.get(person_id, 0),
+                 "staffing_eligible": eligibility.get(person_id, False) if eligibility is not None else True}
         if names and person_id in names:
             value["full_name"] = names[person_id]
         loaded = ledgers.get(person_id)
@@ -133,20 +134,24 @@ class AssignmentStore:
         permission = actor.require("TEAM_SKILLS", "view")
         predicate, binds = team_people_scope(actor, permission)
         with self.database.read() as connection:
-            policy = load_policy(connection, self.settings.staffing_policy_version)
+            from app.policy_admin import active_policy_version
+            policy = load_policy(connection, active_policy_version(connection))
             today = datetime.now(ZoneInfo(policy.scheduling_timezone)).date()
             selected = week or today
             monday = selected - timedelta(days=selected.weekday())
             sunday = monday + timedelta(days=6)
-            visible = rows(connection, f"""SELECT p.person_id FROM people p
+            visible = rows(connection, f"""SELECT p.person_id,p.staffing_eligible_flag FROM people p
                 WHERE p.active_flag='Y' AND NOT ({ADMINISTRATOR_ONLY_SQL})
                 AND ({predicate}) ORDER BY p.person_id""", **binds)
-            people = capacity_people(connection, [person["person_id"] for person in visible], monday, sunday, today, policy)
+            people = capacity_people(connection, [person["person_id"] for person in visible], monday, sunday, today, policy,
+                eligibility={p['person_id']: p.get('staffing_eligible_flag') == 'Y' for p in visible})
             # Keep the workspace envelope, without borrowing request rosters,
             # assignment schedules or proposal statistics for a profile response.
             return {"requests": [], "assignments": [], "days": [], "people": people,
                     "summary": {"pending_review": 0, "approved": 0, "rejected": 0},
                     "week_start": monday, "week_end": sunday, "timezone": policy.scheduling_timezone,
+                    "as_of": today, "policy_version": policy.version,
+                    "maximum_allocation_pct": policy.maximum_allocation_pct,
                     "can_export": "export" in permission.actions}
 
     def workspace(self, actor, week: date | None = None, resource="REQUESTS"):
@@ -158,11 +163,8 @@ class AssignmentStore:
         assignment_filter = " AND a.person_id=:ownId" if own_only else ""
         assignment_binds = {**binds, **({'ownId': actor.person_id} if own_only else {})}
         with self.database.read() as connection:
-            if resource == 'REPORTS':
-                from app.policy_admin import active_policy_version
-                policy = load_policy(connection, active_policy_version(connection))
-            else:
-                policy = load_policy(connection, self.settings.staffing_policy_version)
+            from app.policy_admin import active_policy_version
+            policy = load_policy(connection, active_policy_version(connection))
             today = datetime.now(ZoneInfo(policy.scheduling_timezone)).date()
             selected = week or today
             monday = selected - timedelta(days=selected.weekday())
@@ -175,8 +177,8 @@ class AssignmentStore:
                 FROM requests r WHERE {clause} ORDER BY r.created_at DESC,r.request_id""", **binds, businessToday=today)
             for request in requests:
                 request['past_planned_end'] = bool(request['past_planned_end'])
-            policy_filter = ' AND p.policy_version=:activePolicy' if resource == 'REPORTS' else ''
-            summary_binds = {**binds, **({'activePolicy': policy.version} if resource == 'REPORTS' else {})}
+            policy_filter = ' AND p.policy_version=:activePolicy'
+            summary_binds = {**binds, 'activePolicy': policy.version}
             summary = rows(connection, f"""SELECT
                 COUNT(CASE WHEN p.status='READY_FOR_REVIEW' AND p.request_revision=r.request_revision
                     {policy_filter} THEN 1 END) AS pending_review,
@@ -221,7 +223,7 @@ class AssignmentStore:
                 profile_permission = max(profile_permissions, key=lambda p: (
                     {"OWN": 1, "SCOPED": 2, "FULL": 3}.get(p.scope, 0), -ROLE_PRIORITY.get(p.role, 99)))
                 predicate, profile_binds = team_people_scope(actor, profile_permission)
-            profile_rows = rows(connection, f"""SELECT p.person_id,p.full_name FROM people p
+            profile_rows = rows(connection, f"""SELECT p.person_id,p.full_name,p.staffing_eligible_flag FROM people p
                 WHERE p.active_flag='Y' AND NOT ({ADMINISTRATOR_ONLY_SQL})
                 AND ({predicate}) ORDER BY p.person_id""", **profile_binds)
             person_ids = {p['person_id'] for p in profile_rows}
@@ -247,7 +249,8 @@ class AssignmentStore:
                 public_assignments.append(public)
             assignments = public_assignments
             days = [d for d in days if d["person_id"] in person_ids]
-            people = capacity_people(connection, person_ids, monday, sunday, today, policy, profile_names)
+            people = capacity_people(connection, person_ids, monday, sunday, today, policy, profile_names,
+                eligibility={p['person_id']: p.get('staffing_eligible_flag') == 'Y' for p in profile_rows})
             request_scope = ('All requests' if clause == '1=1' else 'Captain-owned requests'
                              if permission.role == 'POD_CAPTAIN' else 'Your assigned projects')
             return {"requests": requests, "assignments": assignments, "days": days, "people": people,

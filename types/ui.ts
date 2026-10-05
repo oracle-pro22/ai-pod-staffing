@@ -1,6 +1,6 @@
 import type { ScreenId, StaffingRole } from '@/types/roles';
 
-export type Tone = '' | 'red' | 'green' | 'amber' | 'blue' | 'teal' | 'purple';
+export type Tone = '' | 'neutral' | 'red' | 'green' | 'amber' | 'blue' | 'teal' | 'purple';
 
 export type ToastMessage = {
   id: string;

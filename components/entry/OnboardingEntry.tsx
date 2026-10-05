@@ -32,6 +32,9 @@ export function OnboardingEntry({ initial, sessionKey }: { initial: OnboardingSt
   }
   async function submit(event: FormEvent) {
     event.preventDefault(); if (busy) return;
+    if (skills.some(skill => skill.strength !== null && !skill.evidence.trim())) {
+      setError('Describe your experience with each rated skill. No documents or approval are required.'); setStep(0); return;
+    }
     setBusy(true); setError('');
     try {
       const response = await staffingFetch('/api/agentic/onboarding', { method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -60,7 +63,8 @@ export function OnboardingEntry({ initial, sessionKey }: { initial: OnboardingSt
                 <option value="">Not rated — interest only</option>{[1, 2, 3, 4, 5].map(value => <option key={value} value={value}>{value} / 5</option>)}</select></label>
               <label className="roster-check"><input type="checkbox" checked={s.interested} disabled={s.strength === null} onChange={e => setSkills(skills.map((v, n) => n === i ? { ...v, interested: e.target.checked } : v))} /> Interested in future work using this skill</label></div>
             <p className="roster-help">{s.strength === null ? 'No proficiency is claimed. This entry records future-work interest only.' : 'This preference is considered separately from your proficiency rating.'}</p>
-            <label>{s.strength === null ? 'Evidence or learning goal (optional)' : 'Evidence supporting this proficiency (optional)'}<input maxLength={2000} value={s.evidence} onChange={e => setSkills(skills.map((v, n) => n === i ? { ...v, evidence: e.target.value } : v))} /></label>
+            <label>{s.strength === null ? 'Learning goal (optional)' : 'Your experience with this skill (required)'}<input required={s.strength !== null} maxLength={2000} value={s.evidence} onChange={e => setSkills(skills.map((v, n) => n === i ? { ...v, evidence: e.target.value } : v))} /></label>
+            {s.strength !== null && <p className="roster-help">Briefly describe how you have used this skill. No documents or approval are required.</p>}
             <button type="button" onClick={() => setSkills(skills.filter((_, n) => n !== i))}>Remove skill</button></fieldset>)}
           <h2>Deliverable experience</h2>
           <label>Add a deliverable<SkillCombobox noun="deliverables" disabled={busy} options={(initial.deliverables ?? []).filter(d => !experiences.some(x => x.deliverable_id === d.deliverable_id))
@@ -74,7 +78,7 @@ export function OnboardingEntry({ initial, sessionKey }: { initial: OnboardingSt
             <button type="button" onClick={() => setExperiences(experiences.filter((_, n) => n !== i))}>Remove deliverable</button></fieldset>; })}
         </>}
         {step === 1 && <>
-          <h2>Confirm your planning period</h2><p>Include today, up to 13 complete weeks. Capacity outside this period stays unknown until refreshed.</p>
+          <h2>Record your current plans</h2><p>Include today, up to 13 complete weeks. Your recorded working hours continue beyond this period; future staffing also accounts for saved leave, commitments and assignments. Keep your availability up to date.</p>
           <div className="roster-fields"><label>From<input type="date" value={start} onChange={e => setStart(e.target.value)} /></label><label>Through<input type="date" value={end} onChange={e => setEnd(e.target.value)} /></label></div>
           <h2>Work and leave already planned</h2><p>Enter total hours across each date range. Hours are spread across weekdays. For uneven schedules, use separate entries. No entries means you confirm no existing work or leave in this period.</p>
           {work.map((w, i) => <fieldset key={i}><legend>Entry {i + 1}</legend>

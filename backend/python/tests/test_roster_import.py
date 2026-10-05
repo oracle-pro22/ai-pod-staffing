@@ -165,6 +165,15 @@ def test_atomic_import_exact_accounts_roles_first_login_and_journal(db):
         {'role_code': 'POD_CAPTAIN'}, {'role_code': 'POD_LEAD'}]
 
 
+def test_amy_access_identity_is_non_staffing_and_receives_admin_overlay():
+    amy = {'email': 'Amy.S.Lawrence@oracle.com', 'roles': ['POD_CAPTAIN', 'POD_LEAD']}
+    another_person = {'email': 'someone.else@oracle.com', 'roles': ['POD_MEMBER']}
+    assert not imp.staffing_eligible(amy)
+    assert imp.staffing_eligible(another_person)
+    assert imp.imported_roles(amy) == ('POD_CAPTAIN', 'POD_LEAD', 'SYSTEM_ADMINISTRATOR')
+    assert imp.imported_roles(another_person) == ('POD_MEMBER',)
+
+
 def test_imported_real_password_flow_enabled_and_disabled_accounts(db):
     plan, _ = imported(db)
     store = AccountStore(db, SimpleNamespace(backend_auth_mode='password', staffing_session_hours=1))

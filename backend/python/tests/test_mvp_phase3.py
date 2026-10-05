@@ -125,6 +125,9 @@ class ManualPlanningTests(unittest.TestCase):
 class ManualStoreTests(unittest.TestCase):
     def setUp(self):
         self.source = single()
+        clock = patch('app.schedule_dates.business_date', return_value=self.source.request.starts_on)
+        clock.start()
+        self.addCleanup(clock.stop)
         self.actor = captain()
         self.request_id = self.source.request.request_id
         self.settings = SimpleNamespace(staffing_decisions_enabled=True, staffing_max_candidates=60)

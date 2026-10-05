@@ -420,7 +420,7 @@ export function buildStaffingViewModel(snapshot: StaffingSnapshot): StaffingView
       openRequests: requests.filter((request) => request.status.toLowerCase() !== 'closed').length,
       staffedRequests: requests.filter((request) => request.status.toLowerCase() === 'staffed').length,
       averageAllocationPct,
-      constrainedPeople: people.filter((person) => person.allocationPct >= 70).length,
+      constrainedPeople: 0, // Preview has no active utilization policy.
       pendingRecommendations: snapshot.recommendations.filter((row) => textValue(row, 'decision_status').toLowerCase().includes('pending')).length,
     },
     demoIdentity: { podMemberPersonId: 'P-001', podLeadPersonId: 'P-006' },

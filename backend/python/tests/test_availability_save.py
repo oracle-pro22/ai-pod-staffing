@@ -10,7 +10,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.auth import Actor, Permission
-from app.availability import AvailabilityInput, cancel_availability, create_availability, update_availability
+from app.availability import AvailabilityEnd, AvailabilityInput, cancel_availability, create_availability, update_availability
 from app.capacity import calculate_capacity
 from app.errors import ServiceError
 from app.storage import load_capacity_ledger
@@ -22,7 +22,7 @@ PERSON = Actor('account:test', 'P-TEST', frozenset({'POD_MEMBER'}), (
 
 def body(**changes):
     return AvailabilityInput(**{**dict(personId='P-TEST', eventType='Leave', startsOn=MON,
-                                      endsOn=MON, title='Planned leave', allocatedHours=4), **changes})
+                                      endsOn=MON, title='Planned leave', allocatedHours=4, revision=1), **changes})
 
 
 class Database:
@@ -79,13 +79,16 @@ class Database:
         if 'INSERT INTO availability' in sql:
             self.events.append(dict(availability_id=len(self.events)+1, person_id='P-TEST', event_type=b['kind'], title=b['title'],
                                     starts_on=b['firstDay'], ends_on=b['lastDay'], allocated_hours=b['hours'],
-                                    capacity_kind=b['capacityKind'], status='ACTIVE'))
+                                    capacity_kind=b['capacityKind'], status='ACTIVE', revision=1, effective_until=None))
+        elif 'UPDATE availability SET effective_until' in sql:
+            saved = next(e for e in self.events if e['availability_id'] == b['availabilityId'])
+            saved.update(status=b['status'], effective_until=b['cutoff'], revision=saved['revision']+1)
         elif "status='CANCELLED'" in sql:
             next(e for e in self.events if e['availability_id'] == b['availabilityId'])['status'] = 'CANCELLED'
         elif 'UPDATE availability SET event_type' in sql:
             saved = next(e for e in self.events if e['availability_id'] == b['availabilityId'])
             saved.update(event_type=b['kind'], starts_on=b['firstDay'], ends_on=b['lastDay'], title=b['title'],
-                         allocated_hours=b['hours'], capacity_kind=b['capacityKind'])
+                         allocated_hours=b['hours'], capacity_kind=b['capacityKind'], effective_until=None, revision=saved['revision']+1)
         else:
             raise AssertionError(sql)
         self.person['availability_version'] += 1
@@ -216,6 +219,6 @@ def test_cancel_removes_event_from_future_capacity_but_retains_history():
     db = Database()
     with db.wired():
         create_availability(db, PERSON, body())
-        cancel_availability(db, PERSON, 1)
+        cancel_availability(db, PERSON, 1, AvailabilityEnd(revision=1, effectiveOn=MON))
     assert db.events[0]['status'] == 'CANCELLED'
     assert db.days[MON]['available_hours'] == 8

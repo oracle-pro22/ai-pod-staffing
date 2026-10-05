@@ -75,6 +75,7 @@ class AdministratorWorkspaceTests(unittest.TestCase):
             return []
 
         with patch('app.assignments.rows', side_effect=query), patch('app.assignments.load_policy', return_value=DEFAULT_POLICY), \
+             patch('app.policy_admin.active_policy_version', return_value='active-policy'), \
              patch('app.assignments.ZoneInfo', return_value=timezone.utc), \
              patch('app.assignments.load_capacity_ledgers', side_effect=lambda _connection, person_ids, *_: {
                  person_id: (CapacityLedger(), 0) for person_id in person_ids

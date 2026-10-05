@@ -3,7 +3,8 @@
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
-import { FormGroup, SelectField, TextArea } from '@/components/ui/FormControls';
+import { DropdownField } from '@/components/ui/DropdownField';
+import { FormGroup, TextArea } from '@/components/ui/FormControls';
 import { Modal } from '@/components/ui/Modal';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Pill } from '@/components/ui/Pill';
@@ -41,17 +42,20 @@ export function LiveFitmentPresentation(p: Props) {
   const displayed = p.proposal && review ? { ...p.proposal, members: review.members, rationale: review.rationale } : p.proposal;
   const manual = displayed?.members.some(m => m.source === 'MANUAL');
   const progress = executionProgress(p.execution?.status, p.execution?.events ?? []);
+  const awaitingRecommendation = !displayed && Boolean(p.request) && (p.running
+    || (!p.execution && ['NEEDS_RECOMMENDATION', 'IN_REVIEW'].includes(p.request?.status ?? '')));
   const openDetails = () => detail && dispatch({ type: 'open-drawer', drawer: { id: 'request-details', title: detail.title, payload: { requestId: detail.id } } });
   const log = <ExecutionLog execution={p.execution} running={p.running} />;
   return <section className="staffing-screen staffing-live-review">
     <PageHeader title={p.executionView ? 'Agent execution' : 'AI fitment review'}
       description={p.executionView ? 'Inspect each evidence and guardrail step before a recommendation is presented for review.' : 'Review the proposed POD, capability match, and available capacity.'}
       actions={<div className={p.executionView ? 'staffing-execution-actions' : 'staffing-fit-review-actions'}>
-        <label className="staffing-fitment-picker"><span>Staffing request</span><SelectField aria-label="Staffing request" value={p.request?.request_id ?? ''}
-          disabled={p.busy || p.loading} onChange={e => p.onSelect(e.target.value)}>
-          {!p.requests.length && <option value="">{p.loading ? 'Loading requests…' : 'No requests available'}</option>}
-          {p.requests.map(r => <option key={r.request_id} value={r.request_id}>{r.request_id} — {r.title} • {liveStatusLabel(r.status)}</option>)}
-        </SelectField></label><div className="staffing-inline-actions">
+        <label className="staffing-fitment-picker"><span>Staffing request</span><DropdownField aria-label="Staffing request" value={p.request?.request_id ?? ''}
+          disabled={p.busy || p.loading} onChange={p.onSelect}
+          options={p.requests.length
+            ? p.requests.map(r => ({ value: r.request_id, label: `${r.request_id} — ${r.title} • ${liveStatusLabel(r.status)}` }))
+            : [{ value: '', label: p.loading ? 'Loading requests…' : 'No requests available' }]} />
+        </label><div className="staffing-inline-actions">
           {p.canRun && <Button variant={p.executionView ? 'primary' : undefined}
             disabled={p.busy || p.running || !p.request || ['STAFFED', 'CLOSED'].includes(p.request.status)} onClick={p.onRun}>
             {p.running ? 'Running…' : p.execution ? '↻ Re-run' : '▶ Run fitment'}</Button>}
@@ -92,6 +96,15 @@ export function LiveFitmentPresentation(p: Props) {
         <div className="staffing-fit-summary-note"><b>Expected outcomes</b><p>{detail.expectedOutcomes || 'No expected outcomes recorded.'}</p></div></>}
       {p.proposal && <div className="staffing-source-strip"><span>{formatDate(p.proposal.starts_on.slice(0, 10))} – {formatDate(p.proposal.ends_on.slice(0, 10))}</span><span>{p.proposal.policy_version}</span></div>}
       </Card><div className="staffing-fit-results">
+        {awaitingRecommendation && <Card padded className="staffing-fitment-waiting" role="status" aria-live="polite" aria-busy={p.running}>
+          <span className="staffing-fitment-waiting-mark" aria-hidden="true">✦</span>
+          <div><Pill tone="purple">{p.execution ? liveStatusLabel(p.execution.status) : 'Preparing'}</Pill>
+            <h3>{p.running ? 'Building the staffing recommendation' : 'Waiting for AI staffing to start'}</h3>
+            <p>{p.running
+              ? 'The agent is checking skills, experience, availability and allocation. This page refreshes automatically when the recommendation is ready.'
+              : 'This page checks automatically for a new execution. If automatic staffing is disabled, use Run fitment above.'}</p>
+          </div>
+        </Card>}
         {p.proposal?.origin === 'MANUAL_DRAFT' && <Card padded className="staffing-candidate-section">
           <h3>Captain manual preview</h3><p className="staffing-muted">Saved draft—not an agent recommendation. No capacity is reserved until approval.</p>
           <p>Manual choices use a hard 100% cap: (existing POD hours + new POD hours) ÷ contracted working hours × 100. Leave and external commitments are ignored only for those choices; their records and normal workload reports remain unchanged.</p>

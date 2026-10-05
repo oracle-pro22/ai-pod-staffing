@@ -25,6 +25,26 @@ require.extensions['.ts'] = (mod, filename) => mod._compile(ts.transpileModule(f
 
 const { NextRequest } = require('next/server');
 const { liveStatusLabel, executionProgress, weekDays, availabilityDayHours, allocationMetric, savedFactorValue } = require('../lib/live-presentation.ts');
+test('ending an availability event preserves original daily cents and releases only later days', () => {
+  const { availabilityRemainingHours } = require('../lib/live-presentation.ts');
+  const event = { startsOn: '2026-10-05', endsOn: '2026-10-09', allocatedHours: 10.01, effectiveUntil: '2026-10-06' };
+  assert.equal(availabilityDayHours(event, '2026-10-05'), 2.01);
+  assert.equal(availabilityDayHours(event, '2026-10-06'), 2);
+  assert.equal(availabilityDayHours(event, '2026-10-07'), null);
+  assert.equal(availabilityRemainingHours(event, '2026-10-05'), 4.01);
+  assert.equal(availabilityRemainingHours(event, '2026-10-07'), 0);
+});
+test('non-staffable people retain history but never inflate report capacity or headroom', () => {
+  const { reportMetrics } = require('../lib/reports-model.ts');
+  const { personAllocationLabel } = require('../lib/formatting.ts');
+  const person = { person_id: 'P', capacity_status: 'CURRENT', weeks: [{ available_hours: 40, committed_hours: 20 }], active_pods: 0 };
+  const snapshot = { maximum_allocation_pct: 100, requests: [], people: [person, { ...person, person_id: 'AMY', staffing_eligible: false, weeks: [{ available_hours: 40, committed_hours: 0 }] }] };
+  const result = reportMetrics(snapshot);
+  assert.equal(result.available, 40); assert.equal(result.committed, 20); assert.equal(result.headroom, 20);
+  assert.equal(result.known, 1); assert.equal(result.people.length, 2);
+  assert.equal(result.people.find(p => p.person_id === 'AMY').headroom, null);
+  assert.equal(personAllocationLabel({ allocationPct: 0, staffingEligible: false }), 'Not eligible for POD assignment');
+});
 test('allocation labels distinguish unknown from zero and never inflate small values', () => {
   assert.equal(allocationMetric('0'), '0%');
   assert.equal(allocationMetric('0.13'), '0.13%');
@@ -84,6 +104,84 @@ function enabled() {
 function request(method='GET', headers={}) {
   return new NextRequest('http://localhost:3001/api/agentic/me', { method, headers });
 }
+
+test('allocation boundaries follow policy and unknown capacity stays neutral', () => {
+  const { allocationTone } = require('../lib/formatting.ts');
+  const { capacityAttention } = require('../lib/allocation-policy.ts');
+  assert.equal(allocationTone(82, 90), 'teal');
+  assert.equal(allocationTone(90, 90), 'amber');
+  assert.equal(allocationTone(90.01, 90), 'red');
+  for (const limit of [undefined, null, '', 0, 101, NaN]) assert.equal(allocationTone(82, limit), 'neutral');
+  assert.equal(allocationTone(null, 90), 'neutral');
+  assert.equal(allocationTone(95, 90, false), 'neutral');
+  assert.equal(capacityAttention({ allocationPct: 82, capacityStatus: 'CURRENT' }, 90), false);
+  assert.equal(capacityAttention({ allocationPct: 90, capacityStatus: 'CURRENT' }, 90), true);
+  assert.equal(capacityAttention({ allocationPct: 95, capacityStatus: 'CAPACITY_STALE' }, 90), false);
+  assert.equal(capacityAttention({ allocationPct: 95, staffingEligible: false }, 90), false);
+});
+
+test('authenticated screens carry the active policy and reject mixed policy snapshots', async () => {
+  enabled();
+  const { authenticatedViewModel } = require('../backend/staffing/view-model.ts');
+  const identity = { person_id: 'SELF', roles: ['SYSTEM_ADMINISTRATOR'], permissions: ['REQUESTS', 'TEAM_SKILLS'].map(resource =>
+    ({ role: 'SYSTEM_ADMINISTRATOR', resource, scope: 'FULL', actions: ['view'] })) };
+  rawViewModel = { people: [{ id: 'SELF', allocationPct: 82 }], requests: [], metrics: {},
+    authorization: { roles: [{ code: 'SYSTEM_ADMINISTRATOR', name: 'Administrator', permissions: [] }], userRoles: [] } };
+  let teamVersion = 'active-v2';
+  global.fetch = async url => Response.json({
+    requests: [], assignments: [], summary: { pending_review: 0 },
+    people: [{ person_id: 'SELF', capacity_status: 'CURRENT', allocation_pct: 82, staffing_eligible: true }],
+    maximum_allocation_pct: '90', policy_version: String(url).includes('TEAM_SKILLS') ? teamVersion : 'active-v2',
+  });
+  const result = await authenticatedViewModel(request('GET', { Authorization: 'Bearer trusted' }), identity);
+  assert.deepEqual(result.allocationPolicy, { version: 'active-v2', maximumAllocationPct: 90 });
+  assert.equal(result.metrics.averageAllocationPct, 82);
+  assert.equal(result.metrics.constrainedPeople, 0);
+  teamVersion = 'different-policy';
+  await assert.rejects(authenticatedViewModel(request('GET', { Authorization: 'Bearer trusted' }), identity), { code: 'POLICY_CHANGED', status: 409 });
+});
+
+test('pending staffing and project-type demand exclude staffed and closed projects', () => {
+  const { staffingQueues, projectDemand, buildDemandWeeks } = require('../lib/dashboard-demand.ts');
+  const requests = ['Needs recommendation', 'In review', 'Staffed', 'Closed', 'Cancelled'].map((status, i) => ({
+    id: `R${i}`, status, priority: 'High', neededBy: '2026-10-09', projectType: { id: i ? 'B' : 'A', name: 'Same display name' },
+  }));
+  assert.deepEqual(staffingQueues(requests).pending.map(r => r.id), ['R0', 'R1']);
+  assert.deepEqual(staffingQueues(requests).ongoing.map(r => r.id), ['R2']);
+  assert.deepEqual(projectDemand(requests, 'A').map(r => r.id), ['R0']);
+  assert.deepEqual(projectDemand(requests, 'B').map(r => r.id), ['R1']);
+  assert.equal(projectDemand(requests, '').length, 2);
+  assert.deepEqual(projectDemand(requests, 'missing'), []);
+  assert.deepEqual(buildDemandWeeks(['2026-10-05', '2026-10-11', '2026-10-12', '2026-09-30'], '2026-10-07').map(w => w.count), [2, 1, 0, 0, 0]);
+  assert.equal(requests[0].status, 'Needs recommendation');
+});
+
+test('reports distinguish missing policy and preserve zero-capacity overload', () => {
+  const { capacityRows } = require('../lib/reports-model.ts');
+  const person = { person_id: 'A', capacity_status: 'CURRENT', weeks: [{ available_hours: 40, committed_hours: 36 }] };
+  assert.equal(capacityRows({ people: [person], maximum_allocation_pct: 90 })[0].status, 'At limit');
+  assert.equal(capacityRows({ people: [person] })[0].status, 'Policy unavailable');
+  assert.equal(capacityRows({ people: [{ ...person, weeks: [{ available_hours: 0, committed_hours: 2 }] }], maximum_allocation_pct: 90 })[0].over, true);
+});
+
+test('audit proxy forwards only allowlisted filters and rejects writes', async () => {
+  enabled();
+  const context = { params: Promise.resolve({ path: ['admin', 'audit'] }) };
+  global.fetch = async (url, options) => {
+    const parsed = new URL(url);
+    assert.equal(parsed.pathname, '/v1/admin/audit');
+    assert.equal(parsed.searchParams.get('kind'), 'decisions');
+    assert.equal(parsed.searchParams.get('request_id'), 'REQ-1');
+    assert.equal(parsed.searchParams.get('sql'), null);
+    assert.equal(options.headers.Authorization, 'Bearer trusted');
+    return Response.json({ records: [], read_only: true });
+  };
+  const result = await GET(new NextRequest('http://localhost:3001/api/agentic/admin/audit?kind=decisions&request_id=REQ-1&sql=bad', { headers: { Authorization: 'Bearer trusted' } }), context);
+  assert.equal(result.status, 200);
+  assert.equal(result.headers.get('cache-control'), 'no-store');
+  global.fetch = () => assert.fail('Read-only endpoint cannot accept writes');
+  assert.equal((await POST(request('POST'), context)).status, 404);
+});
 
 test('reports KPIs weight hours, exclude unknown capacity, and respect the current limit', () => {
   const { reportMetrics, reportExport } = require('../lib/reports-model.ts');
@@ -237,6 +335,26 @@ test('bridge cannot proxy arbitrary URLs or unsupported endpoints', async () => 
   assert.equal((await GET(request(), { params: Promise.resolve({ path: ['http:', 'evil.example'] }) })).status, 404);
   assert.equal((await POST(request('POST'), { params: Promise.resolve({ path: ['assignments'] }) })).status, 404);
 });
+
+test('clarification endpoints preserve authenticated answers, revisions and pending-agent responses', async () => {
+  enabled();
+  const body = { revision: 2, execution_id: 'RUN-old', business_objectives: 'Objective', expected_outcomes: 'x'.repeat(15000), project_description: 'Scope' };
+  let received;
+  global.fetch = async (url, options) => {
+    assert.equal(String(url), 'http://127.0.0.1:8015/v1/requests/REQ-1/clarification');
+    assert.equal(options.headers.Authorization, 'Bearer trusted');
+    received = options.body && JSON.parse(options.body);
+    return Response.json({ status: 'PENDING_AGENT', revision: 3, answers_saved: true });
+  };
+  const context = { params: Promise.resolve({ path: ['requests', 'REQ-1', 'clarification'] }) };
+  const response = await POST(new NextRequest('http://localhost:3001/api/agentic/requests/REQ-1/clarification', {
+    method: 'POST', headers: { Authorization: 'Bearer trusted', Origin: 'http://localhost:3001', 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  }), context);
+  assert.equal(response.status, 200);
+  assert.deepEqual(received, body);
+  assert.equal((await response.json()).data.status, 'PENDING_AGENT');
+  assert.equal((await GET(request('GET', { Authorization: 'Bearer trusted' }), context)).status, 200);
+});
 test('backend conflict is retained without replacing it with success', async () => {
   enabled(); global.fetch = async () => Response.json({ error: { code: 'STALE_PROPOSAL', message: 'Rerun fitment.' } }, { status: 409 });
   await assert.rejects(staffingBackend(request('POST', { Authorization: 'Bearer token' }), '/v1/decisions', 'POST', {}), { status: 409, code: 'STALE_PROPOSAL' });
@@ -244,8 +362,8 @@ test('backend conflict is retained without replacing it with success', async () 
 
 const input = { projectTypeId: 'PT-001', requestSourcePersonId: 'P-OTHER', title: 'Launch', projectDescription: '',
   deliverables: [{ id: 'DEL-1', name: 'Provided name', custom: false }], requiredCapabilities: [{ id: 'SK-1', name: 'Provided skill', requiredStrength: 3, custom: false }],
-  requestedPodSize: '1 lead + 2 contributors', estimatedEffort: { value: 24, unit: 'Hours' }, neededBy: '2026-09-18',
-  estimatedStartDate: '2026-09-14', estimatedCompletionDate: '2026-09-18', priority: 'Medium', businessObjectives: 'Launch materials', expectedOutcomes: '' };
+  requestedPodSize: '1 lead + 2 contributors', estimatedEffort: { value: 24, unit: 'Hours' }, neededBy: '2099-11-06',
+  estimatedStartDate: '2099-11-02', estimatedCompletionDate: '2099-11-06', priority: 'Medium', businessObjectives: 'Launch materials', expectedOutcomes: '' };
 function mockSave({ linked = true, failIntent = false } = {}) {
   committed = false;
   const writes = [];
@@ -396,6 +514,7 @@ test('profile projection uses the independent TEAM_SKILLS allowlist, never the r
     };
     const model=await authenticatedViewModel(request('GET',{Authorization:'Bearer token'}));
     assert.deepEqual(model.people.map(p=>p.id),expected,role);
+    assert.ok(model.people.every(p=>p.allocationPct===60), `${role} must use live weekly allocation, not the stored profile percentage`);
     assert.ok(calls.some(url=>url.endsWith('resource=TEAM_SKILLS')));
     const payload=JSON.stringify(model);
     for(const id of ['SELF','TEAMMATE','HISTORICAL'].filter(id=>!expected.includes(id))) {

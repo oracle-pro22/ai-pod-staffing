@@ -10,7 +10,7 @@ export type LiveWorkspace = {
     status: string; starts_on?: string; ends_on?: string; assigned_hours?: number; responsibilities: string;
     staffing_method?: 'AGENT_RECOMMENDATION' | 'MANUAL_OVERRIDE'; close_reason?: string | null }[];
   days: { assignment_id: string; request_id: string; person_id: string; work_date: string; assigned_hours: number }[];
-  people: { person_id: string; full_name?: string; allocation_pct: number | null; capacity_status: string; active_pods: number;
+  people: { person_id: string; full_name?: string; staffing_eligible?: boolean; allocation_pct: number | null; capacity_status: string; active_pods: number;
     weeks?: { available_hours: string; committed_hours: string; leave_hours?: string; pod_hours?: string;
       reported_pod_hours?: string; external_hours?: string }[] }[];
 };

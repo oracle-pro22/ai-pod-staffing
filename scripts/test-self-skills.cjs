@@ -328,7 +328,7 @@ test('UI validates changed ratings, evidence, interest-only, duplicates, and unk
   draft[0].interested = true;
   assert.match(skillsDraftError(profile, draft), /1 to 5/);
   draft[0].strength = 4; draft[0].evidence = '  ';
-  assert.match(skillsDraftError(profile, draft), /evidence note/);
+  assert.match(skillsDraftError(profile, draft), /experience with this skill/);
   draft[0].strength = null;
   assert.equal(skillsDraftError(profile, draft), null);
   draft[0].interested = false;
@@ -372,7 +372,7 @@ test('skills modal retains role capability controls without demo warnings or a s
   assert.match(markup, /Project Manager comes from an assigned role/);
   assert.ok(!markup.includes('Proficiency — Project Manager'));
   assert.match(markup, /<button[^>]*disabled=""[^>]*>Save changes<\/button>/);
-  assert.match(markup, /Evidence \(required\) — GTM SME/);
+  assert.match(markup, /Your experience with this skill \(required\) — GTM SME/);
   assert.match(markup, /Interested in future work using this skill/);
   assert.match(markup, /does not change proficiency or qualify someone for a required skill/);
 });

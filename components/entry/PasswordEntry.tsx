@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { announcePersonaChange } from '@/lib/staffing-fetch';
 import '@/styles/password-entry.css';
 
@@ -9,10 +9,19 @@ export function PasswordEntry({ initialError = '', applicationUrl }: { initialEr
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(initialError);
+  const [success, setSuccess] = useState('');
+  useEffect(() => {
+    try {
+      if (window.sessionStorage.getItem('staffing-password-changed') === '1') {
+        window.sessionStorage.removeItem('staffing-password-changed');
+        setSuccess('Password updated. Sign in again with your new password.');
+      }
+    } catch { /* The sign-in form remains usable when session storage is unavailable. */ }
+  }, []);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (busy) return;
-    setBusy(true); setError('');
+    setBusy(true); setError(''); setSuccess('');
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 30000);
     try {
@@ -31,6 +40,7 @@ export function PasswordEntry({ initialError = '', applicationUrl }: { initialEr
     <section className="password-card" aria-labelledby="sign-in-title">
       <p className="password-eyebrow">YOUR WORKSPACE</p><h1 id="sign-in-title">Welcome back</h1>
       <p className="password-description">Sign in to manage your work and connect the right people to every project.</p>
+      {success && <p className="password-success" role="status">{success}</p>}
       <form onSubmit={submit}>
         <label htmlFor="staffing-email">Oracle email</label>
         <input id="staffing-email" name="email" type="email" autoComplete="username" required maxLength={320}

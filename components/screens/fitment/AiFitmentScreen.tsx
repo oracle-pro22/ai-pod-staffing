@@ -5,10 +5,10 @@ import { useEffect, useRef, useState } from 'react';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
+import { DropdownField } from '@/components/ui/DropdownField';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Pill } from '@/components/ui/Pill';
 import { ProgressBar } from '@/components/ui/ProgressBar';
-import { SelectField } from '@/components/ui/FormControls';
 import { useStaffingApp } from '@/context/StaffingAppProvider';
 import { resolveFitmentRecommendations } from '@/lib/demo-fitment';
 import { formatDate, requestEffortLabel } from '@/lib/formatting';
@@ -73,7 +73,7 @@ function PreviewFitmentScreen() {
 
   return (
     <section className="staffing-screen">
-      <PageHeader title="AI fitment review" description="Evidence-based recommendations remain advisory until a person approves them." actions={<><label className="staffing-fitment-picker"><span>Staffing request</span><SelectField value={request?.id ?? ''} onChange={(event) => dispatch({ type: 'set-active-request', requestId: event.target.value })}>{requests.map((item) => <option key={item.id} value={item.id}>{item.id} — {item.title} • {item.status}</option>)}</SelectField></label>{canRerun ? <Button disabled={rerunning || !request} onClick={rerunFitment}>↻ {rerunning ? 'Re-running…' : 'Re-run'}</Button> : null}{canApprove ? <Button variant="primary" onClick={() => request && dispatch({ type: 'open-modal', modal: { id: 'approve-pod', title: 'Approve proposed pod', payload: { requestId: request.id } } })}>Approve pod</Button> : null}</>} />
+      <PageHeader title="AI fitment review" description="Evidence-based recommendations remain advisory until a person approves them." actions={<><label className="staffing-fitment-picker"><span>Staffing request</span><DropdownField aria-label="Staffing request" value={request?.id ?? ''} onChange={(requestId) => dispatch({ type: 'set-active-request', requestId })} options={requests.map((item) => ({ value: item.id, label: `${item.id} — ${item.title} • ${item.status}` }))} /></label>{canRerun ? <Button disabled={rerunning || !request} onClick={rerunFitment}>↻ {rerunning ? 'Re-running…' : 'Re-run'}</Button> : null}{canApprove ? <Button variant="primary" onClick={() => request && dispatch({ type: 'open-modal', modal: { id: 'approve-pod', title: 'Approve proposed pod', payload: { requestId: request.id } } })}>Approve pod</Button> : null}</>} />
       {request ? <div className="staffing-fit-layout">
         <Card padded className="staffing-request-summary">
           <div className="staffing-summary-head"><div><Pill tone={/high|urgent/i.test(request.priority) ? 'red' : ''}>{request.priority} priority</Pill><h3 className="staffing-summary-title">{request.title}</h3><p className="staffing-muted">{request.id} • {request.projectType.name}</p></div><Button size="small" aria-label={`Open details for ${request.id}`} onClick={() => dispatch({ type: 'open-drawer', drawer: { id: 'request-details', title: request.title, payload: { requestId: request.id } } })}>↗</Button></div>

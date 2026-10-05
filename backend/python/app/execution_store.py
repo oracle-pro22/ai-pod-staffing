@@ -397,6 +397,7 @@ class ExecutionStore:
             stored_checkpoint = record.pop("checkpoint_json")
             checkpoint = document(stored_checkpoint) if stored_checkpoint else {}
             record["clarification_questions"] = checkpoint.get("analysis", {}).get("clarification_questions", [])
+            record["clarification_fields"] = checkpoint.get("analysis", {}).get("clarification_fields", [])
             record["events"] = rows(connection, """SELECT event_sequence,stage,status,summary,created_at
                 FROM agent_execution_events WHERE execution_id=:executionId AND event_sequence>:afterSequence
                 ORDER BY event_sequence FETCH FIRST 100 ROWS ONLY""", executionId=execution_id, afterSequence=after)
@@ -412,7 +413,10 @@ class ExecutionStore:
         if not full_access:
             actor.require("AGENT_EXECUTION", "view", "POD_CAPTAIN")
         with self.database.read() as connection:
-            return rows(connection, """SELECT request_id,title,status,responsible_captain_id,request_revision FROM requests
+            return rows(connection, """SELECT request_id,title,status,responsible_captain_id,request_revision,
+                TO_CHAR(estimated_start_date,'YYYY-MM-DD') starts_on,
+                TO_CHAR(estimated_completion_date,'YYYY-MM-DD') ends_on,
+                TO_CHAR(needed_by,'YYYY-MM-DD') needed_by,estimated_hours total_hours FROM requests
                 WHERE (:fullAdmin=1 OR responsible_captain_id=:personId) ORDER BY created_at DESC,request_id""",
                 fullAdmin=1 if full_access else 0, personId=actor.person_id)
 

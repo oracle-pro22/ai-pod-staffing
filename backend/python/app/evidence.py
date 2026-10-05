@@ -47,7 +47,7 @@ def collect_evidence(connection, request_id, policy_version, max_people=60):
     # Project requirements remain authoritative; catalogue defaults are context, not silent request edits.
     found_people = rows(connection, """SELECT p.person_id,p.full_name,p.skills_version,p.workload_version,
         p.availability_version,p.deliverable_experience_json FROM people p
-        WHERE p.active_flag='Y'
+        WHERE p.active_flag='Y' AND p.staffing_eligible_flag='Y'
           AND NOT EXISTS (SELECT 1 FROM roster_onboarding o WHERE o.person_id=p.person_id AND o.status NOT IN ('COMPLETE','REVIEW'))
           AND EXISTS (SELECT 1 FROM app_user_roles ur JOIN app_roles ar ON ar.role_code=ur.role_code
           JOIN app_accounts a ON a.person_id=ur.person_id AND a.identity_subject=ur.identity_subject AND a.active_flag='Y'

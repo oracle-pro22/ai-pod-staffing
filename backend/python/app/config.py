@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     backend_env: Literal["local", "test", "production"] = "local"
     backend_auth_mode: Literal["oidc", "local", "password"] = "oidc"
     staffing_session_hours: int = Field(default=8, ge=1, le=24)
-    staffing_mvp_default_password: SecretStr | None = None  # Used by the explicit account import only.
+    staffing_mvp_default_password: SecretStr | None = None  # Explicit import and administrator employee provisioning only.
     backend_local_token: SecretStr | None = None
     backend_local_subject: str = ""
     staffing_demo_personas_enabled: bool = False

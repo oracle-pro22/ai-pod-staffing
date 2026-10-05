@@ -3,7 +3,8 @@ import { staffingRequestContext } from '@/lib/auth/staffing-request-context';
 import { requireStaffingPermission } from '@/lib/auth/staffing-authorization';
 import { staffingApiErrorResponse } from '@/lib/api/staffing-api-response';
 import { StaffingApiError, validationError } from '@/lib/errors/staffing-api-error';
-import { createPerson, listActivePeopleNames } from '@/lib/repositories/people-repository';
+import { listActivePeopleNames } from '@/lib/repositories/people-repository';
+import { staffingBackend } from '@/backend/staffing/bridge';
 import { validateCreatePerson } from '@/lib/validation/people';
 
 export const dynamic = 'force-dynamic';
@@ -24,7 +25,9 @@ export async function POST(request: NextRequest) {
     requireOracle();
     const context = await staffingRequestContext(request);
     const body = await request.json().catch(() => { throw validationError('Invalid JSON body.'); });
-    const data = await createPerson(validateCreatePerson(body), context);
+    await requireStaffingPermission(context, 'TEAM_SKILLS', 'canCreate');
+    // Python independently enforces current Administrator/create/administer grants.
+    const data = await staffingBackend(request, '/v1/admin/employees', 'POST', validateCreatePerson(body));
     return NextResponse.json({ data }, { status: 201, headers: { 'Cache-Control': 'no-store' } });
   } catch (error) { return staffingApiErrorResponse(error); }
 }

@@ -96,7 +96,8 @@ class ManualStore:
             JOIN app_accounts a ON a.person_id=p.person_id AND a.active_flag='Y'
             JOIN app_user_roles ur ON ur.person_id=p.person_id AND ur.identity_subject=a.identity_subject AND ur.active_flag='Y'
             JOIN app_roles ar ON ar.role_code=ur.role_code AND ar.active_flag='Y'
-            WHERE p.active_flag='Y' AND ur.role_code IN ('POD_LEAD','POD_MEMBER')
+            WHERE p.active_flag='Y' AND p.staffing_eligible_flag='Y'
+            AND ur.role_code IN ('POD_LEAD','POD_MEMBER')
             AND NOT EXISTS (SELECT 1 FROM roster_onboarding o WHERE o.person_id=p.person_id AND o.status NOT IN ('COMPLETE','REVIEW'))
             AND ur.effective_from<=:startDay AND (ur.effective_to IS NULL OR ur.effective_to>=:endDay)
             ORDER BY p.full_name,p.person_id,ur.role_code""", startDay=request['estimated_start_date'], endDay=request['estimated_completion_date'])
@@ -173,7 +174,7 @@ class ManualStore:
                 raise ServiceError('INVALID_SELECTION', 'Newly chosen people must be explicitly marked as manual overrides.', 409)
             pool_ids = {p['person_id'] for p in self.pool(c, request)}
             if not {s.person_id for s in body.slots} <= pool_ids:
-                raise ServiceError('ROLE_INELIGIBLE', 'All selected people need active accounts and staffing roles.', 409)
+                raise ServiceError('ROLE_INELIGIBLE', 'All selected people must be staffing-eligible and have active accounts and roles.', 409)
             for pid in sorted({s.person_id for s in body.slots}):
                 rows(c, 'SELECT person_id FROM people WHERE person_id=:personId FOR UPDATE WAIT 5', personId=pid)
             fresh = collect_evidence(c, request_id, version, self.settings.staffing_max_candidates)
@@ -229,9 +230,11 @@ class ManualStore:
                 fresh = collect_evidence(c, request_id, version, self.settings.staffing_max_candidates)
                 fresh.policy.require_published()
                 if body.action == 'APPROVED':
+                    from app.schedule_dates import require_future_schedule
+                    require_future_schedule(fresh.request, fresh.policy)
                     pool_ids = {p['person_id'] for p in self.pool(c, request)}
                     if not {s.person_id for s in state.slots} <= pool_ids:
-                        raise ServiceError('ROLE_INELIGIBLE', 'A selected account or role is no longer active.', 409)
+                        raise ServiceError('ROLE_INELIGIBLE', 'A selected person is no longer staffing-eligible or their account or role is inactive.', 409)
                     if state.evidence_hash != evidence_hash(fresh):
                         raise ServiceError('SELECTION_REFRESH_REQUIRED', 'Workload or evidence changed. Recalculate, review the statistics and approve again.', 409)
                     checked = manual_plan(fresh, state.slots)

@@ -38,3 +38,34 @@ export async function passwordLogout(request: NextRequest) {
   response.cookies.set(PASSWORD_COOKIE, '', { httpOnly: true, secure: origin.protocol === 'https:', sameSite: 'strict', path: '/', maxAge: 0 });
   return response;
 }
+
+export async function passwordChange(request: NextRequest) {
+  const origin = requirePasswordOrigin(request, true);
+  const raw = await request.text();
+  if (raw.length > 4096) throw new StaffingApiError('Invalid password change request.', 400, 'INVALID_REQUEST');
+  let body: unknown;
+  try { body = JSON.parse(raw); } catch { throw new StaffingApiError('Invalid password change request.', 400, 'INVALID_REQUEST'); }
+  if (!body || Array.isArray(body) || typeof body !== 'object'
+      || Object.keys(body).sort().join(',') !== 'confirmPassword,currentPassword,newPassword') {
+    throw new StaffingApiError('Complete all password fields.', 400, 'INVALID_REQUEST');
+  }
+  const values = body as Record<string, unknown>;
+  if (typeof values.currentPassword !== 'string' || typeof values.newPassword !== 'string'
+      || typeof values.confirmPassword !== 'string' || values.currentPassword.length < 1
+      || values.currentPassword.length > 1024 || values.newPassword.length < 1 || values.newPassword.length > 128) {
+    throw new StaffingApiError('Complete all password fields.', 400, 'INVALID_REQUEST');
+  }
+  if (values.newPassword !== values.confirmPassword) {
+    throw new StaffingApiError('The new passwords do not match.', 400, 'PASSWORD_MISMATCH');
+  }
+  const result = await staffingBackend(request, '/v1/auth/password/change', 'POST', {
+    current_password: values.currentPassword,
+    new_password: values.newPassword,
+  }) as { ok?: unknown; sessions_revoked?: unknown };
+  if (result?.ok !== true || result.sessions_revoked !== true) {
+    throw new StaffingApiError('Password change could not be confirmed.', 503, 'PASSWORD_CHANGE_UNCONFIRMED');
+  }
+  const response = NextResponse.json({ ok: true, sessionsRevoked: true }, { headers: { 'Cache-Control': 'no-store' } });
+  response.cookies.set(PASSWORD_COOKIE, '', { httpOnly: true, secure: origin.protocol === 'https:', sameSite: 'strict', path: '/', maxAge: 0 });
+  return response;
+}

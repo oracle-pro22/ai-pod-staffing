@@ -150,6 +150,13 @@ def load_request_snapshot(connection, request_id: str) -> RequestSnapshot:
         deliverable_ids = [item.get("id") or item.get("deliverableId") for item in deliverables]
         custom_deliverables = {deliverable_id: item.get("name", "") for item, deliverable_id in zip(deliverables, deliverable_ids, strict=True)
                                if item.get("custom") is True}
+        # Older requests can contain both a catalogue choice and an exact-name
+        # "Other" match. One catalogue ID is one deliverable, not two workloads.
+        # Reject contradictory custom/catalogue identity instead of guessing.
+        for identifier in custom_deliverables:
+            if any((item.get('id') or item.get('deliverableId')) == identifier and item.get('custom') is not True for item in deliverables):
+                raise ValueError('Conflicting deliverable identity')
+        deliverable_ids = list(dict.fromkeys(deliverable_ids))
         return RequestSnapshot(
             request_id=row["request_id"], revision=row["request_revision"],
             responsible_captain_id=row["responsible_captain_id"], title=row["title"],
@@ -163,10 +170,18 @@ def load_request_snapshot(connection, request_id: str) -> RequestSnapshot:
         raise ServiceError("NEEDS_INFORMATION", "Confirm the Captain, schedule, hours, POD counts and catalogue capabilities.", 422) from error
 
 
+def capacity_business_day(connection):
+    from app.policy_admin import active_policy_version
+    from app.schedule_dates import business_date
+    return business_date(load_policy(connection, active_policy_version(connection)))
+
+
 def load_capacity_ledgers(connection, person_ids, start: date, end: date):
-    """Load many weekly ledgers with four set-based queries.
+    """Load weekly ledgers with set-based reads and bounded future derivation.
 
     The previous reports path issued four ledger queries per visible person.
+    Missing current/future rows on completed profiles are derived read-only
+    from recurring hours and dated events. Historical gaps remain unknown.
     Results intentionally retain a per-person ServiceError so one stale profile
     remains visible as ``Needs refresh`` without hiding valid teammates.
     """
@@ -203,6 +218,40 @@ def load_capacity_ledgers(connection, person_ids, start: date, end: date):
     days_by_id = {person_id: [] for person_id in identifiers}
     days_by_id.update(group(days))
     expected = set(dates_between(first, last))
+    # Only extend completed profiles. Missing future rows are a cache miss, not
+    # evidence that a person's recurring working pattern has expired. Existing
+    # rows remain authoritative (including independently reviewed adjustments).
+    incomplete = [pid for pid in identifiers if people_by_id.get(pid, {}).get('weekly_work_hours') is not None
+                  and {calendar_day(r['work_date']) for r in days_by_id[pid]} != expected]
+    if incomplete:
+        from app.capacity_admin import build_days
+        confirmed = rows(connection, f"""SELECT person_id FROM roster_onboarding
+            WHERE person_id IN ({placeholders}) AND status IN ('COMPLETE','REVIEW')""", **id_binds)
+        confirmed_ids = {r['person_id'] for r in confirmed}
+        as_of = capacity_business_day(connection) if confirmed_ids else first
+        current_week = as_of - timedelta(days=as_of.weekday())
+        events = rows(connection, f"""SELECT person_id,capacity_kind,starts_on,ends_on,allocated_hours,effective_until
+            FROM availability WHERE person_id IN ({placeholders}) AND status='ACTIVE'
+            AND starts_on<=:endDay AND ends_on>=:startDay""", **date_binds) if confirmed_ids else []
+        events_by_id = group(events)
+        for pid in incomplete:
+            person = people_by_id.get(pid)
+            if pid not in confirmed_ids or not person or person['weekly_work_hours'] is None:
+                continue
+            try:
+                generated = {}
+                block = first
+                while block <= last:
+                    block_end = min(last, block + timedelta(days=90))
+                    generated.update(build_days(person['weekly_work_hours'], block, block_end, events_by_id[pid]))
+                    block = block_end + timedelta(days=1)
+                saved = {calendar_day(r['work_date']) for r in days_by_id[pid]}
+                days_by_id[pid].extend({'work_date': d, 'available_hours': v['available'],
+                    'external_committed_hours': v['external'], 'availability_version': person['availability_version']}
+                    for d, v in generated.items() if d not in saved and d >= current_week)
+            except (ValueError, ServiceError):
+                # Invalid source data must stay unavailable, never become free.
+                pass
     result = {}
     valid_ids = []
     for person_id in identifiers:
