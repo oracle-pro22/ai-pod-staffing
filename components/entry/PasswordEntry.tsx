@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, type FormEvent } from 'react';
+import { OracleSymbol, OracleWordmark } from '@/components/branding/OracleMarks';
 import { announcePersonaChange } from '@/lib/staffing-fetch';
 import '@/styles/password-entry.css';
 
@@ -36,7 +37,10 @@ export function PasswordEntry({ initialError = '', applicationUrl }: { initialEr
     finally { window.clearTimeout(timeout); }
   }
   return <main className="password-entry">
-    <header className="password-brand"><span aria-hidden="true">AI</span><div><strong>AI Pod Staffing</strong><small>Customer Success Services</small></div></header>
+    <header className="password-brand" aria-label="AI Pod Staffing, Oracle Customer Success Services">
+      <span className="password-brandmark"><OracleSymbol /></span>
+      <div className="password-brand-copy"><strong>AI Pod Staffing</strong><span className="password-oracle-wordmark"><OracleWordmark /></span><small>Customer Success Services</small></div>
+    </header>
     <section className="password-card" aria-labelledby="sign-in-title">
       <p className="password-eyebrow">YOUR WORKSPACE</p><h1 id="sign-in-title">Welcome back</h1>
       <p className="password-description">Sign in to manage your work and connect the right people to every project.</p>

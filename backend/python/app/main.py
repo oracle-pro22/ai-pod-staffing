@@ -15,7 +15,7 @@ from app.errors import ServiceError
 from app.contracts import Contract, CaptainDecision
 from app.decisions import DecisionStore
 from app.execution_store import ExecutionStore
-from app.storage import load_policy
+from app.storage import load_policy, rows
 from app.policy_admin import PolicyAdminStore, UtilizationUpdate, active_policy_version
 from app.assignments import AssignmentStore, CloseProject
 from app.personas import PersonaRepository, PersonaSelection, constrain_actor, mint_session, require_management
@@ -121,6 +121,14 @@ def create_app(settings: Settings | None = None, database=None, verifier=None, a
     def password_change(body: PasswordChange, request: Request):
         return accounts.change_password(request.headers.get("authorization"), body)
 
+    @app.get("/v1/auth/password/session")
+    def password_session(request: Request):
+        return accounts.session_status(request.headers.get("authorization"))
+
+    @app.post("/v1/auth/password/activity")
+    def password_activity(request: Request):
+        return accounts.record_activity(request.headers.get("authorization"))
+
     @app.get("/v1/local-personas", dependencies=[Depends(local_persona_management)])
     def local_personas():
         return {"personas": personas.list()}
@@ -137,6 +145,12 @@ def create_app(settings: Settings | None = None, database=None, verifier=None, a
     @app.get("/health/ready")
     def ready():
         database.ping()
+        if settings.backend_auth_mode == 'password':
+            with database.read() as c:
+                installed = rows(c, """SELECT COUNT(*) n FROM user_tab_columns
+                    WHERE table_name='APP_SESSIONS' AND column_name='LAST_ACTIVITY_AT' AND nullable='N'""")
+            if len(installed) != 1 or installed[0]['n'] != 1:
+                raise ServiceError('SESSION_SCHEMA_OUTDATED', 'Install the password session timeout migration.', 503)
         return {"status": "ok", "database": "reachable", "phase": 5}
 
     @app.get("/v1/me")

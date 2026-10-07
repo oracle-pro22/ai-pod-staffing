@@ -127,6 +127,10 @@ def test_migration_has_no_catalogue_or_permission_writes_or_global_reset():
     assert set(GUARDS) == {'P2_MEMBER_FREEZE','P2_PROPOSAL_FREEZE','P2_DECISION_APPEND','P2_EVENT_APPEND'}
 
 
+def test_session_schema_includes_idle_activity_timestamp():
+    assert 'LAST_ACTIVITY_AT' in migration.SCHEMA_COLUMNS['APP_SESSIONS']
+
+
 def test_capacity_preview_compares_decimal_values_without_float_false_positives():
     day = date(2026, 9, 14)
     data = [[{'weekly_work_hours': 40, 'availability_version': 1}], [],

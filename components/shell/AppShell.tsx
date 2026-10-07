@@ -18,6 +18,19 @@ import { PersonaSessionGuard } from './PersonaSession';
 export function AppShell({ children }: { children: ReactNode }) {
   const { state } = useStaffingApp();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  useEffect(() => {
+    try { setSidebarCollapsed(window.localStorage.getItem('staffing-sidebar-collapsed') === '1'); }
+    catch { /* The sidebar remains usable when storage is unavailable. */ }
+  }, []);
+
+  function toggleSidebar() {
+    const next = !sidebarCollapsed;
+    setSidebarCollapsed(next);
+    try { window.localStorage.setItem('staffing-sidebar-collapsed', next ? '1' : '0'); }
+    catch { /* Keep the current tab's choice. */ }
+  }
 
   useEffect(() => {
     if (!mobileNavOpen) return;
@@ -29,9 +42,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [mobileNavOpen]);
 
   return (
-    <div className="staffing-shell">
+    <div className={`staffing-shell${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
       <PersonaSessionGuard />
-      <Sidebar mobileOpen={mobileNavOpen} onNavigate={() => setMobileNavOpen(false)} />
+      <Sidebar mobileOpen={mobileNavOpen} collapsed={sidebarCollapsed} onToggle={toggleSidebar} onNavigate={() => setMobileNavOpen(false)} />
       {mobileNavOpen && <button type="button" className="staffing-nav-backdrop" aria-label="Close navigation" onClick={() => setMobileNavOpen(false)} />}
       <main className="staffing-main">
         <Topbar onMenu={() => setMobileNavOpen((value) => !value)} />

@@ -4,7 +4,7 @@ import { Icon } from '@/components/ui/Icon';
 import { useStaffingApp } from '@/context/StaffingAppProvider';
 import { canAccessScreen, NAVIGATION_ITEMS } from '@/lib/role-policy';
 
-export function Navigation({ onNavigate }: { onNavigate?: () => void }) {
+export function Navigation({ onNavigate, collapsed = false }: { onNavigate?: () => void; collapsed?: boolean }) {
   const { data, state, dispatch, notify } = useStaffingApp();
 
   return (
@@ -17,8 +17,10 @@ export function Navigation({ onNavigate }: { onNavigate?: () => void }) {
             type="button"
             key={item.id}
             className={`${active ? 'active' : ''}${accessible ? '' : ' locked'}`}
+            aria-label={item.label}
             aria-current={active ? 'page' : undefined}
             aria-disabled={!accessible}
+            title={collapsed ? item.label : undefined}
             onClick={() => {
               if (!accessible) {
                 notify('Access restricted', `${item.label} is not available to ${state.role}s.`);

@@ -1,4 +1,5 @@
 from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -78,13 +79,14 @@ def account(**changes):
 def test_successful_login_stores_only_session_digest_and_resets_attempts(store):
     with patch('app.accounts.rows', side_effect=[[account()], [{'person_id': 'P-001', 'role_code': 'POD_MEMBER'}]]), patch('app.accounts.execute') as sql:
         result = store.login(PasswordLogin(email='alex@oracle.com', password='shared-test-password'))
-    assert result['expires_in'] == 28800
+    assert result['expires_in'] == 3600
     assert result['access_token'].startswith('aps1.')
     assert result['access_token'] not in str(sql.call_args_list)
     assert session_hash('Bearer ' + result['access_token']) in str(sql.call_args_list)
     assert store.database.committed == 1
     assert "SYSTIMESTAMP+NUMTODSINTERVAL(:seconds,'SECOND')" in sql.call_args_list[0].args[1]
-    assert sql.call_args_list[0].kwargs['seconds'] == 28800
+    assert 'last_activity_at' in sql.call_args_list[0].args[1]
+    assert sql.call_args_list[0].kwargs['seconds'] == 3600
 
 
 def test_failed_login_commits_attempt_counter_without_enumerating_accounts(store):
@@ -108,6 +110,8 @@ def test_session_resolution_checks_expiry_revocation_person_and_account(store):
         assert store.subject('Bearer aps1.' + 'a' * 43) == 'acct:ACC-1'
     query = read.call_args.args[1]
     assert 's.revoked_at IS NULL' in query and 's.expires_at>SYSTIMESTAMP' in query
+    assert 's.last_activity_at>SYSTIMESTAMP-NUMTODSINTERVAL(:idleSeconds' in query
+    assert 's.created_at>SYSTIMESTAMP-NUMTODSINTERVAL(:absoluteSeconds' in query
     assert "a.active_flag='Y'" in query and "p.active_flag='Y'" in query
     with patch('app.accounts.rows', return_value=[]), pytest.raises(ServiceError):
         store.subject('Bearer aps1.' + 'a' * 43)
@@ -118,6 +122,28 @@ def test_logout_revokes_the_same_digest(store):
         assert store.logout('Bearer aps1.' + 'a' * 43) == {'ok': True}
     assert sql.call_args.kwargs['token'] == session_hash('Bearer aps1.' + 'a' * 43)
     assert 'revoked_at=SYSTIMESTAMP' in sql.call_args.args[1]
+
+
+def test_activity_renews_only_a_live_session_and_status_reports_both_deadlines(store):
+    now = datetime.now(timezone.utc)
+    absolute = (now + timedelta(hours=1)).isoformat()
+    idle = (now + timedelta(minutes=5)).isoformat()
+    store.database.connection.cursor.return_value.__enter__.return_value.rowcount = 1
+    with patch('app.accounts.rows', return_value=[{
+        'absolute_expires_at': absolute,
+        'idle_expires_at': idle,
+    }]):
+        status = store.record_activity('Bearer aps1.' + 'a' * 43)
+    assert status['absolute_expires_at'] == absolute
+    assert status['idle_expires_at'] == idle
+    statement = store.database.connection.cursor.return_value.__enter__.return_value.execute.call_args.args[0]
+    assert 's.revoked_at IS NULL' in statement
+    assert 's.created_at>SYSTIMESTAMP-NUMTODSINTERVAL(:absoluteSeconds' in statement
+    assert 's.last_activity_at>SYSTIMESTAMP-NUMTODSINTERVAL(:idleSeconds' in statement
+    store.database.connection.cursor.return_value.__enter__.return_value.rowcount = 0
+    with pytest.raises(ServiceError) as failure:
+        store.record_activity('Bearer aps1.' + 'a' * 43)
+    assert failure.value.code == 'UNAUTHENTICATED'
 
 
 def test_password_change_replaces_hash_audits_without_secrets_and_revokes_every_session(store):

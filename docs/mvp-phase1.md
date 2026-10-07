@@ -4,7 +4,7 @@ This release implements Phase 1 only. It does not add the Supervisor or manual o
 
 ## What changes
 
-- Oracle email/password login replaces profile selection when password mode is configured. Python verifies credentials and revocable, eight-hour sessions. Roles and resource scopes still come from the existing authorization tables.
+- Oracle email/password login replaces profile selection when password mode is configured. Python verifies credentials and revocable sessions. Current password sessions end after five minutes without activity or one hour total. Roles and resource scopes still come from the existing authorization tables.
 - Login placeholders use `firstname.lastname@oracle.com`, as requested. They are not verified employee addresses. **Keep notification sending disabled.** Replace the placeholders once the approved roster arrives.
 - The proposed final roster is **4 Captains, 6 Leads, 20 Members and 1 Administrator (31 accounts)**. Fourteen new profiles use existing catalogue entries; no Administrator is added.
 - Five older person IDs normalize to P-013 through P-017. P-001 through P-012 remain. Added employees are P-018 through P-031.
@@ -52,7 +52,7 @@ In **backend/python/.env**:
 BACKEND_ENV=local
 BACKEND_AUTH_MODE=password
 STAFFING_DEMO_PERSONAS_ENABLED=false
-STAFFING_SESSION_HOURS=8
+STAFFING_SESSION_HOURS=1
 STAFFING_MVP_DEFAULT_PASSWORD=<choose-one-shared-MVP-password-at-least-8-characters>
 ```
 

@@ -13,6 +13,11 @@ from app.storage import rows
 
 ITERATIONS = 600_000
 TOKEN_PATTERN = re.compile(r"aps1\.[A-Za-z0-9_-]{43}")
+SESSION_ABSOLUTE_SECONDS = 3600
+SESSION_IDLE_SECONDS = 300
+SESSION_VALID_SQL = """s.revoked_at IS NULL AND s.expires_at>SYSTIMESTAMP
+    AND s.created_at>SYSTIMESTAMP-NUMTODSINTERVAL(:absoluteSeconds,'SECOND')
+    AND s.last_activity_at>SYSTIMESTAMP-NUMTODSINTERVAL(:idleSeconds,'SECOND')"""
 
 
 def normalize_email(value: str) -> str:
@@ -113,29 +118,63 @@ class AccountStore:
                     from app.auth import OFFICIAL_ROLES
                     if len({r["person_id"] for r in mapped}) == 1 and mapped and all(r["role_code"] in OFFICIAL_ROLES for r in mapped):
                         token = "aps1." + secrets.token_urlsafe(32)
-                        execute(c, """INSERT INTO app_sessions(token_hash,account_id,expires_at)
-                            VALUES(:token,:account,SYSTIMESTAMP+NUMTODSINTERVAL(:seconds,'SECOND'))""",
-                            token=session_hash("Bearer " + token), account=account["account_id"], seconds=self.settings.staffing_session_hours * 3600)
+                        execute(c, """INSERT INTO app_sessions(token_hash,account_id,expires_at,last_activity_at)
+                            VALUES(:token,:account,SYSTIMESTAMP+NUMTODSINTERVAL(:seconds,'SECOND'),SYSTIMESTAMP)""",
+                            token=session_hash("Bearer " + token), account=account["account_id"], seconds=SESSION_ABSOLUTE_SECONDS)
                         execute(c, "UPDATE app_accounts SET failed_attempts=0,locked_until=NULL WHERE account_id=:id", id=account["account_id"])
                 if not token:
                     execute(c, """UPDATE app_accounts SET failed_attempts=MOD(failed_attempts+1,5),
                         locked_until=CASE WHEN failed_attempts>=4 THEN SYSTIMESTAMP+INTERVAL '1' MINUTE ELSE NULL END
                         WHERE account_id=:id""", id=account["account_id"])
         if token is None:
-            raise ServiceError("INVALID_CREDENTIALS", "Unable to sign in. Check your email and password, or try again shortly.", 401)
-        return {"access_token": token, "expires_in": self.settings.staffing_session_hours * 3600}
+            raise ServiceError("INVALID_CREDENTIALS", "Email or password is incorrect.", 401)
+        return {"access_token": token, "expires_in": SESSION_ABSOLUTE_SECONDS}
 
     def subject(self, authorization: str | None) -> str:
         self.require_enabled()
         digest = session_hash(authorization)
         with self.database.read() as c:
-            result = rows(c, """SELECT a.identity_subject FROM app_sessions s
+            result = rows(c, f"""SELECT a.identity_subject FROM app_sessions s
                 JOIN app_accounts a ON a.account_id=s.account_id AND a.active_flag='Y'
                 JOIN people p ON p.person_id=a.person_id AND p.active_flag='Y'
-                WHERE s.token_hash=:token AND s.revoked_at IS NULL AND s.expires_at>SYSTIMESTAMP""", token=digest)
+                WHERE s.token_hash=:token AND {SESSION_VALID_SQL}""", token=digest,
+                absoluteSeconds=SESSION_ABSOLUTE_SECONDS, idleSeconds=SESSION_IDLE_SECONDS)
         if len(result) != 1:
             raise ServiceError("UNAUTHENTICATED", "Your session ended. Sign in again.", 401)
         return result[0]["identity_subject"]
+
+    def session_status(self, authorization: str | None):
+        self.require_enabled()
+        digest = session_hash(authorization)
+        with self.database.read() as c:
+            found = rows(c, f"""SELECT
+                TO_CHAR(SYS_EXTRACT_UTC(CASE WHEN s.expires_at<s.created_at+NUMTODSINTERVAL(:absoluteSeconds,'SECOND')
+                    THEN s.expires_at ELSE s.created_at+NUMTODSINTERVAL(:absoluteSeconds,'SECOND') END),
+                    'YYYY-MM-DD"T"HH24:MI:SS.FF3"Z"') absolute_expires_at,
+                TO_CHAR(SYS_EXTRACT_UTC(s.last_activity_at+NUMTODSINTERVAL(:idleSeconds,'SECOND')),
+                    'YYYY-MM-DD"T"HH24:MI:SS.FF3"Z"') idle_expires_at
+                FROM app_sessions s JOIN app_accounts a ON a.account_id=s.account_id AND a.active_flag='Y'
+                JOIN people p ON p.person_id=a.person_id AND p.active_flag='Y'
+                WHERE s.token_hash=:token AND {SESSION_VALID_SQL}""",
+                token=digest, absoluteSeconds=SESSION_ABSOLUTE_SECONDS, idleSeconds=SESSION_IDLE_SECONDS)
+        if len(found) != 1:
+            raise ServiceError("UNAUTHENTICATED", "Your session ended. Sign in again.", 401)
+        return {"absolute_expires_at": found[0]["absolute_expires_at"],
+                "idle_expires_at": found[0]["idle_expires_at"]}
+
+    def record_activity(self, authorization: str | None):
+        self.require_enabled()
+        digest = session_hash(authorization)
+        with self.database.write() as c:
+            with c.cursor() as cursor:
+                cursor.execute(f"""UPDATE app_sessions s SET last_activity_at=SYSTIMESTAMP
+                    WHERE s.token_hash=:token AND {SESSION_VALID_SQL}
+                    AND EXISTS (SELECT 1 FROM app_accounts a JOIN people p ON p.person_id=a.person_id
+                        WHERE a.account_id=s.account_id AND a.active_flag='Y' AND p.active_flag='Y')""",
+                    {"token": digest, "absoluteSeconds": SESSION_ABSOLUTE_SECONDS, "idleSeconds": SESSION_IDLE_SECONDS})
+                if cursor.rowcount != 1:
+                    raise ServiceError("UNAUTHENTICATED", "Your session ended. Sign in again.", 401)
+        return self.session_status(authorization)
 
     def logout(self, authorization: str | None):
         self.require_enabled()
@@ -150,11 +189,12 @@ class AccountStore:
         current = body.current_password.get_secret_value()
         replacement = body.new_password.get_secret_value()
         with self.database.write() as c:
-            found = rows(c, """SELECT a.account_id,a.identity_subject,a.password_hash FROM app_sessions s
+            found = rows(c, f"""SELECT a.account_id,a.identity_subject,a.password_hash FROM app_sessions s
                 JOIN app_accounts a ON a.account_id=s.account_id AND a.active_flag='Y'
                 JOIN people p ON p.person_id=a.person_id AND p.active_flag='Y'
-                WHERE s.token_hash=:token AND s.revoked_at IS NULL AND s.expires_at>SYSTIMESTAMP
-                FOR UPDATE OF a.password_hash WAIT 5""", token=digest)
+                WHERE s.token_hash=:token AND {SESSION_VALID_SQL}
+                FOR UPDATE OF a.password_hash WAIT 5""", token=digest,
+                absoluteSeconds=SESSION_ABSOLUTE_SECONDS, idleSeconds=SESSION_IDLE_SECONDS)
             if len(found) != 1:
                 raise ServiceError("UNAUTHENTICATED", "Your session ended. Sign in again.", 401)
             account = found[0]

@@ -196,7 +196,7 @@ function SavedCandidates({ title, subtitle, members, count, request, proposalSta
         ? ` · ${m.active_pods} active pods as of ${formatDate(m.active_pods_as_of ?? '')}`
         : person ? ` · ${person.activePods} active pods today` : '';
       return <article className={`staffing-candidate selected${!m.source || m.source === 'RECOMMENDED' ? ' recommended' : ''}`} key={m.person_id}>
-        {m.source && <div className="staffing-inline-actions"><Pill tone="teal">Selected</Pill>
+        {m.source && <div className="staffing-inline-actions staffing-candidate-status"><Pill tone="teal">Selected</Pill>
           <Pill tone={m.source === 'RECOMMENDED' ? 'green' : 'amber'}>{m.source === 'MANUAL' ? 'Captain manual override' : m.source === 'RECOMMENDED' ? 'AI recommendation' : 'Captain-selected alternative'}</Pill></div>}
         <div className="staffing-candidate-head"><Avatar initials={person?.initials || initials(m.full_name)} /><div className="staffing-candidate-main">
           <div className="staffing-candidate-name">{m.full_name} • {podRole(m.role_in_pod)}</div>

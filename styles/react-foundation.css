@@ -65,42 +65,90 @@
   flex-direction: column;
   color: #f7f4ef;
   background: #211f1c;
+  transition: width .2s ease, padding .2s ease;
 }
+
+.staffing-shell.sidebar-collapsed { --staffing-sidebar-width: 76px; }
+.staffing-shell.sidebar-collapsed .staffing-sidebar { padding-inline: 10px; }
+.staffing-shell.sidebar-collapsed .staffing-brand { justify-content: center; padding-inline: 0; }
+.staffing-shell.sidebar-collapsed .staffing-brand > div:not(.staffing-brandmark),
+.staffing-shell.sidebar-collapsed .staffing-nav-title,
+.staffing-shell.sidebar-collapsed .staffing-nav button span,
+.staffing-shell.sidebar-collapsed .staffing-mini-user > div:not(.staffing-avatar) { display: none; }
+.staffing-shell.sidebar-collapsed .staffing-nav-heading { justify-content: center; margin-inline: 0; }
+.staffing-shell.sidebar-collapsed .staffing-nav button { justify-content: center; padding: 12px; }
+.staffing-shell.sidebar-collapsed .staffing-nav button.locked::after { display: none; }
+.staffing-shell.sidebar-collapsed .staffing-side-footer { padding-inline: 0; }
+.staffing-shell.sidebar-collapsed .staffing-mini-user { justify-content: center; }
+.staffing-shell.sidebar-collapsed .staffing-brandmark { width: 44px; }
+
+.staffing-sidebar-toggle {
+  width: 32px;
+  height: 32px;
+  padding: 7px;
+  border: 0;
+  border-radius: 8px;
+  display: grid;
+  align-items: center;
+  justify-items: center;
+  color: #aaa39c;
+  background: transparent;
+  transition: color .15s, background .15s;
+}
+.staffing-sidebar-toggle:hover { color: #fff; background: #34312d; }
+.staffing-sidebar-toggle svg { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 
 .staffing-brand {
   display: flex;
   align-items: center;
-  gap: 11px;
+  gap: 10px;
   padding: 6px 9px 18px;
   border-bottom: 1px solid rgba(255, 255, 255, .12);
 }
 
 .staffing-brandmark {
-  width: 38px;
-  height: 38px;
-  border-radius: 12px;
-  display: grid;
-  place-items: center;
+  width: 44px;
+  height: 40px;
+  display: flex;
+  align-items: center;
   flex: none;
-  background: var(--staffing-red);
-  font-weight: 800;
-  letter-spacing: -1px;
+  transition: width .2s ease;
 }
+
+.staffing-brandmark svg { display: block; width: 100%; height: auto; }
+
+.staffing-brand-copy { min-width: 0; }
+
+.staffing-oracle-wordmark {
+  width: 82px;
+  margin-top: 11px;
+}
+
+.staffing-oracle-wordmark svg { display: block; width: 100%; height: auto; }
 
 .staffing-brand h1 {
   margin: 0;
-  font-size: 15px;
-  line-height: 1.15;
+  font-size: 18px;
+  line-height: 1.1;
+  white-space: nowrap;
 }
 
 .staffing-brand p {
-  margin: 3px 0 0;
+  margin: 4px 0 0;
   color: #c9c3bc;
-  font-size: 11px;
+  font-size: 12px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.staffing-nav-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 18px 10px 8px;
 }
 
 .staffing-nav-title {
-  margin: 18px 10px 8px;
   color: #908a82;
   font-size: 10px;
   letter-spacing: .16em;
@@ -199,6 +247,7 @@
 .staffing-main {
   min-height: 100vh;
   margin-left: var(--staffing-sidebar-width);
+  transition: margin-left .2s ease;
 }
 
 .staffing-topbar {
@@ -689,6 +738,20 @@
 
 @media (max-width: 760px) {
   :root { --staffing-sidebar-width: 0px; }
+  .staffing-shell.sidebar-collapsed { --staffing-sidebar-width: 0px; }
+  .staffing-shell.sidebar-collapsed .staffing-sidebar { padding-inline: 14px; }
+  .staffing-shell.sidebar-collapsed .staffing-brand { justify-content: flex-start; padding-inline: 9px; }
+  .staffing-shell.sidebar-collapsed .staffing-brand > div:not(.staffing-brandmark),
+  .staffing-shell.sidebar-collapsed .staffing-nav-title,
+  .staffing-shell.sidebar-collapsed .staffing-nav button span,
+  .staffing-shell.sidebar-collapsed .staffing-mini-user > div:not(.staffing-avatar) { display: block; }
+  .staffing-shell.sidebar-collapsed .staffing-nav-heading { justify-content: flex-start; margin-inline: 10px; }
+  .staffing-shell.sidebar-collapsed .staffing-nav { margin-top: 0; }
+  .staffing-shell.sidebar-collapsed .staffing-nav button { justify-content: flex-start; padding: 10px 11px; }
+  .staffing-shell.sidebar-collapsed .staffing-nav button.locked::after { display: block; }
+  .staffing-shell.sidebar-collapsed .staffing-side-footer { padding: 13px 8px 2px; }
+  .staffing-shell.sidebar-collapsed .staffing-mini-user { justify-content: flex-start; }
+  .staffing-sidebar-toggle { display: none; }
   .staffing-sidebar { width: 270px; transform: translateX(-102%); transition: .22s; }
   .staffing-sidebar.open { transform: none; }
   .staffing-nav-backdrop { position: fixed; inset: 0; z-index: 45; display: block; border: 0; background: rgba(20, 18, 16, .25); }
@@ -710,6 +773,10 @@
   .staffing-chat { left: 10px; width: auto; }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .staffing-sidebar, .staffing-main, .staffing-sidebar-toggle { transition: none; }
+}
+
 /* Phase 3 workspace screens */
 .staffing-screen { animation: staffing-fade .2s ease; }
 .staffing-page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 22px; }
@@ -717,6 +784,24 @@
 .staffing-page-head p { max-width: 760px; margin: 7px 0 0; color: var(--staffing-ink-2); }
 .staffing-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; }
 .staffing-page-head > .staffing-actions > .staffing-select { width: 190px; }
+.staffing-team-screen .staffing-page-head > div:first-child { min-width: 0; }
+.staffing-team-screen .staffing-page-head > .staffing-actions {
+  flex: 0 1 470px;
+  width: min(470px, 100%);
+  max-width: 100%;
+  flex-wrap: nowrap;
+}
+.staffing-team-screen .staffing-page-head .staffing-field { flex: 1 1 auto; width: auto; min-width: 0; min-height: 42px; }
+.staffing-team-screen .staffing-page-head .staffing-btn { flex: 0 0 auto; min-height: 42px; white-space: nowrap; }
+@media (max-width: 1250px) {
+  .staffing-team-screen .staffing-page-head { flex-direction: column; }
+  .staffing-team-screen .staffing-page-head > .staffing-actions { flex: 0 1 auto; width: 100%; }
+}
+@media (max-width: 520px) {
+  .staffing-team-screen .staffing-page-head > .staffing-actions { display: grid; grid-template-columns: 1fr; }
+  .staffing-team-screen .staffing-page-head .staffing-field,
+  .staffing-team-screen .staffing-page-head .staffing-btn { width: 100%; }
+}
 .staffing-grid { display: grid; gap: 16px; }
 .staffing-kpi-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 16px; }
 .staffing-two-col { grid-template-columns: minmax(0, 1.55fr) minmax(320px, .85fr); }
@@ -1446,12 +1531,15 @@
 .staffing-live-review .staffing-fit-results .staffing-card-head p { font-size: 11px; }
 .staffing-live-review .staffing-fit-results .staffing-card-body { padding: 14px; }
 .staffing-live-review .staffing-candidate { margin-bottom: 10px; padding: 13px; border-radius: 12px; }
+.staffing-live-review .staffing-candidate-status { margin-bottom: 12px; }
 .staffing-live-review .staffing-candidate-head { gap: 10px; }
 .staffing-live-review .staffing-candidate-head .staffing-avatar { width: 38px; height: 38px; }
-.staffing-live-review .staffing-candidate-name { font-size: 13px; }
+.staffing-live-review .staffing-candidate-name { font-size: 13px; line-height: 1.3; }
+.staffing-live-review .staffing-candidate-meta { margin-top: 3px; line-height: 1.4; }
 .staffing-live-review .staffing-score { font-size: 18px; }
-.staffing-live-review .staffing-rationale { margin: 10px 0; font-size: 11px; line-height: 1.45; }
-.staffing-live-review .staffing-candidate-foot { gap: 6px 14px; font-size: 10px; }
+.staffing-live-review .staffing-tag-row { margin-top: 12px; }
+.staffing-live-review .staffing-rationale { margin: 13px 0 12px; font-size: 11px; line-height: 1.5; }
+.staffing-live-review .staffing-candidate-foot { gap: 7px 16px; padding-top: 10px; border-top: 1px solid var(--staffing-border-2); font-size: 10px; }
 .staffing-live-review .staffing-candidate-choice { margin-top: 10px; }
 .staffing-live-console { min-height: 290px; max-height: 440px; overflow-wrap: anywhere; }
 .staffing-live-console > div { margin-bottom: 8px; }

@@ -62,14 +62,29 @@ test('unauthenticated requests reject legacy cookies and role/Authorization head
 });
 test('login works on configured VM origin and stores only an HttpOnly session cookie', async () => {
   let sent;
-  global.fetch = async (url,init) => { sent={url:String(url),init}; return json({access_token:token,expires_in:28800}); };
+  global.fetch = async (url,init) => { sent={url:String(url),init}; return json({access_token:token,expires_in:3600}); };
   const response = await login(request('POST',{email:'alex.rivera@oracle.com',password:'shared-test-password'}));
   assert.equal(response.status,200); assert.deepEqual(await response.json(),{ok:true});
   assert.equal(sent.url,'http://127.0.0.1:8015/v1/auth/password/login');
   assert.equal(sent.init.headers.Authorization,undefined);
   assert.match(response.headers.get('set-cookie'),/HttpOnly/i);
   assert.match(response.headers.get('set-cookie'),/SameSite=strict/i);
+  assert.match(response.headers.get('set-cookie'),/Max-Age=3600/i);
   assert.equal(response.cookies.get(PASSWORD_COOKIE).value,token);
+});
+
+test('password cookie adds Secure when the configured application origin uses HTTPS', async () => {
+  const secureOrigin = 'https://staffing.internal.example';
+  process.env.STAFFING_APP_ORIGIN = secureOrigin;
+  global.fetch = async () => json({access_token:token,expires_in:3600});
+  const secureRequest = new NextRequest(`${secureOrigin}/api/auth/login`, {
+    method:'POST', headers:{host:'staffing.internal.example',origin:secureOrigin},
+    body:JSON.stringify({email:'alex@oracle.com',password:'test-password'}),
+  });
+  const response = await login(secureRequest);
+  assert.equal(response.status,200);
+  assert.match(response.headers.get('set-cookie'),/Secure/i);
+  assert.match(response.headers.get('set-cookie'),/HttpOnly/i);
 });
 test('login rejects cross-origin and extra role/person fields without contacting API', async () => {
   assert.equal((await login(request('POST',{email:'alex@oracle.com',password:'test'}, {origin:'http://other.test'}))).status,403);
@@ -151,7 +166,24 @@ test('organization callback and management options cannot bypass password mode',
   await assert.rejects(() => staffingBackend(request(), '/v1/me','POST',{}, {passwordLogin:true}), {code:'FORBIDDEN'});
 });
 test('backend credential failure is returned without issuing a session', async () => {
-  global.fetch = async () => json({error:{code:'INVALID_CREDENTIALS',message:'Unable to sign in.'}},401);
+  global.fetch = async () => json({error:{code:'INVALID_CREDENTIALS',message:'Private backend detail'}},401);
   const response = await login(request('POST',{email:'alex@oracle.com',password:'wrong'}));
   assert.equal(response.status,401); assert.equal(response.cookies.get(PASSWORD_COOKIE),undefined);
+  assert.deepEqual(await response.json(), {error:'Email or password is incorrect.',code:'INVALID_CREDENTIALS'});
+});
+
+test('session status and user activity use the same bound cookie', async () => {
+  const { GET, POST } = require('../app/api/auth/session/route.ts');
+  const timing = {absolute_expires_at:'2026-10-05T15:00:00+00:00',idle_expires_at:'2026-10-05T14:05:00+00:00'};
+  const paths = [];
+  global.fetch = async (url, init) => { paths.push([String(url),init.method,init.headers.Authorization]); return json(timing); };
+  const status = await GET(selected('GET'));
+  const activity = await POST(selected('POST'));
+  assert.equal(status.status,200);
+  assert.deepEqual(await status.json(),{absoluteExpiresAt:timing.absolute_expires_at,idleExpiresAt:timing.idle_expires_at});
+  assert.equal(activity.status,200);
+  assert.deepEqual(paths, [
+    ['http://127.0.0.1:8015/v1/auth/password/session','GET',`Bearer ${token}`],
+    ['http://127.0.0.1:8015/v1/auth/password/activity','POST',`Bearer ${token}`],
+  ]);
 });

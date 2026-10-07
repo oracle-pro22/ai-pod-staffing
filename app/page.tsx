@@ -13,6 +13,7 @@ import { PersonaEntry } from '@/components/entry/PersonaEntry';
 import { PERSONA_COOKIE, PERSONA_PAGE_HEADER, personaModeEnabled, personaSessionKey, requirePersonaMode } from '@/backend/staffing/persona-mode';
 import { PASSWORD_COOKIE, passwordModeEnabled, requirePasswordOrigin } from '@/backend/staffing/password-mode';
 import { PasswordEntry } from '@/components/entry/PasswordEntry';
+import { PasswordSessionGuard } from '@/components/shell/PasswordSessionGuard';
 
 export const dynamic = 'force-dynamic';
 
@@ -36,7 +37,8 @@ export default async function Home() {
         ]);
         verifiedIdentity = identity;
         if (setup.status === 'DRAFT') {
-          return <OnboardingEntry initial={setup} sessionKey={personaSessionKey(selected)} />;
+          return <><PasswordSessionGuard sessionKey={personaSessionKey(selected)} />
+            <OnboardingEntry initial={setup} sessionKey={personaSessionKey(selected)} /></>;
         }
       } else if (personaModeEnabled()) {
         requirePersonaMode(request);
@@ -62,11 +64,15 @@ export default async function Home() {
     }
   } else data = await dataSource.getViewModel();
   return (
-    <StaffingAppProvider key={data.identity ? `${data.identity.personId}:${data.identity.role}:${data.identity.sessionKey ?? ''}` : 'preview'} data={data}>
-      {data.identity?.sessionKey && <meta name="staffing-persona-session" content={data.identity.sessionKey} />}
-      <AppShell>
-        <WorkspaceRouter />
-      </AppShell>
-    </StaffingAppProvider>
+    <>
+      {data.identity?.sessionMode === 'password' && data.identity.sessionKey &&
+        <PasswordSessionGuard sessionKey={data.identity.sessionKey} />}
+      <StaffingAppProvider key={data.identity ? `${data.identity.personId}:${data.identity.role}:${data.identity.sessionKey ?? ''}` : 'preview'} data={data}>
+        {data.identity?.sessionKey && <meta name="staffing-persona-session" content={data.identity.sessionKey} />}
+        <AppShell>
+          <WorkspaceRouter />
+        </AppShell>
+      </StaffingAppProvider>
+    </>
   );
 }

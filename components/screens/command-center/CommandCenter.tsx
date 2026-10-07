@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { DropdownField } from '@/components/ui/DropdownField';
 import { staffingQueues, projectDemand, buildDemandWeeks } from '@/lib/dashboard-demand';
 import { requestBusinessDate } from '@/lib/request-date-policy';
@@ -16,6 +16,7 @@ import { useStaffingApp } from '@/context/StaffingAppProvider';
 import { allocationTone, formatShortDate, statusTone } from '@/lib/formatting';
 import { canAccessScreen, canPerform } from '@/lib/role-policy';
 import { selectDashboardMetrics, selectIdentityPerson, selectScopedRecommendations, selectVisiblePeople, selectVisibleRequests } from '@/lib/selectors';
+import { timeOfDayGreeting } from '@/lib/time-greeting';
 
 export function CommandCenter() {
   const { data, state, dispatch } = useStaffingApp();
@@ -28,6 +29,7 @@ export function CommandCenter() {
   const metrics = selectDashboardMetrics(data, state.role);
   const isMember = state.role === 'POD Member';
   const greetingName = identity?.name.split(' ')[0] ?? 'there';
+  const [greeting, setGreeting] = useState(() => timeOfDayGreeting());
   const queues = staffingQueues(requests);
   const activeGroup = requestGroup ?? (queues.pending.length || !queues.ongoing.length ? 'pending' : 'staffed');
   const displayedRequests = activeGroup === 'pending' ? queues.pending : queues.ongoing;
@@ -40,6 +42,13 @@ export function CommandCenter() {
   });
   const watchedPeople = isMember ? (identity && identity.staffingEligible !== false ? [identity] : []) : capacityPeople.slice(0, 5);
 
+  useEffect(() => {
+    const updateGreeting = () => setGreeting(timeOfDayGreeting());
+    updateGreeting();
+    const timer = window.setInterval(updateGreeting, 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
   function openRequest(requestId: string) {
     dispatch({ type: 'open-drawer', drawer: { id: 'request-details', title: 'Request details', payload: { requestId } } });
   }
@@ -47,7 +56,7 @@ export function CommandCenter() {
   return (
     <section className="staffing-screen staffing-dashboard">
       <PageHeader
-        title={`Good morning, ${greetingName}`}
+        title={`${greeting}, ${greetingName}`}
         actions={canPerform(state.role, 'REQUESTS', 'canCreate', data.authorization) ? <Button variant="primary" onClick={() => dispatch({ type: 'open-modal', modal: { id: 'create-request', title: 'Create staffing request' } })}>＋ New request</Button> : undefined}
       />
 

@@ -67,6 +67,8 @@ class Cursor:
         sql = re.sub(r'FOR UPDATE(?: WAIT 5)?', '', sql)
         sql = sql.replace('TRUNC(SYSDATE)', "date('now')")
         sql = sql.replace("SYSTIMESTAMP+NUMTODSINTERVAL(:seconds,'SECOND')", "datetime('now','+1 hour')")
+        sql = sql.replace("SYSTIMESTAMP-NUMTODSINTERVAL(:absoluteSeconds,'SECOND')", "datetime('now','-1 hour')")
+        sql = sql.replace("SYSTIMESTAMP-NUMTODSINTERVAL(:idleSeconds,'SECOND')", "datetime('now','-5 minutes')")
         sql = sql.replace("SYSTIMESTAMP+INTERVAL '1' MINUTE", "datetime('now','+1 minute')")
         sql = sql.replace('SYSTIMESTAMP', "datetime('now')")
         self.inner.execute(sql, binds or {})
@@ -116,7 +118,8 @@ def db():
           effective_from TEXT,effective_to TEXT,assigned_by TEXT,PRIMARY KEY(identity_subject,role_code));
         CREATE TABLE roster_onboarding(person_id TEXT PRIMARY KEY REFERENCES people,status TEXT);
         CREATE TABLE roster_reset_runs(batch_id TEXT PRIMARY KEY,status TEXT,metadata_json TEXT);
-        CREATE TABLE app_sessions(token_hash TEXT PRIMARY KEY,account_id TEXT REFERENCES app_accounts,expires_at TEXT,revoked_at TEXT);
+        CREATE TABLE app_sessions(token_hash TEXT PRIMARY KEY,account_id TEXT REFERENCES app_accounts,
+          created_at TEXT DEFAULT (datetime('now')),expires_at TEXT,last_activity_at TEXT,revoked_at TEXT);
         CREATE TABLE app_roles(role_code TEXT PRIMARY KEY,active_flag TEXT);
         CREATE TABLE roster_pod_claims(person_id TEXT REFERENCES people,status TEXT);
         CREATE TABLE staffing_runtime(runtime_id INTEGER,agents_enabled TEXT,notifications_enabled TEXT);
@@ -187,6 +190,21 @@ def test_imported_real_password_flow_enabled_and_disabled_accounts(db):
                 store.login(body)
             assert failure.value.code == 'INVALID_CREDENTIALS'
     assert rows(db, 'SELECT COUNT(*) n FROM app_sessions') == [{'n': 18}]
+
+
+def test_password_session_rejects_idle_and_one_hour_expiry(db):
+    imported(db)
+    store = AccountStore(db, SimpleNamespace(backend_auth_mode='password'))
+    first = store.login(PasswordLogin(email='employee00@oracle.com', password=PASSWORD))['access_token']
+    db.db.execute("UPDATE app_sessions SET last_activity_at=datetime('now','-6 minutes')")
+    with pytest.raises(ServiceError) as idle:
+        store.subject('Bearer ' + first)
+    assert idle.value.code == 'UNAUTHENTICATED'
+    second = store.login(PasswordLogin(email='employee00@oracle.com', password=PASSWORD))['access_token']
+    db.db.execute("UPDATE app_sessions SET created_at=datetime('now','-61 minutes') WHERE last_activity_at>datetime('now','-1 minute')")
+    with pytest.raises(ServiceError) as absolute:
+        store.subject('Bearer ' + second)
+    assert absolute.value.code == 'UNAUTHENTICATED'
 
 
 def test_idempotent_retry_does_not_duplicate_accounts_or_change_hashes(db):

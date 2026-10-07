@@ -38,6 +38,7 @@ BEGIN
     account_id VARCHAR2(40) NOT NULL REFERENCES app_accounts(account_id),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL,
     expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    last_activity_at TIMESTAMP WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL,
     revoked_at TIMESTAMP WITH TIME ZONE,
     CONSTRAINT mp1_session_dates CHECK(expires_at>created_at)
   )~');

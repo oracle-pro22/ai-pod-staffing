@@ -27,6 +27,8 @@ actions after backup and manifest review; installing code never changes the rost
 
 Use the [Phase 1 setup and migration guide](docs/mvp-phase1.md) for the new Oracle-email/password entry page, shared initial password, scoped old-request archive, uniform existing person IDs and expanded 31-account roster (one Administrator). It supersedes the persona-picker setup below when password mode is enabled. The SQL/import steps are explicit; nothing resets the database at startup. Catalogue mappings and existing employee assessments are protected.
 
+For the current five-minute inactivity timeout and one-hour maximum password session, apply the additive [session timeout migration](sql/oracle/password_session_timeout.sql) before restarting the API and web services. The browser warns after four inactive minutes and five minutes before the one-hour limit. Existing password cookies remain HttpOnly and SameSite=Strict; Secure is set when the configured application address uses HTTPS.
+
 ## New MVP Phase 2: supervised, selectable recommendations
 
 The migration and verification in [MVP Phase 2](docs/mvp-phase2.md) add an actual tool-calling Supervisor, up to two distinct alternatives per role group, saved Captain selections, whole-POD recalculation and approval of the exact reviewed selection. Original recommendations remain immutable. All normal rules, including the Administrator's utilization ceiling, still apply. No new environment variables or data import are required for Phase 2.

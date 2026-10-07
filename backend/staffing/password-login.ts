@@ -15,11 +15,17 @@ export async function passwordLogin(request: NextRequest) {
       || typeof body.email !== 'string' || typeof body.password !== 'string' || body.password.length > 1024 || body.email.length > 320) {
     throw new StaffingApiError('Enter your email and password.', 400, 'INVALID_REQUEST');
   }
-  const session = await staffingBackend(request, '/v1/auth/password/login', 'POST', body, { passwordLogin: true }) as {
-    access_token: string; expires_in: number;
-  };
+  let session: { access_token: string; expires_in: number };
+  try {
+    session = await staffingBackend(request, '/v1/auth/password/login', 'POST', body, { passwordLogin: true }) as typeof session;
+  } catch (error) {
+    if (error instanceof StaffingApiError && [401, 422].includes(error.status)) {
+      throw new StaffingApiError('Email or password is incorrect.', 401, 'INVALID_CREDENTIALS');
+    }
+    throw error;
+  }
   if (!/^aps1\.[A-Za-z0-9_-]{43}$/.test(session?.access_token) || !Number.isInteger(session.expires_in)
-      || session.expires_in <= 0 || session.expires_in > 86400) throw new StaffingApiError('Unable to start your session.', 503, 'LOGIN_FAILED');
+      || session.expires_in !== 3600) throw new StaffingApiError('Unable to start your session.', 503, 'LOGIN_FAILED');
   const response = NextResponse.json({ ok: true }, { headers: { 'Cache-Control': 'no-store' } });
   response.cookies.set(PASSWORD_COOKIE, session.access_token, { httpOnly: true, secure: origin.protocol === 'https:', sameSite: 'strict', path: '/', maxAge: session.expires_in });
   for (const name of [PERSONA_COOKIE, 'staffing_access_token']) response.cookies.set(name, '', { httpOnly: true, secure: origin.protocol === 'https:', sameSite: 'strict', path: '/', maxAge: 0 });
@@ -68,4 +74,18 @@ export async function passwordChange(request: NextRequest) {
   const response = NextResponse.json({ ok: true, sessionsRevoked: true }, { headers: { 'Cache-Control': 'no-store' } });
   response.cookies.set(PASSWORD_COOKIE, '', { httpOnly: true, secure: origin.protocol === 'https:', sameSite: 'strict', path: '/', maxAge: 0 });
   return response;
+}
+
+export async function passwordSession(request: NextRequest, activity = false) {
+  requirePasswordOrigin(request, activity);
+  const value = await staffingBackend(request, activity ? '/v1/auth/password/activity' : '/v1/auth/password/session',
+    activity ? 'POST' : 'GET') as { absolute_expires_at?: unknown; idle_expires_at?: unknown };
+  const absolute = value?.absolute_expires_at;
+  const idle = value?.idle_expires_at;
+  if (typeof absolute !== 'string' || typeof idle !== 'string'
+      || !Number.isFinite(Date.parse(absolute)) || !Number.isFinite(Date.parse(idle))) {
+    throw new StaffingApiError('Session timing could not be confirmed.', 503, 'SESSION_UNCONFIRMED');
+  }
+  return NextResponse.json({ absoluteExpiresAt: absolute, idleExpiresAt: idle },
+    { headers: { 'Cache-Control': 'no-store' } });
 }
