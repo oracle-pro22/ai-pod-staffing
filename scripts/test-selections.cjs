@@ -50,6 +50,33 @@ const props = { executionView: false, request: { request_id: 'REQ-1', title: 'AI
   loading: false, busy: false, running: false, error: '', canRun: true, canDecide: true, decision: null, reason: '',
   onRun() {}, onRefresh() {}, onSelect() {}, onReason() {}, onDecision() {}, onSaveDecision() {}, onCancelDecision() {}, onReplacement() {}, onRecalculate() {} };
 function markup(extra = {}) { return renderToStaticMarkup(React.createElement(LiveFitmentPresentation, { ...props, ...extra })); }
+test('approval and closure keep older execution history without requesting another run', () => {
+  const { staffingReviewState } = require('../lib/live-presentation.ts');
+  const execution = { request_id: 'REQ-1', request_revision: 3, status: 'READY_FOR_REVIEW',
+    events: [], clarification_questions: [], proposals: [] };
+  for (const status of ['STAFFED', 'CLOSED']) {
+    const request = { ...props.request, status, request_revision: 4 };
+    const state = staffingReviewState(request, execution);
+    assert.equal(state.needsNewExecution, false);
+    assert.equal(state.showExecution, true);
+    for (const run of [execution, null]) {
+      const html = markup({ request, execution: run, canDecide: false,
+        proposal: { ...props.proposal, status: 'APPROVED', selection_review: undefined } });
+      assert.match(html, status === 'STAFFED' ? /Staffed · Assignments approved/ : /Project closed · Staffing history retained/);
+      assert.doesNotMatch(html, /Awaiting execution|Waiting for AI staffing to start/);
+      assert.equal(html.includes('View execution history'), Boolean(run));
+      const history = markup({ request, execution: run, executionView: true, canDecide: false });
+      assert.match(history, /no new staffing run is required/);
+    }
+  }
+  for (const status of ['NEEDS_RECOMMENDATION', 'IN_REVIEW']) {
+    assert.equal(staffingReviewState({ ...props.request, status, request_revision: 4 }, execution).needsNewExecution, true);
+    assert.equal(staffingReviewState({ ...props.request, status, request_revision: 4 }, execution).showExecution, false);
+  }
+  assert.equal(staffingReviewState({ ...props.request, request_revision: 3 }, execution).showExecution, true);
+  assert.equal(staffingReviewState(props.request, { ...execution, request_id: 'OTHER' }).showExecution, false);
+  assert.equal(staffingReviewState(undefined, null).needsNewExecution, false);
+});
 const manualMember = { ...member('P-1', 'Mara Bennett', 'POD_LEAD', 'MANUAL'), score: null, planned_hours: 16,
   responsibilities: 'Captain-assigned work. Skills and experience overridden.',
   factors: { scheduling_algorithm: 'available-days-v2', allocation_basis: 'POD_ONLY_CONTRACTED',

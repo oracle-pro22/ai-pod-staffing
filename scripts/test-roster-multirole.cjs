@@ -168,6 +168,29 @@ test('Administrator self availability uses the signed-in person, never the first
   assert.doesNotMatch(html, /Other employee — capacity/);
 });
 
+test('own availability maintenance follows update grants, not the Administrator display role', () => {
+  const data = context();
+  const owner = data.people.find(p => p.id === 'SELF');
+  owner.availability = [{ id: 1, title: 'Future leave', eventType: 'Leave', startsOn: '2099-01-05',
+    endsOn: '2099-01-06', allocatedHours: 8, status: 'ACTIVE', revision: 1 }];
+  assert.doesNotMatch(render(AvailabilityScreen), />Edit<|End \/ cancel/);
+  const permission = data.authorization.roles.find(r => r.code === 'POD_LEAD').permissions
+    .find(p => p.resourceCode === 'MY_AVAILABILITY');
+  permission.canUpdate = true;
+  assert.match(render(AvailabilityScreen), />Edit</);
+  assert.match(render(AvailabilityScreen), /End \/ cancel/);
+  owner.availability[0].status = 'CANCELLED';
+  assert.doesNotMatch(render(AvailabilityScreen), />Edit<|End \/ cancel/);
+  owner.availability[0].status = 'ACTIVE';
+  owner.availability[0].endsOn = '2000-01-06';
+  owner.availability[0].startsOn = '2000-01-05';
+  assert.doesNotMatch(render(AvailabilityScreen), />Edit<|End \/ cancel/);
+  owner.availability[0].endsOn = '2099-01-06';
+  assert.match(render(AvailabilityScreen), /Adjust remaining/);
+  permission.canUpdate = false;
+  assert.doesNotMatch(render(AvailabilityScreen), /Adjust remaining|End \/ cancel/);
+});
+
 test('authenticated roles are a single badge, not a persona selector', () => {
   context();
   const html = render(RoleSelector);

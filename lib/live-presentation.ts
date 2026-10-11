@@ -1,5 +1,23 @@
 import type { AvailabilityEvent } from '@/types/staffing';
 
+/** Approval/closure also increments the request revision; that does not invalidate its history. */
+export function staffingReviewState(
+  request?: { request_id: string; status: string; request_revision?: number },
+  execution?: { request_id: string; request_revision?: number } | null,
+) {
+  const final = request?.status === 'STAFFED' || request?.status === 'CLOSED';
+  const matchingExecution = Boolean(request && execution?.request_id === request.request_id);
+  const olderExecution = Boolean(matchingExecution && execution?.request_revision !== undefined
+    && request?.request_revision !== undefined && execution.request_revision < request.request_revision);
+  return {
+    final,
+    needsNewExecution: !final && olderExecution,
+    showExecution: matchingExecution && (final || !olderExecution),
+    finalLabel: request?.status === 'CLOSED' ? 'Project closed · Staffing history retained'
+      : final ? 'Staffed · Assignments approved' : null,
+  };
+}
+
 export function allocationMetric(value: string | number | null | undefined): string | null {
   if (value === null || value === undefined || String(value).trim() === '') return null;
   const number = Number(value);

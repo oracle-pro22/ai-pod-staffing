@@ -11,7 +11,7 @@ import { Pill } from '@/components/ui/Pill';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { useStaffingApp } from '@/context/StaffingAppProvider';
 import { formatDate, requestEffortLabel, personAllocationLabel } from '@/lib/formatting';
-import { allocationMetric, executionProgress, liveStatusLabel, savedFactorValue } from '@/lib/live-presentation';
+import { allocationMetric, executionProgress, liveStatusLabel, savedFactorValue, staffingReviewState } from '@/lib/live-presentation';
 import type { StaffingRequest } from '@/types/staffing';
 import type { Tone } from '@/types/ui';
 import type { Execution, Member, Pod, Replacement, RequestRow } from './LiveStaffingReview';
@@ -41,6 +41,7 @@ export function LiveFitmentPresentation(p: Props) {
   const review = p.proposal?.selection_review;
   const displayed = p.proposal && review ? { ...p.proposal, members: review.members, rationale: review.rationale } : p.proposal;
   const manual = displayed?.members.some(m => m.source === 'MANUAL');
+  const reviewState = staffingReviewState(p.request, p.execution);
   const progress = executionProgress(p.execution?.status, p.execution?.events ?? []);
   const awaitingRecommendation = !displayed && Boolean(p.request) && (p.running
     || (!p.execution && ['NEEDS_RECOMMENDATION', 'IN_REVIEW'].includes(p.request?.status ?? '')));
@@ -66,6 +67,7 @@ export function LiveFitmentPresentation(p: Props) {
         </div></div>} />
     {p.error && <div className="staffing-empty compact" role="alert">{p.error}</div>}
     {p.loading && !p.request && <Card padded><p role="status">Loading requests…</p></Card>}
+    {p.executionView && reviewState.final && <p role="status">{reviewState.finalLabel}. {p.execution ? 'The execution below is historical; no new staffing run is required.' : 'No agent execution is linked to this view; no new staffing run is required.'}</p>}
     {p.request && (p.executionView ? <div className="staffing-agent-shell">
       <Card padded><h3>Execution stages</h3><div className="staffing-pipeline" aria-label="Fitment execution progress">
         {STAGES.map(([title, description], i) => <div key={title}
@@ -129,8 +131,8 @@ export function LiveFitmentPresentation(p: Props) {
         {review?.notes.map(note => <p className="staffing-muted" key={note}>{note}</p>)}
         {displayed && <Card padded className="staffing-candidate-section"><h3>Why this POD</h3><p className="staffing-muted">{displayed.rationale}</p></Card>}
         {(p.running || p.execution?.last_error_code) && <div className="staffing-section-gap">{log}</div>}
-        <div className="staffing-source-strip"><span>{manual ? `Captain manual ${p.proposal?.origin === 'MANUAL_DRAFT' ? 'preview' : 'decision'} · ${liveStatusLabel(p.proposal?.status ?? '')}` : p.execution ? liveStatusLabel(p.execution.status) : 'Awaiting execution'}</span>
-          {(!manual || p.execution) && <Button size="small" onClick={() => dispatch({ type: 'set-screen', screen: 'agent' })}>{manual ? 'View prior agent execution' : 'View execution'}</Button>}</div>
+        <div className="staffing-source-strip"><span>{reviewState.finalLabel ?? (manual ? `Captain manual ${p.proposal?.origin === 'MANUAL_DRAFT' ? 'preview' : 'decision'} · ${liveStatusLabel(p.proposal?.status ?? '')}` : p.execution ? liveStatusLabel(p.execution.status) : 'Awaiting execution')}</span>
+          {(reviewState.final ? Boolean(p.execution) : !manual || p.execution) && <Button size="small" onClick={() => dispatch({ type: 'set-screen', screen: 'agent' })}>{reviewState.final ? 'View execution history' : manual ? 'View prior agent execution' : 'View execution'}</Button>}</div>
       </div>
     </div>)}
     {!p.request && !p.loading && !p.error && <Card padded><div className="staffing-empty">No requests are linked to your staffing identity.</div></Card>}

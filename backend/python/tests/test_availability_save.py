@@ -222,3 +222,36 @@ def test_cancel_removes_event_from_future_capacity_but_retains_history():
         cancel_availability(db, PERSON, 1, AvailabilityEnd(revision=1, effectiveOn=MON))
     assert db.events[0]['status'] == 'CANCELLED'
     assert db.days[MON]['available_hours'] == 8
+
+
+@pytest.mark.parametrize('operation', ['update', 'cancel'])
+def test_maintenance_requires_update_permission_even_when_create_is_allowed(operation):
+    db = Database()
+    create_only = Actor(PERSON.subject, PERSON.person_id, PERSON.roles, (
+        Permission('POD_MEMBER', 'MY_AVAILABILITY', 'OWN', frozenset({'view', 'create'})),))
+    with db.wired():
+        create_availability(db, PERSON, body())
+        with pytest.raises(ServiceError) as error:
+            if operation == 'update':
+                update_availability(db, create_only, 1, body(allocatedHours=2))
+            else:
+                cancel_availability(db, create_only, 1, AvailabilityEnd(revision=1, effectiveOn=MON))
+    assert error.value.code == 'FORBIDDEN'
+    assert db.events[0]['status'] == 'ACTIVE'
+    assert db.events[0]['allocated_hours'] == 4
+
+
+@pytest.mark.parametrize('operation', ['update', 'cancel'])
+def test_update_permission_cannot_modify_another_persons_event(operation):
+    db = Database()
+    with db.wired():
+        create_availability(db, PERSON, body())
+        db.events[0]['person_id'] = 'OTHER'
+        with pytest.raises(ServiceError) as error:
+            if operation == 'update':
+                update_availability(db, PERSON, 1, body(allocatedHours=2))
+            else:
+                cancel_availability(db, PERSON, 1, AvailabilityEnd(revision=1, effectiveOn=MON))
+    assert error.value.code == 'AVAILABILITY_NOT_FOUND'
+    assert db.events[0]['status'] == 'ACTIVE'
+    assert db.events[0]['allocated_hours'] == 4
