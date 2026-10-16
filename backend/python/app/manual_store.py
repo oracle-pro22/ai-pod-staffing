@@ -1,4 +1,4 @@
-"""Captain-owned manual previews and atomic decisions, independent of OCI."""
+"""Captain-owned previews and atomic decisions; optional copy polishing is outside write locks."""
 import hashlib
 from typing import Literal
 from uuid import uuid4
@@ -12,6 +12,7 @@ from app.execution_store import execute
 from app.manual_planning import ManualSlot, manual_plan
 from app.planning import EvidenceBundle, PlanOption, json_text
 from app.policy_admin import active_policy_version
+from app.pod_explanation import ExplanationCopy, enabled, polish_copy
 from app.proposal_writer import write_proposal
 from app.selections import evidence_hash, load_review
 from app.storage import document, rows
@@ -47,6 +48,7 @@ class ManualSnapshot(Contract):
     ends_on: str
     lead_count: int
     member_count: int
+    explanation_copy: ExplanationCopy = Field(default_factory=ExplanationCopy)
 
 
 def latest_draft(connection, request_id):
@@ -69,6 +71,7 @@ def draft_view(record):
         "responsibilities": m.responsibilities, "factors": state.option.scores[m.person_id],
         "source": state.sources[m.person_id]} for m in state.option.proposal.members]
     return {'draft_id': record['draft_id'], 'revision': record['revision'], 'request_id': record['request_id'],
+        'explanation_copy': state.explanation_copy.model_dump(mode='json'),
         'request_revision': record['request_revision'], 'policy_version': record['policy_version'],
         'source_proposal_id': state.source_proposal_id, 'slots': [s.model_dump(mode='json') for s in state.slots],
         'starts_on': state.starts_on, 'ends_on': state.ends_on, 'lead_count': state.lead_count, 'member_count': state.member_count,
@@ -133,6 +136,15 @@ class ManualStore:
 
     def preview(self, actor, request_id, body):
         key, body_hash = self.keys(actor, body)
+        explanation_copy = ExplanationCopy()
+        if enabled(self.settings):
+            with self.database.read() as c:
+                self.request(c, actor, request_id)
+                prior_copy = rows(c, 'SELECT request_id,body_hash FROM mvp_p3_drafts WHERE idempotency_key=:idemKey', idemKey=key)
+                if prior_copy and (prior_copy[0]['request_id'] != request_id or prior_copy[0]['body_hash'] != body_hash):
+                    raise ServiceError('IDEMPOTENCY_CONFLICT', 'This key was used for another preview.', 409)
+            if not prior_copy:
+                explanation_copy = polish_copy(self.settings)
         with self.database.write() as c:
             version = active_policy_version(c, lock=True)
             request = self.request(c, actor, request_id, lock=True)
@@ -183,7 +195,8 @@ class ManualStore:
                 sources={s.person_id: 'MANUAL' if s.manual else sources[s.person_id] for s in body.slots},
                 original_members=original_members, source_proposal_id=body.source_proposal_id, source_selection_id=source_selection,
                 starts_on=fresh.request.starts_on.isoformat(), ends_on=fresh.request.ends_on.isoformat(),
-                lead_count=fresh.request.lead_count, member_count=fresh.request.member_count)
+                lead_count=fresh.request.lead_count, member_count=fresh.request.member_count,
+                explanation_copy=explanation_copy)
             draft_id, revision = 'MD' + uuid4().hex[:28], (latest['revision'] + 1 if latest else 1)
             execute(c, """INSERT INTO mvp_p3_drafts(draft_id,request_id,request_revision,revision,policy_version,actor_subject,idempotency_key,body_hash,preview_json)
                 VALUES(:draftId,:requestId,:requestRevision,:revision,:policyVersion,:actorSubject,:idemKey,:bodyHash,:previewJson)""",
@@ -243,6 +256,7 @@ class ManualStore:
                     if rows(c, "SELECT assignment_id FROM pod_assignments WHERE request_id=:requestId AND status='CONFIRMED'", requestId=request_id):
                         raise ServiceError('ALREADY_ASSIGNED', 'This request already has assignments.', 409)
                 validation = {'origin': 'CAPTAIN_MANUAL', 'manual_draft_id': body.draft_id,
+                    'explanation_copy': state.explanation_copy.model_dump(mode='json'),
                     'manual_ids': [s.person_id for s in state.slots if s.manual], 'selection_sources': state.sources,
                     'source_proposal_id': state.source_proposal_id, 'source_selection_id': state.source_selection_id,
                     'manual_capacity_basis': 'POD_ONLY_CONTRACTED', 'manual_maximum_pct': 100,

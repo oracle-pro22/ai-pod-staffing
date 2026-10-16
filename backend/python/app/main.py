@@ -27,6 +27,7 @@ from app.manual_store import ManualStore, ManualPreviewInput, ManualDecisionInpu
 from app.schedule_dates import RescheduleInput, reschedule
 from app.employee_provisioning import EmployeeInput, provision_employee
 from app.admin_audit import AuditQuery, read_audit
+from app.admin_enhancements import EnhancementUpdate, get_enhancements, save_enhancements
 from app.request_clarification import ClarificationInput, get_clarification, answer_clarification
 from datetime import date
 from typing import Annotated, Literal
@@ -192,6 +193,14 @@ def create_app(settings: Settings | None = None, database=None, verifier=None, a
     def audit_history(query: Annotated[AuditQuery, Query()], actor: Actor = Depends(current_actor)):
         return read_audit(database, actor, query)
 
+    @app.get('/v1/admin/enhancements')
+    def enhancements(actor: Actor = Depends(current_actor)):
+        return get_enhancements(database, actor)
+
+    @app.post('/v1/admin/enhancements')
+    def update_enhancements(body: EnhancementUpdate, actor: Actor = Depends(current_actor)):
+        return save_enhancements(database, actor, body)
+
     @app.post('/v1/admin/employees', status_code=201)
     def create_employee(body: EmployeeInput, actor: Actor = Depends(current_actor)):
         return provision_employee(database, settings, actor, body)
@@ -279,7 +288,7 @@ def create_app(settings: Settings | None = None, database=None, verifier=None, a
         return manual.decide(actor, request_id, body)
 
     @app.get("/v1/workspace")
-    def workspace(week: date | None = None, resource: Literal["REQUESTS", "ALLOCATION_CALENDAR", "REPORTS", "TEAM_SKILLS", "MY_AVAILABILITY"] = "REQUESTS", actor: Actor = Depends(current_actor)):
+    def workspace(week: date | None = None, resource: Literal["REQUESTS", "AI_FITMENT", "ALLOCATION_CALENDAR", "REPORTS", "TEAM_SKILLS", "MY_AVAILABILITY"] = "REQUESTS", actor: Actor = Depends(current_actor)):
         return assignments.workspace(actor, week, resource)
 
     @app.get('/v1/reports/export')

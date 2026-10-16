@@ -1,5 +1,22 @@
 import type { AvailabilityEvent } from '@/types/staffing';
 
+export function agentProposalIsCurrent(
+  proposal: { execution_id?: string; status: string; origin?: string },
+  execution?: { execution_id: string; status: string } | null,
+) {
+  if (proposal.origin === 'MANUAL_DRAFT' || proposal.status !== 'READY_FOR_REVIEW') return true;
+  return Boolean(execution && execution.status === 'READY_FOR_REVIEW' && proposal.execution_id === execution.execution_id);
+}
+
+/** A saved proposal is not necessarily the result of the latest execution. */
+export function staffingProposalState<T extends { execution_id?: string; status: string; origin?: string; stale: 'Y' | 'N' }>(
+  saved: T | null, execution?: { execution_id: string; status: string } | null,
+) {
+  const historical = Boolean(saved && (saved.stale === 'Y' || saved.status === 'SUPERSEDED'
+    || !agentProposalIsCurrent(saved, execution)));
+  return { currentProposal: historical ? null : saved, previousProposal: historical ? saved : null };
+}
+
 /** Approval/closure also increments the request revision; that does not invalidate its history. */
 export function staffingReviewState(
   request?: { request_id: string; status: string; request_revision?: number },

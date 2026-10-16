@@ -28,11 +28,12 @@ export type StaffingAppState = {
   activeRequestId: string | null;
   weekOffset: number;
   requestFilters: RequestFilters;
+  teamSearch: string;
   drawer: OverlayDescriptor | null;
   modal: OverlayDescriptor | null;
   toasts: ToastMessage[];
   selectedCandidatesByRequest: Record<string, string[]>;
-  adminTab: 'roles' | 'taxonomy' | 'rules' | 'audit';
+  adminTab: 'roles' | 'taxonomy' | 'rules' | 'audit' | 'enhancements';
   agentRunning: boolean;
 };
 
@@ -42,6 +43,7 @@ export type StaffingAppAction =
   | { type: 'set-active-request'; requestId: string | null }
   | { type: 'set-week-offset'; weekOffset: number }
   | { type: 'set-request-filter'; key: keyof RequestFilters; value: string }
+  | { type: 'set-team-search'; value: string }
   | { type: 'open-drawer'; drawer: OverlayDescriptor }
   | { type: 'close-drawer' }
   | { type: 'open-modal'; modal: OverlayDescriptor }

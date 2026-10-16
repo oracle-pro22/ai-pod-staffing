@@ -116,24 +116,30 @@ export async function requireSelfSkillsEditing(context: StaffingMutationContext)
 export async function updateSelfSkills(value: unknown, context: StaffingMutationContext): Promise<{ personId: string; version: number }> {
   const personId = previewPerson(context);
   const patch = validateSelfSkillsPatch(value);
+  let phase = 'connect';
   try {
     return await withOracleTransaction(async (connection) => {
+      phase = 'session';
       await connection.execute('ALTER SESSION DISABLE PARALLEL DML');
       await connection.execute('ALTER SESSION DISABLE PARALLEL QUERY');
+      phase = 'authorize-and-lock-profile';
       await authorize(connection, context, true);
       await person(connection, personId, true);
       if (context.authenticated) await authorize(connection, context, true);
       // Start a fresh read AFTER any lock wait; do not compare a pre-wait snapshot.
       const employee = await person(connection, personId);
       if (Number(employee.SKILLS_VERSION) !== patch.version) throw conflictError('Your skills changed in another session. Reload before saving again.');
+      phase = 'save-deliverable-experience';
       await saveDeliverableExperience(connection, personId, employee.DELIVERABLE_EXPERIENCE_JSON, patch, context.actor);
       // Lock touched catalogue rows in stable order so classification cannot change
       // between validation and save. Untouched skills and other employees stay unchanged.
+      phase = 'validate-skill-catalogue';
       for (const skillId of [...patch.upserts.map((row) => row.skillId), ...patch.removeSkillIds].sort()) {
         await connection.execute(`SELECT /*+ NO_PARALLEL */ interest_id FROM interests WHERE interest_id = :skillId FOR UPDATE WAIT 5`, { skillId }, options);
         const classification = await connection.execute<Row>(`SELECT assessment_type FROM interests WHERE interest_id = :skillId`, { skillId }, options);
         if (classification.rows?.[0]?.ASSESSMENT_TYPE !== 'SELF_RATED') throw validationError('Choose an existing self-assessed skill. Role-derived capabilities cannot be changed.');
       }
+      phase = 'upsert-skill-assessments';
       for (const row of patch.upserts) {
         const binds = { personId, skillId: row.skillId, strength: row.strength, interestedFlag: row.interested ? 'Y' : 'N', evidence: row.evidence || null, actorName: context.actor };
         const result = await connection.execute(`
@@ -147,19 +153,33 @@ export async function updateSelfSkills(value: unknown, context: StaffingMutation
           VALUES (:personId, :skillId, :strength, :interestedFlag, :evidence, 'Self-assessment', :actorName, SYSTIMESTAMP)
         `, binds);
       }
+      phase = 'remove-skill-assessments';
       for (const skillId of patch.removeSkillIds) await connection.execute(`
         DELETE /*+ DISABLE_PARALLEL_DML NO_PARALLEL */ FROM person_interests
          WHERE person_id = :personId AND interest_id = :skillId
       `, { personId, skillId });
+      phase = 'update-profile-version';
       await connection.execute(`
         UPDATE /*+ DISABLE_PARALLEL_DML NO_PARALLEL */ people SET skills_version = skills_version + 1
          WHERE person_id = :personId
       `, { personId });
+      phase = 'commit';
       return { personId, version: patch.version + 1 };
     });
   } catch (error) {
     if (typeof error === 'object' && error && 'errorNum' in error && [30006, 54, 60, 8177].includes(Number(error.errorNum))) {
       throw conflictError('Your skills are being updated. Reload and try again.');
+    }
+    if (!(error instanceof StaffingApiError)) {
+      // Diagnostic metadata only: never log SQL, bind values, evidence or identities.
+      const details = error && typeof error === 'object' ? error as Record<string, unknown> : {};
+      const message = typeof details.message === 'string' ? details.message : '';
+      const code = message.match(/\b(?:ORA|NJS|DPI)-\d{3,5}\b/)?.[0] ?? null;
+      console.error('[skills.save] Unexpected failure', {
+        phase, code,
+        errorNum: Number.isInteger(details.errorNum) ? details.errorNum : null,
+        offset: Number.isInteger(details.offset) ? details.offset : null,
+      });
     }
     throw error;
   }

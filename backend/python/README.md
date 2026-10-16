@@ -1,5 +1,23 @@
 # Python backend — phase 5
 
+## POD explanation copy
+
+“Why this POD” uses a structured summary, schedule and per-person effort/allocation
+from the validated saved plan. The existing OCI model may choose between approved
+sentence patterns; it never supplies names, numbers, qualifications or decisions.
+The original grounded rationale remains stored for audit.
+
+Copy is saved with each new proposal/selection/manual preview using existing JSON
+fields (no migration). Worker retries reuse their checkpointed copy; completed
+mutation retries reuse their saved revision. Reading or refreshing a page never
+calls the model. All copy calls run outside write locks, with one attempt and a
+short timeout; failures use deterministic wording and do not fail staffing.
+
+Defaults: `STAFFING_EXPLANATION_ENABLED=true` and
+`STAFFING_EXPLANATION_TIMEOUT_SECONDS=6`. Existing OCI configuration is reused.
+Restart API and worker after deploying. Older records use clean fallback wording
+without modifying the stored data or making a retroactive model call.
+
 **Demo improvement update:** for the populated September roster and corrected available-day planning, use
 [Demo Phase 2: correct agent plans](../../docs/demo-agent-phase2.md). It includes the separate v2 policy,
 exact current startup commands, read-only verification and test results. The four-persona entry screen is the next phase.

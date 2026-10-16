@@ -57,6 +57,7 @@ export type AvailabilityEvent = {
 export type StaffingPerson = {
   staffingEligible?: boolean;
   capacityStatus?: string;
+  onboardingStatus?: string | null;
   id: string;
   name: string;
   initials: string;

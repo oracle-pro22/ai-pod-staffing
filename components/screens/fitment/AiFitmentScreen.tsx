@@ -22,13 +22,13 @@ import {
 import type { StaffingRecommendation } from '@/types/staffing';
 import type { Tone } from '@/types/ui';
 import { LiveStaffingReview } from './LiveStaffingReview';
-import { RequestsScreen } from '../requests/RequestsScreen';
+import { AssignedFitmentReview } from './AssignedFitmentReview';
 
 const FACTOR_TONES: Tone[] = ['teal', 'blue', 'teal', 'amber', 'red'];
 
 export function AiFitmentScreen() {
   const { data } = useStaffingApp();
-  if (data.identity && ['POD Lead', 'POD Member'].includes(data.identity.role)) return <RequestsScreen />;
+  if (data.identity && ['POD Lead', 'POD Member'].includes(data.identity.role)) return <AssignedFitmentReview key={data.identity.sessionKey ?? data.identity.personId} />;
   return process.env.NEXT_PUBLIC_STAFFING_AGENTIC_ENABLED === 'true' ? <LiveStaffingReview /> : <PreviewFitmentScreen />;
 }
 

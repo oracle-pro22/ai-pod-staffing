@@ -46,6 +46,7 @@ export async function authenticatedViewModel(request: NextRequest, verifiedIdent
       ...p, staffingEligible: peopleById.get(p.id)?.staffing_eligible !== false, allocationPct: peopleById.get(p.id)?.allocation_pct ?? 0,
     capacityStatus: peopleById.get(p.id)?.capacity_status === 'CURRENT' && peopleById.get(p.id)?.allocation_pct === null ? 'NO_CAPACITY' : peopleById.get(p.id)?.capacity_status ?? 'UNKNOWN',
     activePods: peopleById.get(p.id)?.active_pods ?? 0,
+    onboardingStatus: peopleById.get(p.id)?.onboarding_status,
   }));
   const requests = raw.requests.filter(r => requestPermission && requestIds.has(r.id)).map(r => ({ ...r,
     status: snapshot.requests.find(row => row.request_id === r.id)?.status

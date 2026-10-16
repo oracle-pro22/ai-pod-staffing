@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { PersonCombobox } from '@/components/ui/PersonCombobox';
@@ -17,10 +17,12 @@ export function manualPeopleForSlot(people: ManualPerson[], draft: ManualSlot[],
     .map(person => [person.person_id, person])).values()];
 }
 
-export function ManualPodEditor({ people, selected, slots, leadCount, memberCount, busy, onClose, onPreview }: {
+export function ManualPodEditor({ people, selected, slots, leadCount, memberCount, busy, error = '', onChange, onClose, onPreview }: {
   people: ManualPerson[]; selected: Member[]; slots?: ManualSlot[]; leadCount: number; memberCount: number;
-  busy: boolean; onClose: () => void; onPreview: (slots: ManualSlot[]) => void;
+  busy: boolean; error?: string; onChange?: () => void; onClose: () => void; onPreview: (slots: ManualSlot[]) => void;
 }) {
+  const errorRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (error) errorRef.current?.focus(); }, [error]);
   const [draft, setDraft] = useState<ManualSlot[]>(() => slots ?? [
     ...Array.from({ length: leadCount }, (_, i) => ({ person_id: selected.filter(m => m.role_in_pod === 'POD_LEAD')[i]?.person_id ?? '', role: 'POD_LEAD' as const, manual: !selected.length })),
     ...Array.from({ length: memberCount }, (_, i) => ({ person_id: selected.filter(m => m.role_in_pod === 'POD_MEMBER')[i]?.person_id ?? '', role: 'POD_MEMBER' as const, manual: !selected.length })),
@@ -39,7 +41,7 @@ export function ManualPodEditor({ people, selected, slots, leadCount, memberCoun
     description="Choose the exact people for this POD. Changing a person automatically marks that role as a manual override."
     className="staffing-manual-override-modal" onClose={onClose} footer={<>
     <Button disabled={busy} onClick={onClose}>Cancel</Button>
-    <Button variant="primary" disabled={busy || !valid} onClick={() => onPreview(draft)}>{busy ? 'Calculating…' : 'Calculate preview'}</Button>
+    <Button variant="primary" disabled={busy || !valid} onClick={() => onPreview(draft)}>{busy ? 'Calculating…' : error ? 'Retry preview' : 'Calculate preview'}</Button>
   </>}>
     <div className="staffing-manual-policy"><span aria-hidden="true">!</span><div>
       <b>Manual limit: 100% POD allocation</b>
@@ -59,16 +61,19 @@ export function ManualPodEditor({ people, selected, slots, leadCount, memberCoun
         <div className="staffing-manual-slot-head"><div><span>{slot.role === 'POD_LEAD' ? 'Lead role' : 'Contributor role'}</span><b>{slotTitle}</b></div>
           <label className={`staffing-manual-check${slot.manual ? ' active' : ''}`}>
             <input type="checkbox" checked={slot.manual} disabled={busy || !original}
-              onChange={event => setDraft(rows => rows.map((row, index) => index === i ? { ...row, manual: event.target.checked } : row))} />
+              onChange={event => { onChange?.(); setDraft(rows => rows.map((row, index) => index === i ? { ...row, manual: event.target.checked } : row)); }} />
             <span>Manual override</span>
           </label></div>
         <label className="staffing-manual-person"><span>Person</span>
           <PersonCombobox aria-label={`Manual ${slot.role} slot ${i + 1}`} disabled={busy} people={eligible}
             value={slot.person_id} placeholder="Search by name or ID"
-            onChange={personId => setDraft(rows => rows.map((row, index) => index === i ? { ...row, person_id: personId, manual: true } : row))} />
+            onChange={personId => { onChange?.(); setDraft(rows => rows.map((row, index) => index === i ? { ...row, person_id: personId, manual: true } : row)); }} />
         </label>
       </div>;
     })}</div>
-    <div className={`staffing-manual-readiness${valid ? ' ready' : ''}`} role="status"><span aria-hidden="true">{valid ? '✓' : 'i'}</span>{readiness}</div>
+    {error ? <div className="staffing-manual-error" role="alert" tabIndex={-1} ref={errorRef}>
+      <b>Preview could not be calculated</b><p>{error}</p>
+      <p>No assignments are created until you approve a saved preview.</p>
+    </div> : <div className={`staffing-manual-readiness${valid && !busy ? ' ready' : ''}`} role="status"><span aria-hidden="true">{valid && !busy ? '✓' : 'i'}</span>{busy ? 'Checking the selected team against staffing and capacity limits…' : readiness}</div>}
   </Modal>;
 }

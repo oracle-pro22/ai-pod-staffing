@@ -1,0 +1,381 @@
+{
+  "application": "http://127.0.0.1:3001/",
+  "started_on": "2026-10-15",
+  "method": "Manual Chrome UI testing through the browser connector; no direct API or database writes",
+  "status": "core_cycle_completed_with_findings",
+  "completed_on": "2026-10-15",
+  "coverage_note": "Core-cycle results, not exhaustive release sign-off. The pending section lists untested or authority-dependent work; UI-only permission observations are not direct server-side authorization probes.",
+  "summary": {
+    "verified": "Request creation and automatic agent execution; skill and deliverable experience saves; leave/external-work exclusions; reruns and stale-evidence approval guard; alternatives; approval/rejection; own-assignment visibility; exact-85% approval and reporting; intended manual leave bypass and over-100% block; Lead closure/capacity release/audit; initial profile completion; reported/external/leave capacity accounting; cancellation/history; scoped people search and recommendation counts.",
+    "open_ui_findings": [],
+    "implemented_awaiting_live_retest": ["UI-001", "UI-002", "UI-003", "UI-004", "UI-005"],
+    "critical_save_failure_fixed": "SKILLS-001: Oracle driver externalization; verified Maya's deliverable and combined saves, reload persistence, 211 frontend tests and TypeScript check.",
+    "export_caveat": "App reports successful export and server returned HTTP 200; downloaded workbook was not independently inspected because connector download capture timed out."
+  },
+  "accounts": {
+    "current": "Indranie Balkaran, signed in; Reports / Capacity, Nov 2–8, filtered to Carol",
+    "next": "No further sign-in required for this core cycle. Remaining coverage is listed below."
+  },
+  "current_test_records": {
+    "REQ-1076": "Closed by Christine; both original 8h assignments retained, future capacity released.",
+    "REQ-1077": "Staffed: Indranie 8h and Maya 8h; Maya exactly 85% with 26h external work.",
+    "REQ-1078": "Staffed by explicit manual exception: Christine 8h and Maya 8h; Maya's 40h leave retained and exception recorded.",
+    "REQ-1079": "Original Christine proposal rejected with reason; automatic rerun selected Indranie. New proposal remains unapproved.",
+    "REQ-1080": "41h Lead-only request remains unstaffed; normal no-feasible result and manual preview blocked.",
+    "Maya": "Portal SME 4/5 unchanged; saved independent Portal Updates experience and unrated GTM learning goal; external work Nov 2–6 now 26h; Family leave Nov 23–27 remains 40h.",
+    "Carol": "Enabled, setup complete, existing POD Lead role unchanged. Comms Review 3/5 plus unrated GTM interest; supported communication-review deliverable; 12h reported POD work Nov 2–6; 16h leave Nov 16–17. New 8h Nov 9–13 external work canceled and retained in history. No formal project assignment created by onboarding."
+  },
+  "results": [
+    {
+      "case": "Completed setup and capacity are consistent across starter and administrator accounts",
+      "status": "passed",
+      "evidence": "After switching back to Indranie, Roles & access shows Carol Enabled / complete (formerly draft). Admin Reports / Capacity for Nov 2–8 shows the same Carol row as her own session: 30%, 40h available, 0h assigned POD work, 12h Reported POD, 0h external/leave, 22h headroom and 0 active PODs. Capacity is confirmed rather than setup-incomplete. Actual agent selection of Carol was not separately executed."
+    },
+    {
+      "case": "Cancel only newly created future external work and preserve event history",
+      "status": "passed_event_history_and_capacity_release",
+      "evidence": "Carol's new 8h Customer communications planning event: End / cancel shows stop-counting date Oct 15 and explains 8 future hours will be removed. Confirmed. Event disappears from upcoming list; Show history retains it as 0 hours · Cancelled with original Nov 9–13 dates. Family leave remains 16h, Nov 16–17. Nov 9–15 capacity report now shows 0h external / 40h available = 0% with 34h headroom (formerly 8h / 40h = 20%, 26h headroom). Save refreshed to workspace rather than reopening first-login setup. No event row was permanently deleted."
+    },
+    {
+      "case": "Onboarding external work and partial leave use separate correct capacity math",
+      "status": "passed",
+      "evidence": "Carol Nov 9–15 reports show 8h External, 40h available, 20% allocation and 26h headroom. Nov 16–22 shows 16h Leave, 24h available, zero work / 0% allocation and 20.4h headroom (24 × 85%). Leave is not added to work and reported-POD entries are not counted twice."
+    },
+    {
+      "case": "Onboarding reported POD work affects capacity but not project or POD counts",
+      "status": "passed",
+      "evidence": "Carol Nov 2–8 reports show 12h Reported POD, 0h formal POD work, 40h available, 30% allocation and 22h headroom. There are 0 assigned projects, 0 active PODs, and only Carol in capacity scope. Reported work was not converted to a fictitious assignment."
+    },
+    {
+      "case": "Complete existing starter profile with skills, deliverable experience and all work/leave types",
+      "status": "passed_profile_and_all_three_work_type_capacity_checks",
+      "inputs": {
+        "person": "Carol MacPherson", "email": "carol.macpherson@oracle.com", "role": "Existing POD Lead role unchanged",
+        "confirmation_period": "2026-10-15 through 2026-12-30", "contract": "8h/day, 40h/week",
+        "rated_skill": "Comms Review 3/5; Reviewed launch communications.",
+        "interest_only": "GTM SME unrated; Learn launch planning.",
+        "deliverable": "Content Communication Review / New Service Launch; Supported; Contributor; Reviewed copy with an editor.",
+        "external": "Customer communications planning, Nov 9–13, 8h",
+        "leave": "Family leave, Nov 16–17, 16h",
+        "reported_POD": "Customer onboarding campaign, Nov 2–6, 12h, Member role"
+      },
+      "evidence": "Correcting the confirmation end to Dec 30 allowed final save and opened Carol's POD Lead workspace. Team & Skills persists Comms Review 3/5, GTM interest-only Not rated, supported deliverable experience and read-only role-based Project Manager capability. Summary has exactly 1 rated skill / average 3.0, 0 active PODs and no project assignments. My Availability contains exactly two new events (external and leave); reported POD work is a separate workload record, not an availability event or actual assignment."
+    },
+    {
+      "case": "Initial setup rejects work outside the availability confirmation period",
+      "status": "passed_guard_error_copy_issue",
+      "evidence": "With three Nov work/leave entries, changed overall confirmation end to Oct 30 and submitted. Save was rejected; user stayed in setup with all draft values preserved and no workspace access. Error was generic The request does not match the API contract. Restored valid overall end Dec 30 before resubmitting."
+    },
+    {
+      "case": "Initial setup navigation, confirmation and rated-skill evidence guard",
+      "status": "passed_navigation_and_required_evidence_guard",
+      "evidence": "Carol's enabled draft account opens mandatory first-login setup rather than workspace. Three setup steps preserve entered skill/deliverable/work data while navigating. Final save disabled until explicit review checkbox checked. Clearing required Comms Review 3/5 evidence then confirming returns to Skills with Describe your experience with each rated skill and preserves other draft values; no incomplete profile saved. Evidence restored for valid completion."
+    },
+    {
+      "case": "Committed exact-limit capacity and recommendation-count reconciliation",
+      "status": "passed",
+      "evidence": "After REQ-1077 approval, Nov 2–8 Maya capacity row shows 8h POD + 26h external / 40h available = 85%, zero headroom, At limit. Reports, Notifications and Command Center all show 5 recommendations awaiting review."
+    },
+    {
+      "case": "People and capacity report export smoke test",
+      "status": "passed_app_response_file_not_independently_inspected",
+      "evidence": "Administrator Excel export tab states all permission-scoped rows are included rather than search-only rows. Download People & capacity for Nov 2 invoked GET /api/agentic/reports/export?week=2026-11-02 HTTP 200; app persistently reports People & capacity downloaded for Nov 2, 2026. Browser connector download-event capture timed out, so actual saved workbook file/content was not independently inspected. No application export failure established. Member and Lead export controls were disabled in their sessions."
+    },
+    {
+      "case": "Closure audit records correct actor, note and retained approval events",
+      "status": "passed",
+      "request_id": "REQ-1076",
+      "evidence": "Administrator Audit events filter shows PROJECT_CLOSED by Christine Loba and the exact note Review closed after a scope change. Earlier APPROVED by Indranie and both PROPOSED events remain present; no history reset or replacement. Final assignments filter still contains exactly two records, now CLOSED, retaining original assignment creation timestamps and creator Indranie."
+    },
+    {
+      "case": "Lead team scope and global people-search regression",
+      "status": "passed_ui_only",
+      "evidence": "Christine's Team & Skills shows only herself and four people in PODs she leads. Her own skills and role-based capability appear, while Maya's person drawer is read-only and shows Portal SME 4/5 evidence without edit controls. Global search Maya + Enter opens Search results with People (1) and Requests (0); selecting Maya opens the correct person drawer, not an empty Requests page."
+    },
+    {
+      "case": "Assigned Lead closes newly created project without deleting history",
+      "status": "passed_closure_and_capacity_release",
+      "request_id": "REQ-1076",
+      "evidence": "Christine used Close project. Confirm closure was disabled until note supplied: Review closed after a scope change. Project status and both assignments now Closed; original 8h per person and original dates retained. Close action removed. Reports for Nov 16–22 confirm Christine and Maya each now have 0h POD work / 40h capacity = 0%, restoring 34h headroom each (previously 8h POD / 40h = 20% and 26h headroom). Closure on Oct 15 precedes all Nov work, so releasing the entire future schedule is expected. No unrelated project closed."
+    },
+    {
+      "case": "POD Lead assigned project scope and management controls",
+      "status": "passed_ui_only",
+      "evidence": "Christine sees her assigned staffed/closed projects, including both new REQ-1076 and REQ-1078. Unassigned REQ-1077 and REQ-1079 are absent; no New request, Administration or Agent Execution controls. REQ-1076 shows both team members and their 8 originally planned hours, unlike Member's own-hour scope. Assigned Lead has Close project, and its confirmation requires a nonempty closure note."
+    },
+    {
+      "case": "Edit external commitment and prepare exact normal-limit boundary",
+      "status": "passed_edit_and_reports_agent_rerun_pending",
+      "evidence": "Changed only Customer portal migration Nov 2–6 from 34h to 26h through Maya's Edit form. Event list shows 26h; reports Nov 2–8 now show 26h / 40h = 65% and exactly 8h headroom to 85%. Original 34h exclusion result is retained above. Next Captain rerun of REQ-1077 should test whether its 8h Maya contribution fits exactly at 85%."
+    },
+    {
+      "case": "Manual leave override preserves normal report truth",
+      "status": "passed",
+      "evidence": "Maya reports Nov 23–29 after REQ-1078 manual approval show 8h committed / 0h available, 40h leave retained, utilization dash (not a fabricated finite percentage), zero headroom and Above limit. Member still sees only own capacity. This is expected for the explicitly permitted manual override."
+    },
+    {
+      "case": "Recipient sees new normal and manual approved assignments",
+      "status": "passed_ui_only",
+      "evidence": "After user signed in as Maya, dashboard shows REQ-1076 as her current assignment and 4 of 4 staffed. Requests lists only her REQ-1076, REQ-1078, REQ-1073 and REQ-1074; no unassigned REQ-1077 or rejected/rerun REQ-1079. Each new project's drawer shows Christine Lead, Maya Member Confirmed with 8 originally planned hours and correct dates. Manual assignment explicitly says Captain-assigned and suitability overridden. No approval, creation, closure or administrator controls are shown."
+    },
+    {
+      "case": "Recipient normal-week reports reconcile approved hours",
+      "status": "passed",
+      "evidence": "Maya reports Nov 16–22: 8h POD work / 40h available = 20%, 26h headroom to 85%, no external or leave hours in that week. Capacity table contains only Maya. Excel export remains disabled for Member."
+    },
+    {
+      "case": "Sign-in and workspace loading",
+      "status": "passed",
+      "evidence": "User signed in; dashboard, team directory and account access loaded."
+    },
+    {
+      "case": "POD-size controls and helper-text removal",
+      "status": "passed",
+      "evidence": "New request shows a read-only 1 POD Lead field and member options 0 through 5. Three removed helper texts are absent."
+    },
+    {
+      "case": "Notification count matches dashboard baseline",
+      "status": "passed",
+      "evidence": "Both showed 4 recommendations awaiting review before the new request completed."
+    },
+    {
+      "case": "Specialist skill profile",
+      "status": "passed",
+      "evidence": "Maya Bennett profile displays Portal SME at 4/5 with experience evidence. Account is enabled and setup complete."
+    },
+    {
+      "case": "Baseline request creation and automatic execution",
+      "status": "passed_creation_and_baseline_matching_after_api_restart",
+      "request_id": "REQ-1076",
+      "title": "Customer Portal Content Review",
+      "inputs": {
+        "project_type": "Portal & Content Operations",
+        "deliverable": "Portal Updates",
+        "mandatory_capabilities": ["GTM SME", "Portal SME"],
+        "start": "2026-11-16",
+        "end": "2026-11-20",
+        "needed_by": "2026-11-20",
+        "effort": "2 days (16 person-hours)",
+        "pod_size": "1 lead + 1 member",
+        "request_source": "Amy Lawrence"
+      },
+      "evidence": "Request saved and automatic agent ran. Initial proposal GET failed because running API rejected explanation_copy. After API restart the saved result loaded. Subsequent fresh rerun included Maya's newly saved deliverable experience; selected Christine as alternative Lead and successfully approved 8h each for Christine and Maya (16h total, Nov 16–20, 20% each). UI is Staffed, both cards Approved, footer Staffed · Assignments approved; no Approve/Reject/manual action remains."
+    },
+    {
+      "case": "POD Member UI scope",
+      "status": "passed_ui_only",
+      "evidence": "Maya sees two previously approved own requests, own capacity and own skill profile. Administration, Agent Execution, AI Fitment, Allocation Calendar and new-request actions are absent. No other-person directory is shown. Server-side denial was not probed directly."
+    },
+    {
+      "case": "Deliverable experience required text validation",
+      "status": "passed",
+      "evidence": "Selected Portal Updates, Can deliver independently; saved without experience text. UI blocked saving with 'Portal Updates: Describe your experience for this level.' and preserved the draft."
+    },
+    {
+      "case": "Save valid deliverable experience and interest-only goal",
+      "status": "passed_after_driver_externalization_fix",
+      "inputs": {
+        "deliverable": "Portal Updates",
+        "level": "Can deliver independently",
+        "scope": "Deliver end-to-end",
+        "evidence": "Reviewed and published portal pages.",
+        "GTM_SME_goal": "Learn launch messaging.",
+        "GTM_SME_proficiency": "Not rated; interest only",
+        "Portal_SME_proficiency": "4/5 unchanged"
+      },
+      "evidence": "Originally failed twice, including after API restart. Safe web diagnostics isolated NJS-012 in save-deliverable-experience. Interest-only goal alone saved successfully. Added oracledb to Next serverExternalPackages and restarted web. The same Portal Updates experience then saved (PATCH 200). A subsequent combined deliverable-plus-interest-goal update also saved and survived a full page reload. Final experience: Reviewed and published portal pages. Checked links. Final GTM learning goal: Learn launch messaging and reviews. Portal SME remains 4/5; GTM remains unrated interest-only."
+    },
+    {
+      "case": "Availability controls and leave scenario preparation",
+      "status": "passed_create_and_edit",
+      "inputs": {"type": "Leave", "title": "Annual leave", "start": "2026-11-23", "end": "2026-11-27", "total_hours": 40},
+      "evidence": "Created the 40-hour annual leave, then edited its title to Family leave while retaining Nov 23–27 and 40 hours. Both persisted in the event list. User API logs confirm POST 201 and PATCH /v1/availability/2752 200. End/cancel controls exist but were not executed."
+    },
+    {
+      "case": "External commitment creation at allocation limit",
+      "status": "passed",
+      "inputs": {"title": "Customer portal migration", "start": "2026-11-02", "end": "2026-11-06", "total_hours": 34},
+      "evidence": "Event persisted in Maya's availability list; API log confirms POST 201. Reports for Nov 2–8 show 34h committed / 40h available, 85% utilization, At limit and 0h headroom."
+    },
+    {
+      "case": "Non-overlapping availability and full-leave capacity",
+      "status": "passed_reports",
+      "evidence": "Before approval, reports for Nov 16–22 show Maya 0h committed / 40h available and 0% utilization. Nov 23–29 show 0h committed / 0h available, utilization dash, No working capacity and 0h headroom. Separate normal-agent overlap tests REQ-1077 and REQ-1078 both returned No feasible POD."
+    },
+    {
+      "case": "Member assigned-project details and report scope",
+      "status": "passed_ui_only",
+      "evidence": "Maya sees only REQ-1073 and REQ-1074. REQ-1073 details show Kristie as lead and Maya's own 8 planned hours, without approval or close-project actions. Reports show 2 assigned requests and capacity for 1 visible person (Maya); Excel export disabled."
+    }
+  ],
+  "additional_agent_tests": [
+    {
+      "case": "Single-person work beyond contracted weekly hours",
+      "status": "passed_normal_and_manual_block_ui_feedback_issue",
+      "request_id": "REQ-1080",
+      "title": "Portal Documentation Consolidation",
+      "inputs": {"start": "2026-11-09", "end": "2026-11-13", "needed_by": "2026-11-13", "hours": 41, "pod_size": "1 lead + 0 members", "deliverable": "Portal Updates", "mandatory_capabilities": ["GTM SME"]},
+      "evidence": "Normal agent returns No feasible POD for 41h assigned to one Lead over five weekdays. Manual preview with Indranie returned HTTP 409 (web log) and created no preview/assignment; request remains unstaffed. A controlled second attempt also returned to the unchanged dialog, with no visible error reason captured even immediately after completion. Green readiness text remains misleading; tracked as UI-004."
+    },
+    {
+      "case": "Normal staffing exactly at the 85% ceiling after external-work edit",
+      "status": "passed_recommendation_and_final_approval",
+      "request_id": "REQ-1077",
+      "evidence": "After external work changed from 34h to 26h, rerun succeeds with Indranie Lead 8h and Maya Member 8h. Maya has 65% existing allocation, 85% projected and 85% peak week; normal agent correctly permits equality with the limit. Score 51.25 reflects lower capacity than the free-week score 61.00 while skills/experience remain unchanged. Final approval succeeded and UI shows Staffed · Assignments approved. The earlier 34h exclusion was a real capacity check, not missing skill or a fixed exclusion."
+    },
+    {
+      "case": "Manual override intentionally bypasses full leave while preserving exception provenance",
+      "status": "passed_preview_and_final_approval",
+      "request_id": "REQ-1078",
+      "evidence": "Normal agent first returned No feasible POD. Captain selected Christine and Maya manually. Preview explicitly recorded Maya's 40h leave as ignored, No available capacity overall, 20% POD-only utilization, 8h per person, and no AI rank. Final approval with note Manual exception approved for portal publishing support. succeeded; Staffed, both Approved, and the ignored leave and POD-only warnings remain visible. This is the user-confirmed intended manual behavior, not an agent exclusion failure."
+    },
+    {
+      "case": "Lead-only request and rejection",
+      "status": "passed_rejection_and_automatic_rerun",
+      "request_id": "REQ-1079",
+      "title": "Portal Governance Review",
+      "inputs": {"start": "2026-11-09", "end": "2026-11-13", "needed_by": "2026-11-13", "hours": 8, "pod_size": "1 lead + 0 members", "deliverable": "Portal Updates", "mandatory_capabilities": ["GTM SME"]},
+      "evidence": "Automatic agent completed Analyst, Planner/rules and Supervisor stages; Christine alone received all 8h, 20%, score 64.50. Rejection confirmation disabled for empty reason; enabled after entering Prefer a different available lead. Rejection succeeded; old card marked Rejected and footer states no capacity reserved. Saved decisions show one REJECTED record by Indranie with the exact reason and original policy. A new execution automatically started and subsequently selected a different available lead, Indranie, for the same valid 8h plan. New proposal remains unapproved."
+    },
+    {
+      "case": "Approval audit and final assignment history",
+      "status": "passed",
+      "request_id": "REQ-1076",
+      "evidence": "Administrator audit filter REQ-1076 shows APPROVED by Indranie and prior PROPOSED events. Final assignments record type shows exactly two CONFIRMED records for REQ-1076. History is read-only."
+    },
+    {
+      "case": "Alternative lead selection and final approval",
+      "status": "passed",
+      "request_id": "REQ-1076",
+      "evidence": "Selected Christine Loba instead of originally recommended Kristie. Saved Captain selection 1 recalculated the whole POD. Final approval succeeded: Christine Lead 8h, Maya Member 8h, Staffed · Assignments approved. No additional acceptance required; no stale approval controls remain."
+    },
+    {
+      "case": "Approved assignment daily/weekly calendar consistency",
+      "status": "passed",
+      "request_id": "REQ-1076",
+      "evidence": "Nov 16–20 allocation calendar shows Christine and Maya at 20% each, with Customer Portal Content Review at 1.6h on each of five weekdays per person (8h each, 16h total). Unselected Kristie and Indranie remain at 0% that week."
+    },
+    {
+      "case": "Reject approval of outdated selected-person evidence",
+      "status": "passed_guard_request_remains_unstaffed",
+      "request_id": "REQ-1076",
+      "evidence": "Attempted Confirm final assignment after Maya's skills_version/evidence changed. Web logs show decisions POST 409; UI still Needs recommendation, with no final assignment. A second controlled attempt also returned to the unchanged confirmation state. Exact toast text was not captured."
+    },
+    {
+      "case": "Rerun hides the prior recommendation from current actions",
+      "status": "passed_running_state",
+      "request_id": "REQ-1076",
+      "evidence": "Started rerun after evidence edit. While running, old team is historical-only; no old Approve button/current recommendation cards shown."
+    },
+    {
+      "case": "External-work exclusion at the 85% limit",
+      "status": "passed_no_feasible_pod",
+      "request_id": "REQ-1077",
+      "title": "Customer Portal Release Review",
+      "inputs": {"start": "2026-11-02", "end": "2026-11-06", "hours": 16, "pod_size": "1 lead + 1 member", "deliverable": "Portal Updates", "mandatory_capabilities": ["GTM SME", "Portal SME"]},
+      "expectation": "Maya's 34-hour external work leaves no normal staffing headroom at 85%. No normal team should be approved unless another eligible person genuinely covers Portal SME.",
+      "evidence": "UI result NO_FEASIBLE_POD; no team cards or Approve action; manual override remains separate and permitted."
+    },
+    {
+      "case": "Full-week leave exclusion",
+      "status": "passed_no_feasible_pod",
+      "request_id": "REQ-1078",
+      "title": "Portal Publishing Review",
+      "inputs": {"start": "2026-11-23", "end": "2026-11-27", "hours": 16, "pod_size": "1 lead + 1 member", "deliverable": "Portal Updates", "mandatory_capabilities": ["GTM SME", "Portal SME"]},
+      "expectation": "Maya's 40-hour leave means no working capacity. The normal agent should not select her for this week.",
+      "evidence": "UI result NO_FEASIBLE_POD; no suggested team, no Approve action, and no fabricated substitute covering Portal SME."
+    },
+    {
+      "case": "Rerun incorporates saved deliverable experience without changing skill proficiency",
+      "status": "passed",
+      "request_id": "REQ-1076",
+      "evidence": "Fresh run selects Kristie Mayfield (GTM SME lead) and Maya (Portal SME member), 8h each, 20% projected allocation each. Maya's score increased from 35.33 to 61.00; the card explicitly records independent deliverable experience and the team explanation shows 12 pts deliverable experience (formerly 0). GTM interest remains unrated and is not presented as capability coverage for Maya."
+    }
+  ],
+  "issues": [
+    {
+      "id": "UI-005",
+      "status": "implemented_automated_checks_pass_live_retest_pending",
+      "remediation": "2026-10-16: Validate confirmation and entry dates before Continue and final submission. Identify the offending entry, its dates, the confirmation period and how to correct it. Focus an accessible error and identify the entry's date fields. Tests cover outside bounds, exact boundaries, reversed/missing/impossible dates and week limits.",
+      "summary": "Onboarding date-window validation exposes generic API-contract error instead of actionable field guidance.",
+      "reproduction": "Carol initial setup: work/leave in Nov, overall confirmation period Oct 15–30. Confirm final save. Error is The request does not match the API contract, with no indication entries must fall inside the confirmed period.",
+      "impact": "Invalid data is blocked, but the user cannot identify which dates to fix from the error. Draft is retained; valid dates can be restored."
+    },
+    {
+      "id": "UI-004",
+      "status": "implemented_automated_checks_pass_live_retest_pending",
+      "remediation": "2026-10-16: Keep manual-preview errors in separate dialog state that background polling cannot clear. Replace readiness with a focused persistent alert containing the backend's actionable reason and a Retry preview button. Clear the old error when choices change; show neutral checking text while busy. Rendering and parent error-wiring regression checks pass.",
+      "summary": "Failed manual preview gives no visible error reason and leaves a green ready message.",
+      "reproduction": "REQ-1080, 41h over Nov 9–13, one Lead, zero Members. Select Indranie in manual override and Calculate preview. Request returns 409, button returns to Calculate preview, modal remains open with green 1 manual override ready for allocation preview. DOM and screenshot show no capacity failure explanation. Reproduced once in a controlled retry.",
+      "impact": "Assignment guardrail works, but the Captain is not told why the preview failed. An inline, persistent error should distinguish capacity/rule conflicts from transient failure. No unauthorized capacity override occurred."
+    },
+    {
+      "id": "UI-003",
+      "status": "implemented_pending_permission_sql_and_live_retest",
+      "remediation": "2026-10-16 follow-up: Replace the Lead/Member Requests-screen fallback with a dedicated read-only assigned fitment review. The request selector uses server-confirmed or closed assignment membership, in either POD slot. Reuse the independently redacted workspace projection, not raw execution/proposal endpoints. Show final team, permitted responsibilities/hours, request context and manual/agent staffing provenance, without approvals, selection edits, reruns or closure actions. Request details now offers Open fitment when the current identity has viewing permission.",
+      "deployment": "Apply sql/oracle/assigned_fitment_view.sql to enable read-only AI_FITMENT for POD_LEAD (SCOPED) and POD_MEMBER (OWN). Restart the API, rebuild/restart production web if applicable, and refresh/sign in again. SQL is supplied but has not been executed against Oracle.",
+      "summary": "POD Lead AI Fitment navigation renders the Requests list instead of a review.",
+      "reproduction": "Sign in as Christine Loba (POD Lead), select AI Fitment. Breadcrumb says AI Fitment but main heading Staffing requests and the assigned Requests table are rendered; no fitment request selector or review view.",
+      "impact": "Visible navigation promises a different screen than it provides. No unauthorized approval controls exposed. Needs either a valid read-only Lead review or hiding/renaming this navigation entry according to intended role behavior."
+    },
+    {
+      "id": "UI-002",
+      "status": "implemented_automated_checks_pass_live_retest_pending",
+      "remediation": "2026-10-16: Zero-Member recommendations display No POD Members requested. Regression rendering verifies the old waiting-for-fitment placeholder is absent.",
+      "summary": "Lead-only ready recommendation has misleading Contributors empty-state text.",
+      "reproduction": "REQ-1079 requested 1 Lead and 0 Members. Completed fitment correctly proposes Christine alone for all 8h, but Contributors says 0 required followed by A validated recommendation will appear after fitment completes.",
+      "impact": "Cosmetic status contradiction; it should say no POD Members requested or omit the empty section. Matching and effort are correct."
+    },
+    {
+      "id": "UI-001",
+      "status": "implemented_automated_checks_pass_live_retest_pending",
+      "remediation": "2026-10-16: Removed the Ask AI Pod mount from AppShell as requested. Retained the component for possible future restoration; regression check verifies it is not mounted.",
+      "summary": "Floating Ask AI Pod control overlaps the filtered team-directory View button at the current window size.",
+      "reproduction": "Team & Skills; filter Maya; mouse-click View. Chat opens instead. Reproduced twice. Keyboard Enter on View opens the correct Maya profile.",
+      "impact": "Mouse access to the profile is obstructed; keyboard workaround exists."
+    },
+    {
+      "id": "AGENT-001",
+      "status": "resolved_by_api_restart_verified_in_ui",
+      "summary": "REQ-1076 result could not be loaded after the agent reached final review.",
+      "reproduction": "Create baseline portal request; observe agent progress; open Agent Execution; refresh after final Supervisor review. Alert persists: The operation could not be completed.",
+      "impact": "Cannot inspect the generated team or continue the baseline approval workflow. Refresh also replaces visible progress with empty Ready/No current recommendation, obscuring the last successful stage.",
+      "cause": "User-supplied API traceback showed ReviewSnapshot rejecting explanation_copy as extra_forbidden while execution GET returned 200. Current source declares explanation_copy; old loaded API code was incompatible with the updated worker. Restarting only the API restored the existing recommendation without resetting data or rerunning the agent."
+    },
+    {
+      "id": "SESSION-001",
+      "status": "passed_retest_after_api_restart",
+      "summary": "Sign-out left the old workspace visible in Signing out state while the page began reporting Sign in to continue.",
+      "impact": "Initial sign-out required a page reload. After API restart, Maya sign-out reached the login page without a reload; one browser navigation read timed out transiently, then recovered. No persistent sign-out failure established."
+    },
+    {
+      "id": "SKILLS-001",
+      "status": "fixed_verified_in_chrome",
+      "summary": "Maya's valid self-service skills save returned Oracle Database request failed.",
+      "impact": "Original combined save rolled back, but after the fix both deliverable-only and combined saves succeeded and persisted across page reload.",
+      "cause": "Safe diagnostics captured NJS-012 invalid bind data type specifically in save-deliverable-experience; the explicit CLOB bind crossed bundled/reloaded Oracle driver instances while the global pool survived reloads. Externalizing oracledb in next.config.ts keeps the driver and its bind-type classes in Node's shared module cache. Ordinary goal-only save already worked; the exact previously failing CLOB save and combined save both worked after this configuration change.",
+      "verification": "39 self-skills tests and 211 total frontend tests passed; TypeScript noEmit passed. Added tests for driver externalization and diagnostic redaction/rollback. No schema migration, reset, or direct scripted database writes."
+    }
+  ],
+  "ui_remediation_verification": {
+    "date": "2026-10-16",
+    "automated": "219 frontend tests pass; TypeScript noEmit passes; git diff --check passes for changed UI and test files.",
+    "live_retest": "Not completed: the previously selected Chrome browser is unavailable and the browser inventory has no Chrome connection. Prior Oct 15 observations remain historical evidence, not post-fix verification.",
+    "scope": "UI-001, UI-002, UI-004 and UI-005 implemented. Lead AI Fitment routing (UI-003) intentionally unchanged in this pass. No database or schema changes."
+  },
+  "assigned_fitment_verification": {
+    "date": "2026-10-16",
+    "automated": "225 frontend tests and TypeScript noEmit pass. Targeted assigned fitment and real relational-fixture privacy tests pass: 24 tests, 25 subtests. Tests cover assigned Lead/Member membership, Lead in a Member slot, closed history, proposal-only and cancelled exclusion, missing/locked view grants, private schedule/evidence redaction, no agent/run/approval grant, selector scoping, read-only rendering and proxy authorization denial.",
+    "full_backend_suite": "776 passed, 347 subtests passed; 2 failures outside this change: test_demo_phase2_policy expects the committed policy script to contain unapproved placeholder defaults, and test_runtime RSA key generation fails with the local OpenSSL entropy-source error. Neither failure was changed or suppressed.",
+    "live": "Not verified in a connected Chrome session; permission SQL not applied. No Oracle data writes performed for implementation or automated verification."
+  },
+  "pending": [
+    "Apply assigned_fitment_view.sql, restart API and visually verify Lead and Member scoped AI Fitment views",
+    "Live UI verification of the four Oct 16 UI remediations when Chrome reconnects",
+    "Further proficiency/interest edge cases; current skill/experience inclusion and leave/external exclusion comparisons passed",
+    "Manual cap equality at exactly 100%, existing-POD cumulative cap and duplicate-person edge cases remain; 41h over 40h block and leave bypass/approval passed",
+    "Lead closure before planned start and capacity release passed; mid-project closure-day retention still untested in this UI cycle",
+    "Employee provisioning requires a specifically approved new test identity/access grant; no new account created in this cycle",
+    "Shared enhancement cross-admin persistence, session expiry, concurrent edits/approvals and independent exported-workbook inspection remain untested in this cycle"
+  ]
+}

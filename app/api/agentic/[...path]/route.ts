@@ -12,13 +12,15 @@ async function forward(request: NextRequest, context: { params: Promise<{ path: 
     const joined = path.join('/');
     const id = '[A-Za-z0-9_-]{1,64}';
     const allowed = request.method === 'GET'
-      ? new RegExp(`^(me|onboarding|admin/accounts|admin/audit|workspace|reports/export|requests|admin/utilization|requests/${id}/(execution|proposal|manual|clarification)|executions/${id}|proposals/${id})$`)
-      : new RegExp(`^(onboarding|admin/accounts/${id}/access|requests/${id}/(executions|close|reschedule|clarification|manual-preview|manual-decision)|proposals/${id}/selection|decisions|admin/utilization)$`);
+      ? new RegExp(`^(me|onboarding|admin/accounts|admin/audit|admin/enhancements|workspace|reports/export|requests|admin/utilization|requests/${id}/(execution|proposal|manual|clarification)|executions/${id}|proposals/${id})$`)
+      : new RegExp(`^(onboarding|admin/accounts/${id}/access|requests/${id}/(executions|close|reschedule|clarification|manual-preview|manual-decision)|proposals/${id}/selection|decisions|admin/utilization|admin/enhancements)$`);
     if (!allowed.test(joined)) throw new StaffingApiError('Staffing endpoint not found.', 404, 'NOT_FOUND');
     let body: unknown;
     if (request.method === 'POST') {
       const content = await request.text();
-      if (content.length > (joined === 'onboarding' || joined.endsWith('/clarification') ? 100000 : 12000)) throw new StaffingApiError('Request is too large.', 413, 'BODY_LIMIT');
+      const bodyLimit = joined === 'admin/enhancements' ? 310000
+        : joined === 'onboarding' || joined.endsWith('/clarification') ? 100000 : 12000;
+      if (content.length > bodyLimit) throw new StaffingApiError('Request is too large.', 413, 'BODY_LIMIT');
       try { body = JSON.parse(content); } catch { throw new StaffingApiError('Invalid JSON.', 400, 'INVALID_JSON'); }
     }
     const after = request.nextUrl.searchParams.get('after');
@@ -40,7 +42,7 @@ async function forward(request: NextRequest, context: { params: Promise<{ path: 
       const week = request.nextUrl.searchParams.get('week');
       const resource = request.nextUrl.searchParams.get('resource') || 'REQUESTS';
       if (week && !/^\d{4}-\d{2}-\d{2}$/.test(week)) throw new StaffingApiError('Invalid week.', 400, 'INVALID_DATE');
-      if (!['REQUESTS', 'ALLOCATION_CALENDAR', 'REPORTS', 'TEAM_SKILLS', 'MY_AVAILABILITY'].includes(resource)) throw new StaffingApiError('Invalid resource.', 400, 'INVALID_RESOURCE');
+      if (!['REQUESTS', 'AI_FITMENT', 'ALLOCATION_CALENDAR', 'REPORTS', 'TEAM_SKILLS', 'MY_AVAILABILITY'].includes(resource)) throw new StaffingApiError('Invalid resource.', 400, 'INVALID_RESOURCE');
       if (week) query.set('week', week);
       if (joined === 'workspace') query.set('resource', resource);
       suffix = `?${query}`;

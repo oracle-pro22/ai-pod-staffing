@@ -11,6 +11,8 @@ import { STAFFING_ROLES } from '@/types/roles';
 import { UtilizationSettings } from './UtilizationSettings';
 import { AccountAccess } from './AccountAccess';
 import { AuditHistory } from './AuditHistory';
+import { EnhancementNotepad } from './EnhancementNotepad';
+import { useCallback, useRef } from 'react';
 
 const ACTIONS: { label: string; resource: string; action: PermissionAction }[] = [
   { label: 'Submit requests', resource: 'REQUESTS', action: 'canCreate' },
@@ -25,13 +27,18 @@ const ACTIONS: { label: string; resource: string; action: PermissionAction }[] =
 
 export function AdministrationScreen() {
   const { data, state, dispatch, setRole } = useStaffingApp();
-  const tabs = [['roles', 'Roles & access'], ['taxonomy', 'Taxonomies'], ['rules', 'Agent rules'], ['audit', 'Audit trail']] as const;
+  const dirtyNotes = useRef(false);
+  const onNotesDirty = useCallback((dirty: boolean) => { dirtyNotes.current = dirty; }, []);
+  const tabs = [['roles', 'Roles & access'], ['taxonomy', 'Taxonomies'], ['rules', 'Agent rules'], ['audit', 'Audit trail'], ['enhancements', 'Enhancements']] as const;
   return <section className="staffing-screen">
     <PageHeader title="Administration" description="Review profile permissions, catalogue configuration, and integration status." actions={<>
       {!data.identity && <Button onClick={() => setRole('POD Member')}>Preview as POD Member</Button>}
     </>} />
     <Card padded>
-      <div className="staffing-admin-tabs">{tabs.map(([id, label]) => <button type="button" className={state.adminTab === id ? 'active' : ''} key={id} onClick={() => dispatch({ type: 'set-admin-tab', tab: id })}>{label}</button>)}</div>
+      <div className="staffing-admin-tabs">{tabs.map(([id, label]) => <button type="button" className={state.adminTab === id ? 'active' : ''} key={id} onClick={() => {
+        if (id !== state.adminTab && dirtyNotes.current && !window.confirm('Discard unsaved enhancement notes and leave this tab?')) return;
+        dispatch({ type: 'set-admin-tab', tab: id });
+      }}>{label}</button>)}</div>
       {state.adminTab === 'roles' ? <div className="staffing-admin-panel">
         <p className="staffing-muted">Permissions loaded from Oracle. POD Lead and POD Member access is limited to their assigned projects and team. The catalogue below is read-only; account access and utilization settings have their own save actions.</p>
         <div style={{ overflowX: 'auto' }}><table className="staffing-role-table">
@@ -61,6 +68,11 @@ export function AdministrationScreen() {
       {state.adminTab === 'audit' ? <div className="staffing-admin-panel">
         {data.identity && state.role === 'Administrator' && canPerform(state.role, 'ADMINISTRATION', 'canView', data.authorization)
           ? <AuditHistory /> : <Notice title="Authenticated Administrator access required">Sign in as an authorized Administrator to view saved audit events, decisions and assignments. Preview mode does not load private history.</Notice>}
+      </div> : null}
+      {state.adminTab === 'enhancements' ? <div className="staffing-admin-panel">
+        {data.identity && state.role === 'Administrator' && canPerform(state.role, 'ADMINISTRATION', 'canView', data.authorization)
+          ? <EnhancementNotepad canEdit={canPerform(state.role, 'ADMINISTRATION', 'canUpdate', data.authorization)} onDirtyChange={onNotesDirty} />
+          : <Notice title="Authenticated Administrator access required">Sign in as an authorized Administrator to view the shared notepad.</Notice>}
       </div> : null}
     </Card>
   </section>;

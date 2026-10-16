@@ -54,8 +54,8 @@ class RequestSnapshot(Contract):
     starts_on: date
     ends_on: date
     total_hours: Annotated[Decimal, Field(gt=0, le=100000, decimal_places=2, allow_inf_nan=False)]
-    lead_count: int = Field(default=1, ge=1, le=5, strict=True)
-    member_count: int = Field(default=2, ge=0, le=20, strict=True)
+    lead_count: int = Field(default=1, ge=1, le=1, strict=True)
+    member_count: int = Field(default=2, ge=0, le=5, strict=True)
     deliverable_ids: tuple[EntityId, ...] = Field(min_length=1, max_length=100)
     custom_deliverables: dict[EntityId, str] = Field(default_factory=dict)
     requirements: tuple[Requirement, ...] = Field(min_length=1, max_length=100)

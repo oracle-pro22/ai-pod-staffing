@@ -86,6 +86,44 @@ function fixture() {
     userRoles: [{ IDENTITY_SUBJECT: 'test-subject', ROLE_CODE: 'POD_CAPTAIN', PERSON_ID: 'P-009', ACTIVE_FLAG: 'Y' }],
   });
 }
+test('global search finds people and skills without escaping profile allowlists', () => {
+  const { globalSearch } = require('../lib/global-search.ts');
+  const data = fixture();
+  data.people.find(p => p.id === 'P-010').name = 'Maya Parker';
+  const captain = globalSearch(data, 'POD Captain', 'maya');
+  assert.deepEqual(captain.people.map(p => p.name), ['Maya Parker']);
+  assert.equal(captain.requests.length, 0);
+  assert.equal(globalSearch(data, 'POD Member', 'maya').people.length, 0);
+  assert.deepEqual(globalSearch(data, 'POD Captain', 'comms').skills.map(s => s.name), ['Comms Team']);
+  assert.equal(globalSearch(data, 'POD Captain', 'REQ-1').requests.length, 1);
+  assert.equal(globalSearch(data, 'POD Captain', ' ').people.length, 0);
+});
+
+test('profile wording hides absent metadata and separates incomplete setup from stale capacity', () => {
+  const { personAllocationLabel, personProfileSummary } = require('../lib/formatting.ts');
+  assert.equal(personProfileSummary({ jobTitle: 'Not provided', location: 'Not provided' }), '');
+  assert.equal(personProfileSummary({ jobTitle: 'Designer', location: 'Not provided' }), 'Designer');
+  assert.match(personAllocationLabel({ allocationPct: 0, capacityStatus: 'CAPACITY_STALE', onboardingStatus: 'DRAFT' }), /Setup incomplete/);
+  assert.match(personAllocationLabel({ allocationPct: 0, capacityStatus: 'CAPACITY_STALE', onboardingStatus: 'COMPLETE' }), /Update availability/);
+  assert.equal(personAllocationLabel({ allocationPct: 0, capacityStatus: 'CURRENT' }), '0%');
+});
+
+test('notifications and dashboard use the same authenticated pending proposal count', () => {
+  const { selectDashboardMetrics } = require('../lib/selectors.ts');
+  const React = require('react');
+  const { renderToStaticMarkup } = require('react-dom/server');
+  const data = fixture();
+  data.identity = { personId: 'P-009', role: 'POD Captain' };
+  data.metrics.pendingRecommendations = 5;
+  data.requests.forEach(r => { r.recommendations = []; });
+  appContext = { data, state: { role: 'POD Captain', drawer: { id: 'notifications' } }, dispatch() {} };
+  try {
+    const { NotificationDrawer } = require('../components/shell/NotificationDrawer.tsx');
+    assert.equal(selectDashboardMetrics(data, 'POD Captain').pendingRecommendations, 5);
+    assert.match(renderToStaticMarkup(React.createElement(NotificationDrawer)), /5 recommendations await review/);
+  } finally { appContext = undefined; }
+});
+
 test('all 48 migrated permission rows drive the four official profiles', () => {
   assert.equal(permissionRows.length, 48);
   const data = fixture();
@@ -111,6 +149,25 @@ test('legacy names migrate browser preview only; missing permission is never ful
   const data = fixture();
   data.authorization.roles[0].active = false;
   assert.equal(canAccessScreen('POD Captain', 'requests', data.authorization), false);
+});
+
+test('assigned fitment permission patch enables member navigation without granting staffing mutations', () => {
+  const data = fixture();
+  const member = data.authorization.roles.find(role => role.code === 'POD_MEMBER');
+  const grant = member.permissions.find(permission => permission.resourceCode === 'AI_FITMENT');
+  Object.assign(grant, { accessScope: 'own', canView: true });
+  assert.equal(canAccessScreen('POD Member', 'fitment', data.authorization), true);
+  for (const action of ['canCreate', 'canUpdate', 'canApprove', 'canExport', 'canAdminister']) {
+    assert.equal(canPerform('POD Member', 'AI_FITMENT', action, data.authorization), false);
+  }
+  assert.equal(canAccessScreen('POD Member', 'agent', data.authorization), false);
+  const patch = fs.readFileSync(path.join(root, 'sql/oracle/assigned_fitment_view.sql'), 'utf8');
+  assert.match(patch, /MERGE INTO role_permissions/);
+  assert.match(patch, /target\.resource_code='AI_FITMENT'/);
+  assert.match(patch, /'POD_LEAD' role_code, 'SCOPED'/);
+  assert.match(patch, /'POD_MEMBER', 'OWN'/);
+  for (const action of ['create', 'update', 'approve', 'export', 'administer']) assert.match(patch, new RegExp(`target\\.can_${action}='N'`));
+  assert.doesNotMatch(patch, /UPDATE app_user_roles|INSERT INTO app_user_roles|DELETE FROM|ALTER TABLE|DROP TABLE/i);
 });
 test('active catalogue, new capability, blank defaults, and historical requests stay distinct', () => {
   const data = fixture();
@@ -263,12 +320,12 @@ test('frontend and save validator enforce converted effort, schedule and POD bou
   assert.equal(convertedEffort(625, 'months'), 100000);
   assert.equal(convertedEffort(12500, 'days'), 100000);
   assert.equal(convertedEffort(0.01, 'hours'), 0.01);
-  assert.deepEqual(requestPodCounts('5 leads + 20 contributors'), { leads: 5, contributors: 20 });
+  assert.deepEqual(requestPodCounts('1 lead + 5 contributors'), { leads: 1, contributors: 5 });
   assert.equal(requestPodCounts('1 lead + 0 contributors').contributors, 0);
   for (const [hours, unit] of [[0,'hours'], [-1,'days'], [625.01,'months'], [100001,'hours'], [0.0001,'days'], [0.00125,'days'], [Infinity,'hours'], [1,'years']]) {
     assert.throws(() => convertedEffort(hours, unit), { status: 400 });
   }
-  for (const size of ['0 leads + 2 contributors', '6 leads + 1 contributor', '1 lead + 21 contributors', '1.5 leads + 2 contributors']) {
+  for (const size of ['0 leads + 2 contributors', '2 leads + 1 contributor', '1 lead + 6 contributors', '1.5 leads + 2 contributors']) {
     assert.throws(() => requestPodCounts(size), { status: 400 });
   }
   validateRequestSchedule('2026-10-05', '2027-10-06'); // 366 days apart.

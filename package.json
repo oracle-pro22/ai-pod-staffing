@@ -11,6 +11,7 @@
     "test:personas": "node --test scripts/test-personas.cjs",
     "test:login": "node --test scripts/test-password-login.cjs",
     "test:selections": "node --test scripts/test-selections.cjs",
+    "test:enhancements": "node --test scripts/test-enhancements.cjs",
     "start": "next start -p 3001"
   },
   "dependencies": {

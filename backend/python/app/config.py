@@ -42,6 +42,8 @@ class Settings(BaseSettings):
     staffing_lease_seconds: int = Field(default=180, ge=90, le=600)
     staffing_max_candidates: int = Field(default=60, ge=5, le=100)
     staffing_search_limit: int = Field(default=2000, ge=1, le=10000)
+    staffing_explanation_enabled: bool = True
+    staffing_explanation_timeout_seconds: int = Field(default=6, ge=3, le=15)
 
     @model_validator(mode="after")
     def check_configuration(self):

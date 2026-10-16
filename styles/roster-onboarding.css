@@ -16,7 +16,23 @@
 .roster-panel .staffing-person-options { top:calc(100% + 7px); max-height:245px; border-color:#ded8d1; border-radius:13px; padding:7px; box-shadow:0 16px 36px rgba(37,32,27,.16); }
 .roster-panel .staffing-person-options button { min-height:0; border:0; border-radius:9px; padding:11px 12px; background:transparent; font-size:14px; text-align:left; }
 .roster-panel .staffing-person-options button:hover,.roster-panel .staffing-person-options button.active { color:#a83a2c; background:#fff0ec; }
+.roster-field-group { min-width:0; display:flex; flex-direction:column; gap:7px; margin:12px 0; font-size:14px; }
+.roster-panel .staffing-dropdown { width:100%; min-width:0; position:relative; }
+.roster-panel .staffing-dropdown-trigger { width:100%; min-height:43px; padding:10px 40px 10px 13px; border:1px solid #d9d3cc; border-radius:12px; position:relative; overflow:hidden; color:#292622; background:#fff; box-shadow:0 1px 2px rgba(31,27,23,.025); font-size:15px; text-align:left; text-overflow:ellipsis; white-space:nowrap; transition:border-color .16s ease,box-shadow .16s ease,background-color .16s ease; }
+.roster-panel .staffing-dropdown-trigger::after { content:''; width:8px; height:8px; border-right:1.5px solid #4f4943; border-bottom:1.5px solid #4f4943; position:absolute; top:calc(50% - 6px); right:16px; transform:rotate(45deg); transition:transform .16s ease,top .16s ease; }
+.roster-panel .staffing-dropdown.open .staffing-dropdown-trigger::after { top:calc(50% - 2px); transform:rotate(225deg); }
+.roster-panel .staffing-dropdown-trigger:hover:not(:disabled) { border-color:#bdb5ac; }
+.roster-panel .staffing-dropdown-trigger:focus,.roster-panel .staffing-dropdown.open .staffing-dropdown-trigger { border-color:#c86858; box-shadow:0 0 0 3px rgba(199,70,52,.1); outline:none; }
+.roster-panel .staffing-dropdown-trigger:disabled { cursor:not-allowed; background:#f5f2ee; opacity:.65; }
+.roster-panel .staffing-dropdown-options { position:absolute; top:calc(100% + 7px); right:0; left:0; z-index:45; max-height:245px; padding:7px; overflow-y:auto; border:1px solid #ded8d1; border-radius:13px; background:#fff; box-shadow:0 16px 36px rgba(37,32,27,.16); }
+.roster-panel .staffing-dropdown-options button { width:100%; min-height:0; padding:11px 12px; border:0; border-radius:9px; display:block; color:#292622; background:transparent; font-size:14px; text-align:left; }
+.roster-panel .staffing-dropdown-options button:hover,.roster-panel .staffing-dropdown-options button.active { color:#a83a2c; background:#fff0ec; }
 .roster-fields { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:16px; }.roster-panel .roster-check { flex-direction:row; align-items:center; gap:10px; }.roster-check input { width:18px; height:18px; flex-shrink:0; }
+.roster-panel .roster-interest-choice { padding:13px 14px; border:1px solid #ded8d1; border-radius:12px; flex-direction:row; align-items:flex-start; gap:12px; background:#fff; cursor:pointer; }
+.roster-interest-choice input { width:19px; height:19px; margin:2px 0 0; flex:0 0 auto; accent-color:#c54330; }
+.roster-interest-choice span { display:grid; gap:4px; }
+.roster-interest-choice strong { font-size:14px; line-height:1.35; }
+.roster-interest-choice small { color:#706c64; font-size:12px; line-height:1.45; }
 .roster-help { margin:4px 0 14px; color:#706c64; font-size:13px; line-height:1.45; }
 .roster-entry button,.roster-management button { min-height:40px; border:1px solid #d6cfc5; border-radius:8px; padding:8px 14px; background:white; color:inherit; cursor:pointer; font:inherit; font-size:14px; }
 .roster-entry button[aria-current=step] { background:#e8f2f1; border-color:#2b706f; color:#225d5c; }.roster-entry .roster-primary { background:#c54330; color:white; border-color:#c54330; }

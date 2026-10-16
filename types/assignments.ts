@@ -11,6 +11,9 @@ export type LiveWorkspace = {
     staffing_method?: 'AGENT_RECOMMENDATION' | 'MANUAL_OVERRIDE'; close_reason?: string | null }[];
   days: { assignment_id: string; request_id: string; person_id: string; work_date: string; assigned_hours: number }[];
   people: { person_id: string; full_name?: string; staffing_eligible?: boolean; allocation_pct: number | null; capacity_status: string; active_pods: number;
+    onboarding_status?: string | null;
+    capacity_days?: { work_date: string; pod_hours: number | string; reported_pod_hours: number | string;
+      external_hours: number | string; leave_hours: number | string }[];
     weeks?: { available_hours: string; committed_hours: string; leave_hours?: string; pod_hours?: string;
       reported_pod_hours?: string; external_hours?: string }[] }[];
 };

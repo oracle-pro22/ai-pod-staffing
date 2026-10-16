@@ -151,6 +151,7 @@ class GroundedToolTests(unittest.TestCase):
         metadata = json.loads(binds["validationJson"])
         self.assertEqual(metadata["engine_version"], ENGINE_VERSION)
         self.assertEqual(metadata["prompt_version"], PROMPT_VERSION)
+        self.assertEqual(metadata['explanation_copy']['source'], 'fallback')
         member_writes = [call for call in write.call_args_list if "INSERT INTO pod_proposal_members(" in call.args[1]]
         self.assertEqual(len(member_writes), 2)
         for member in member_writes:

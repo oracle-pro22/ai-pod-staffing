@@ -25,6 +25,7 @@ const initialState: StaffingAppState = {
   activeScreen: 'dashboard',
   activeRequestId: null,
   weekOffset: 0,
+  teamSearch: '',
   requestFilters: {
     search: '',
     status: '',
@@ -53,6 +54,7 @@ function staffingAppReducer(state: StaffingAppState, action: StaffingAppAction, 
         selectedCandidatesByRequest: {},
         agentRunning: false,
         requestFilters: initialState.requestFilters,
+        teamSearch: '',
         toasts: [],
       };
     case 'set-screen':
@@ -63,6 +65,8 @@ function staffingAppReducer(state: StaffingAppState, action: StaffingAppAction, 
       return { ...state, activeRequestId: action.requestId };
     case 'set-week-offset':
       return { ...state, weekOffset: action.weekOffset };
+    case 'set-team-search':
+      return { ...state, teamSearch: action.value };
     case 'set-request-filter':
       return { ...state, requestFilters: { ...state.requestFilters, [action.key]: action.value } };
     case 'open-drawer':

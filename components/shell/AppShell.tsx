@@ -2,7 +2,6 @@
 
 import { type ReactNode, useEffect, useState } from 'react';
 
-import { AskAiPod } from '@/components/chat/AskAiPod';
 import { AddPersonModal } from '@/components/overlays/AddPersonModal';
 import { RequestOverlays } from '@/components/overlays/RequestOverlays';
 import { WorkspaceOverlays } from '@/components/overlays/WorkspaceOverlays';
@@ -50,7 +49,6 @@ export function AppShell({ children }: { children: ReactNode }) {
         <Topbar onMenu={() => setMobileNavOpen((value) => !value)} />
         <div className="staffing-content">{children}</div>
       </main>
-      <AskAiPod key={`ask-ai-${state.role}`} />
       <NotificationDrawer />
       <RequestOverlays />
       <AddPersonModal key={`add-person-${state.role}`} />

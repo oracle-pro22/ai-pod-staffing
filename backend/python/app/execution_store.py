@@ -299,6 +299,8 @@ class ExecutionStore:
             raise ServiceError("INVALID_CHECKPOINT", "The selected plan is missing its required evidence references.", 409)
         proposal = option.proposal.model_copy(update={
             "evidence_refs": tuple(sorted(set(option.proposal.evidence_refs) | set(selection.evidence_refs)))})
+        checked_plan_scores(job.evidence, option)
+        explanation_copy = self.prepare_explanation_copy(job)
         with self.database.write() as connection:
             require_current_policy(connection, job.policy_version, lock=True)
             # Shared lock order: control -> request -> policy -> people -> execution -> proposal.
@@ -348,7 +350,7 @@ class ExecutionStore:
                  "validationJson": json_text({"issues": [], "policy_version": job.policy_version,
                     "validator": VALIDATOR_VERSION, "engine_version": ENGINE_VERSION,
                     "prompt_version": PROMPT_VERSION, "scheduling_algorithm": scheduling_algorithm,
-                    "plan_id": option.plan_id})},
+                    "plan_id": option.plan_id, "explanation_copy": explanation_copy})},
                 ("rationaleText", "referencesJson", "validationJson"))
             for rank, member in enumerate(proposal.members, 1):
                 person = next(p for p in fresh.candidates if p.person_id == member.person_id)
@@ -363,7 +365,7 @@ class ExecutionStore:
                      "workloadVersion": fresh.versions[member.person_id]["workload_version"]}, ("deliverablesJson", "evidenceJson", "factorsJson"))
             execute(connection, "UPDATE pod_proposals SET status='READY_FOR_REVIEW' WHERE proposal_id=:proposalId", {"proposalId": proposal_id})
             from app.selections import save_initial_review
-            save_initial_review(connection, proposal_id, fresh, option, self.settings.staffing_search_limit)
+            save_initial_review(connection, proposal_id, fresh, option, self.settings.staffing_search_limit, explanation_copy)
             execute(connection, """INSERT INTO audit_events(audit_event_id,entity_type,entity_id,action_type,actor_subject,
                 correlation_id,after_state_json) VALUES(:auditId,'POD_PROPOSAL',:proposalId,'PROPOSED',:actorSubject,:executionId,:afterJson)""",
                 {"auditId": uuid4().hex, "proposalId": proposal_id, "actorSubject": job.created_by,
@@ -371,6 +373,17 @@ class ExecutionStore:
             # Do not update REQUESTS.status here: its revision trigger would immediately stale this proposal.
             self.terminal(connection, job.execution_id, "READY_FOR_REVIEW", None, "POD proposal is ready for Captain review.")
             return proposal_id
+
+    def prepare_explanation_copy(self, job):
+        from app.pod_explanation import ExplanationCopy, enabled, polish_copy, saved_copy
+        if enabled(self.settings) and 'explanation_copy' not in job.checkpoint:
+            # Persist fallback/attempt intent first: lease recovery never repeats
+            # this optional call. Both saves release their locks before OCI runs.
+            job.checkpoint['explanation_copy'] = ExplanationCopy().model_dump(mode='json')
+            self.save(job, 'presentation', 'Explanation copy attempt checkpointed.')
+            job.checkpoint['explanation_copy'] = polish_copy(self.settings).model_dump(mode='json')
+            self.save(job, 'presentation', 'Explanation wording saved; staffing facts unchanged.')
+        return saved_copy(job.checkpoint.get('explanation_copy')).model_dump(mode='json')
 
     @staticmethod
     def authorize_read(actor, captain_id):
@@ -440,6 +453,11 @@ class ExecutionStore:
                 raise ServiceError("PROPOSAL_NOT_FOUND", "Staffing proposal not found.", 404)
             record = records[0]
             self.authorize_read(actor, record.pop("responsible_captain_id"))
+            if record['status'] == 'READY_FOR_REVIEW':
+                from app.proposal_state import current_agent_result
+                if not current_agent_result(connection, record):
+                    record['stale'] = 'Y'
+                    record['stale_reason'] = 'Previous recommendation—not the latest agent result. Review the latest execution and re-run fitment before approval.'
             if record['status'] == 'READY_FOR_REVIEW' and record['policy_version'] != active_policy_version(connection):
                 record['stale'] = 'Y'
                 record['stale_reason'] = 'Utilization policy changed. Re-run fitment before approval.'
@@ -447,6 +465,8 @@ class ExecutionStore:
                 record["rationale"] = record["rationale"].read()
             for key in ("evidence_refs_json", "validation_json"):
                 record[key.removesuffix("_json")] = document(record.pop(key))
+            from app.pod_explanation import saved_copy
+            record['explanation_copy'] = saved_copy(record['validation'].get('explanation_copy')).model_dump(mode='json')
             members = rows(connection, """SELECT m.person_id,p.full_name,m.role_in_pod,m.planned_hours,m.score,m.rank_position,
                 m.responsibilities,m.deliverable_ids_json,m.factors_json FROM pod_proposal_members m
                 JOIN people p ON p.person_id=m.person_id WHERE m.proposal_id=:proposalId AND m.selected_flag='Y'
@@ -467,4 +487,8 @@ class ExecutionStore:
                 raise ServiceError('REQUEST_NOT_FOUND', 'Request not found.', 404)
             self.authorize_read(actor, found[0]['responsible_captain_id'])
             proposals = rows(connection, 'SELECT proposal_id FROM pod_proposals WHERE request_id=:requestId ORDER BY proposal_version DESC FETCH FIRST 1 ROW ONLY', requestId=request_id)
-        return self.get_proposal(proposals[0]['proposal_id'], actor) if proposals else None
+        saved = self.get_proposal(proposals[0]['proposal_id'], actor) if proposals else None
+        historical = saved is not None and (saved['stale'] == 'Y' or saved['status'] == 'SUPERSEDED')
+        # Keep audit history, but never return an older saved team as the current result.
+        return {'current_proposal': None if historical else saved,
+                'previous_proposal': saved if historical else None}

@@ -1,4 +1,4 @@
-"""Captain-only, append-only selection previews. No OCI calls or reservations.
+"""Captain-only, append-only selection previews. No reservations.
 
 All mutations serialize on the request after the active-policy control lock.
 Client sends one advertised replacement, never hours, scores or override flags.
@@ -19,6 +19,7 @@ from app.evidence import collect_evidence
 from app.execution_store import execute
 from app.planning import PlanOption, json_text
 from app.policy_admin import require_current_policy
+from app.pod_explanation import ExplanationCopy, enabled, polish_copy
 from app.storage import document, rows
 
 
@@ -47,6 +48,7 @@ class ReviewSnapshot(Contract):
     rationale: str
     as_of: date | None = None
     active_pods: dict[str, int] = Field(default_factory=dict)
+    explanation_copy: ExplanationCopy = Field(default_factory=ExplanationCopy)
 
 
 def evidence_hash(bundle):
@@ -71,8 +73,10 @@ def snapshot(bundle, option, original, limit, connection=None):
                  for m in option.proposal.members}, rationale=grounded_plan_rationale(bundle, option.proposal, option.scores))
 
 
-def save_initial_review(connection, proposal_id, bundle, option, limit):
+def save_initial_review(connection, proposal_id, bundle, option, limit, explanation_copy=None):
     review = snapshot(bundle, option, option, limit, connection)
+    if explanation_copy is not None:
+        review = review.model_copy(update={'explanation_copy': ExplanationCopy.model_validate(explanation_copy)})
     execute(connection, "INSERT INTO mvp_p2_reviews(proposal_id,review_json) VALUES(:proposalId,:reviewJson)",
             {"proposalId": proposal_id, "reviewJson": json_text(review)}, ("reviewJson",))
 
@@ -87,6 +91,7 @@ def member_view(member, factors, review):
 
 def review_view(original, review, revision=0, selection_id=None):
     return {"revision": revision, "selection_id": selection_id, "rationale": review.rationale,
+            "explanation_copy": review.explanation_copy.model_dump(mode='json'),
             "members": [member_view(m, review.selected.scores[m.person_id], review) for m in review.selected.proposal.members],
             "original_members": [member_view(m, original.selected.scores[m.person_id], original) for m in original.selected.proposal.members],
             "alternatives": [{"replaces": r.replaces, "role": r.role.value,
@@ -123,11 +128,32 @@ class SelectionStore:
     def __init__(self, database, settings):
         self.database, self.settings = database, settings
 
+    def prepare_copy(self, actor, proposal_id, digest, body_hash):
+        if not enabled(self.settings):
+            return ExplanationCopy()
+        from app.decisions import DecisionStore
+        # Authenticate against the request before spending a model call. Replays
+        # return their saved wording. OCI runs only after this read is closed;
+        # the write transaction below still rechecks every permission/invariant.
+        with self.database.read() as connection:
+            found = rows(connection, '''SELECT r.responsible_captain_id FROM requests r
+                JOIN pod_proposals p ON p.request_id=r.request_id WHERE p.proposal_id=:proposalId''', proposalId=proposal_id)
+            if not found:
+                raise ServiceError('PROPOSAL_NOT_FOUND', 'Proposal not found.', 404)
+            DecisionStore.authorize(connection, actor, found[0]['responsible_captain_id'])
+            prior = rows(connection, 'SELECT proposal_id,body_hash FROM mvp_p2_selections WHERE idempotency_key=:idemKey', idemKey=digest)
+            if prior:
+                if prior[0]['proposal_id'] != proposal_id or prior[0]['body_hash'] != body_hash:
+                    raise ServiceError('IDEMPOTENCY_CONFLICT', 'This selection key was used for another change.', 409)
+                return ExplanationCopy()
+        return polish_copy(self.settings)
+
     def update(self, actor, proposal_id, change):
         from app.decisions import DecisionStore
         actor.require("AI_FITMENT", "approve", "POD_CAPTAIN")
         digest = hashlib.sha256(f"{actor.subject}|{change.idempotency_key}".encode()).hexdigest()
         body_hash = hashlib.sha256(json_text(change).encode()).hexdigest()
+        explanation_copy = self.prepare_copy(actor, proposal_id, digest, body_hash)
         with self.database.write() as connection:
             initial = rows(connection, "SELECT request_id,policy_version FROM pod_proposals WHERE proposal_id=:proposalId", proposalId=proposal_id)
             if not initial:
@@ -149,6 +175,8 @@ class SelectionStore:
             if (proposal["status"] != "READY_FOR_REVIEW" or proposal["request_revision"] != request["request_revision"]
                 or request["status"] not in ("NEEDS_RECOMMENDATION", "IN_REVIEW")):
                 raise ServiceError("STALE_PROPOSAL", "Proposal is no longer current. Refresh the review.", 409)
+            from app.proposal_state import require_current_agent_result
+            require_current_agent_result(connection, proposal)
             loaded = load_review(connection, proposal_id)
             if not loaded:
                 raise ServiceError("SELECTION_UNAVAILABLE", "Re-run fitment to generate selectable alternatives.", 409)
@@ -171,6 +199,7 @@ class SelectionStore:
             # Reuse current evidence only; a draft never loosens the normal rules.
             option = exact_team(fresh, leads, members)
             current = snapshot(fresh, option, original.selected, self.settings.staffing_search_limit, connection)
+            current = current.model_copy(update={'explanation_copy': explanation_copy})
             selection_id = "SD" + uuid4().hex[:28]
             revision = change.revision + 1
             execute(connection, """INSERT INTO mvp_p2_selections(selection_id,proposal_id,revision,actor_subject,

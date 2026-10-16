@@ -9,7 +9,7 @@ import { SelectField } from '@/components/ui/FormControls';
 import { useStaffingApp } from '@/context/StaffingAppProvider';
 import { availabilityDayHours, shiftDay, weekDays } from '@/lib/live-presentation';
 import { allocationState } from '@/lib/allocation-policy';
-import { availabilityEventLabel } from '@/lib/formatting';
+import { availabilityEventLabel, livePersonAllocationLabel } from '@/lib/formatting';
 import { useLiveWorkspace } from '@/lib/use-live-workspace';
 import { downloadExcelWorkbook } from '@/lib/export-xlsx';
 
@@ -27,7 +27,7 @@ export function LiveAllocationCalendar() {
   });
   const people = (snapshot?.people ?? []).map(p => ({ ...p, profile: data.people.find(person => person.id === p.person_id) }))
     .filter(p => !skillId || p.profile?.skills.some(s => s.id === skillId))
-    .filter(p => showAlternates || snapshot?.days.some(d => d.person_id === p.person_id))
+    .filter(p => showAlternates || snapshot?.days.some(d => d.person_id === p.person_id) || p.capacity_days?.some(d => Number(d.reported_pod_hours) > 0))
     .filter(p => p.staffing_eligible !== false || snapshot?.days.some(d => d.person_id === p.person_id))
     .filter(p => capacity === 'Available' ? p.staffing_eligible !== false && p.capacity_status === 'CURRENT' && p.allocation_pct !== null && allocationState(p.allocation_pct, snapshot?.maximum_allocation_pct) === 'within'
       : capacity === 'Constrained' ? p.staffing_eligible !== false && p.capacity_status === 'CURRENT' && p.allocation_pct !== null && ['at', 'above'].includes(allocationState(p.allocation_pct, snapshot?.maximum_allocation_pct))
@@ -68,22 +68,31 @@ export function LiveAllocationCalendar() {
       <div className="staffing-cell head person">Team member</div>{days.map(day => <div className="staffing-cell head" key={day}>{dayLabel(day)}</div>)}
       {people.map(p => <Fragment key={p.person_id}><div className="staffing-cell person"><div className="staffing-person-line">
         <Avatar initials={p.profile?.initials || p.person_id.slice(-2)} /><span><b>{p.profile?.name || snapshot.assignments.find(a => a.person_id === p.person_id)?.full_name || p.person_id}</b>
-          <small>{p.staffing_eligible === false ? 'Not eligible for POD assignment' : p.capacity_status !== 'CURRENT' ? 'Needs refresh' : p.allocation_pct === null ? 'No available hours' : `${p.allocation_pct}%`} • {p.profile?.skills[0]?.name || p.profile?.jobTitle || 'Team member'}</small></span>
+          <small>{livePersonAllocationLabel(p)}{p.profile?.skills[0]?.name ? ` · ${p.profile.skills[0].name}` : ''}</small></span>
       </div></div>{days.map(day => {
         const work = snapshot.days.filter(d => d.person_id === p.person_id && d.work_date.slice(0, 10) === day);
         const events = (p.profile?.availability ?? []).filter(e => e.status !== 'CANCELLED' && day >= e.startsOn.slice(0, 10) && day <= (e.effectiveUntil || e.endsOn || e.startsOn).slice(0, 10));
         const eventHours = events.map(e => availabilityDayHours(e, day));
-        const hours = work.reduce((n, d) => n + Number(d.assigned_hours), 0) + eventHours.reduce<number>((n, h) => n + (h ?? 0), 0);
+        const daily = p.capacity_days?.find(d => d.work_date.slice(0, 10) === day);
+        const reported = Number(daily?.reported_pod_hours ?? 0);
+        const projectHours = work.reduce((n, d) => n + Number(d.assigned_hours), 0);
+        const otherProjectHours = Math.max(0, Number(daily?.pod_hours ?? projectHours) - projectHours);
+        const hours = daily
+          ? Number(daily.pod_hours) + reported + Number(daily.external_hours) + Number(daily.leave_hours)
+          : projectHours + eventHours.reduce<number>((n, h) => n + (h ?? 0), 0);
+        const missingReportedDetail = !daily && Number(p.weeks?.[0]?.reported_pod_hours ?? 0) > 0;
         return <div className="staffing-cell" key={day}>
           {work.map(d => <div className="staffing-booking write" key={d.assignment_id} title={`${d.request_id} · ${snapshot.requests.find(r => r.request_id === d.request_id)?.title || ''}`}>
             {snapshot.requests.find(r => r.request_id === d.request_id)?.title || d.request_id} • {d.assigned_hours}h</div>)}
+          {reported > 0 && <div className="staffing-booking reported">Reported POD work • {Number(reported.toFixed(2))}h</div>}
+          {otherProjectHours > 0 && <div className="staffing-booking write">Other project work • {Number(otherProjectHours.toFixed(2))}h</div>}
           {events.map((e, i) => <div className={`staffing-booking ${/travel|leave|ooo/i.test(e.eventType) ? 'travel' : 'ooo'}`} key={`${e.startsOn}-${i}`}>
             {availabilityEventLabel(e.title || e.eventType)} • {eventHours[i] === null ? 'Hours not recorded' : `${eventHours[i]}h`}</div>)}
-          <span className="staffing-day-hours">{eventHours.some(h => h === null) ? 'Hours incomplete' : `${Number(hours.toFixed(2))}h`}</span>
+          <span className="staffing-day-hours">{p.capacity_status !== 'CURRENT' ? 'Capacity not confirmed' : missingReportedDetail ? 'Reported work detail unavailable' : eventHours.some(h => h === null) ? 'Hours incomplete' : `${Number(hours.toFixed(2))}h planned`}</span>
         </div>;
       })}</Fragment>)}
     </div>{!people.length && <div className="staffing-empty">No people match this calendar filter.</div>}</div>}
-    <div className="staffing-calendar-legend"><span><i className="write" />Approved project work</span><span><i className="travel" />Leave / travel</span><span><i className="ooo" />Other availability</span></div>
-    {snapshot && <div className="staffing-source-strip">{snapshot.timezone} · Percentages include all commitments. Daily cells show project details within your access scope and recorded availability. Closed projects retain work through the closure day only. Pending proposals do not reserve capacity.</div>}
+    <div className="staffing-calendar-legend"><span><i className="write" />Approved project work</span><span><i className="reported" />Reported POD work</span><span><i className="travel" />Leave / travel</span><span><i className="ooo" />Other availability</span></div>
+    {snapshot && <div className="staffing-source-strip">{snapshot.timezone} · Allocation = (approved + reported POD work + external commitments) ÷ working hours after leave. Daily planned totals also include leave. Project titles are limited to your access scope. Closed projects retain work through the closure day only. Pending proposals do not reserve capacity.</div>}
   </section>;
 }

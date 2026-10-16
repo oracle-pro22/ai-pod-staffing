@@ -1,11 +1,24 @@
 import type { EstimatedEffort, StaffingRequest } from '@/types/staffing';
 import type { Tone } from '@/types/ui';
+import type { LiveWorkspace } from '@/types/assignments';
 import { allocationState } from '@/lib/allocation-policy';
 
-export function personAllocationLabel(person: { allocationPct: number; capacityStatus?: string; staffingEligible?: boolean }): string {
+export function personAllocationLabel(person: { allocationPct: number; capacityStatus?: string; staffingEligible?: boolean; onboardingStatus?: string | null }): string {
   if (person.staffingEligible === false) return 'Not eligible for POD assignment';
+  if (person.onboardingStatus === 'DRAFT') return 'Setup incomplete · Finish staffing profile';
   if (person.capacityStatus === 'NO_CAPACITY') return 'No available hours';
-  return person.capacityStatus && person.capacityStatus !== 'CURRENT' ? 'Needs refresh' : `${person.allocationPct}%`;
+  if (person.capacityStatus === 'CAPACITY_UNKNOWN' || person.capacityStatus === 'UNKNOWN') return 'Working hours not recorded';
+  return person.capacityStatus && person.capacityStatus !== 'CURRENT' ? 'Update availability · Capacity needs refresh' : `${person.allocationPct}%`;
+}
+
+export function personProfileSummary(person: { jobTitle?: string; location?: string }): string {
+  return [person.jobTitle, person.location].filter(value => value?.trim() && !/^(not provided|unknown|n\/a)$/i.test(value.trim())).join(' · ');
+}
+
+export function livePersonAllocationLabel(person: LiveWorkspace['people'][number]): string {
+  return personAllocationLabel({ allocationPct: person.allocation_pct ?? 0,
+    capacityStatus: person.capacity_status === 'CURRENT' && person.allocation_pct === null ? 'NO_CAPACITY' : person.capacity_status,
+    staffingEligible: person.staffing_eligible, onboardingStatus: person.onboarding_status });
 }
 
 export function availabilityEventLabel(value: string): string {

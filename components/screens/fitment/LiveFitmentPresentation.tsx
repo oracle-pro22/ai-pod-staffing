@@ -11,10 +11,11 @@ import { Pill } from '@/components/ui/Pill';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { useStaffingApp } from '@/context/StaffingAppProvider';
 import { formatDate, requestEffortLabel, personAllocationLabel } from '@/lib/formatting';
-import { allocationMetric, executionProgress, liveStatusLabel, savedFactorValue, staffingReviewState } from '@/lib/live-presentation';
+import { allocationMetric, executionProgress, liveStatusLabel, savedFactorValue, staffingProposalState, staffingReviewState } from '@/lib/live-presentation';
 import type { StaffingRequest } from '@/types/staffing';
 import type { Tone } from '@/types/ui';
 import type { Execution, Member, Pod, Replacement, RequestRow } from './LiveStaffingReview';
+import { WhyThisPod } from './WhyThisPod';
 
 const STAGES = [
   ['Load evidence', 'Load request, catalogue, roles and dated capacity'],
@@ -27,6 +28,7 @@ const STAGES = [
 
 type Props = {
   executionView: boolean; request?: RequestRow; requests: RequestRow[]; execution: Execution | null; proposal: Pod | null;
+  previousProposal?: Pod | null;
   loading: boolean; busy: boolean; running: boolean; error: string; canRun: boolean; canDecide: boolean;
   decision: 'APPROVED' | 'REJECTED' | null; reason: string;
   onRun: () => void; onRefresh: () => void; onSelect: (id: string) => void; onReason: (value: string) => void;
@@ -38,8 +40,12 @@ type Props = {
 export function LiveFitmentPresentation(p: Props) {
   const { data, dispatch } = useStaffingApp();
   const detail = data.requests.find(r => r.id === p.request?.request_id);
-  const review = p.proposal?.selection_review;
-  const displayed = p.proposal && review ? { ...p.proposal, members: review.members, rationale: review.rationale } : p.proposal;
+  const { currentProposal: proposal, previousProposal: older } = staffingProposalState(p.proposal, p.execution);
+  const previous = older ?? p.previousProposal;
+  const canDecide = p.canDecide && proposal?.status === 'READY_FOR_REVIEW' && proposal.stale === 'N';
+  const review = proposal?.selection_review;
+  const displayed = proposal && review ? { ...proposal, members: review.members, rationale: review.rationale,
+    explanation_copy: review.explanation_copy ?? proposal.explanation_copy } : proposal;
   const manual = displayed?.members.some(m => m.source === 'MANUAL');
   const reviewState = staffingReviewState(p.request, p.execution);
   const progress = executionProgress(p.execution?.status, p.execution?.events ?? []);
@@ -60,7 +66,7 @@ export function LiveFitmentPresentation(p: Props) {
           {p.canRun && <Button variant={p.executionView ? 'primary' : undefined}
             disabled={p.busy || p.running || !p.request || ['STAFFED', 'CLOSED'].includes(p.request.status)} onClick={p.onRun}>
             {p.running ? 'Running…' : p.execution ? '↻ Re-run' : '▶ Run fitment'}</Button>}
-          {!p.executionView && p.canDecide && <><Button variant="primary" disabled={p.busy} onClick={() => p.onDecision('APPROVED')}>Approve pod</Button>
+          {!p.executionView && canDecide && <><Button variant="primary" disabled={p.busy} onClick={() => p.onDecision('APPROVED')}>Approve pod</Button>
             <Button disabled={p.busy} onClick={() => p.onDecision('REJECTED')}>Reject</Button></>}
           {!p.executionView && p.canManual && <Button disabled={p.busy} onClick={p.onManual}>Manual override</Button>}
           <Button size="small" disabled={p.busy} onClick={p.onRefresh}>Refresh</Button>
@@ -76,13 +82,17 @@ export function LiveFitmentPresentation(p: Props) {
           <div className="staffing-step-icon">{i < progress ? '✓' : i + 1}</div>
           <div><div className="staffing-step-title">{title}</div><div className="staffing-step-desc">{description}</div></div>
         </div>)}
-      </div></Card><div className="staffing-grid">{log}{p.proposal && <Card><CardHeader>
-        <div><h3>{manual ? 'Captain-selected staffing result' : 'Agent result'}</h3><p>{liveStatusLabel(p.proposal.status)} · {p.proposal.total_hours} planned hours{manual ? ' · Manual decision, not an agent execution' : ''}</p></div>
+      </div></Card><div className="staffing-grid">
+        {!proposal && !p.running && !reviewState.final && <LatestStaffingOutcome execution={p.execution} />}
+        {log}{proposal && <Card><CardHeader>
+        <div><h3>{manual ? 'Captain-selected staffing result' : 'Agent result'}</h3><p>{liveStatusLabel(proposal.status)} · {proposal.total_hours} planned hours{manual ? ' · Manual decision, not an agent execution' : ''}</p></div>
         <Button size="small" onClick={() => dispatch({ type: 'set-screen', screen: 'fitment' })}>Open full review</Button>
-      </CardHeader><CardBody>{p.proposal.members.map(m => <div className="staffing-agent-result" key={m.person_id}>
+      </CardHeader><CardBody>{proposal.members.map(m => <div className="staffing-agent-result" key={m.person_id}>
         <Avatar initials={initials(m.full_name)} /><div><b>{m.full_name} • {podRole(m.role_in_pod)}</b>
           <small>{m.responsibilities}</small><small>{m.planned_hours} planned hours</small></div><strong>{m.score}</strong>
-      </div>)}</CardBody></Card>}</div>
+      </div>)}</CardBody></Card>}
+        {previous && <PreviousRecommendation key={previous.proposal_id} proposal={previous} />}
+      </div>
     </div> : <div className="staffing-fit-layout">
       <Card padded className="staffing-request-summary"><div className="staffing-summary-head"><div>
         <Pill tone={/high|urgent/i.test(detail?.priority ?? '') ? 'red' : ''}>{detail?.priority ?? 'Request'}{detail ? ' priority' : ''}</Pill>
@@ -96,7 +106,7 @@ export function LiveFitmentPresentation(p: Props) {
         <div><dt>Status</dt><dd>{liveStatusLabel(p.request.status)}</dd></div>
       </dl><div className="staffing-fit-summary-note"><b>Business objectives</b><p>{detail.businessObjectives || detail.businessContext || 'No business objectives recorded.'}</p></div>
         <div className="staffing-fit-summary-note"><b>Expected outcomes</b><p>{detail.expectedOutcomes || 'No expected outcomes recorded.'}</p></div></>}
-      {p.proposal && <div className="staffing-source-strip"><span>{formatDate(p.proposal.starts_on.slice(0, 10))} – {formatDate(p.proposal.ends_on.slice(0, 10))}</span><span>{p.proposal.policy_version}</span></div>}
+      {proposal && <div className="staffing-source-strip"><span>{formatDate(proposal.starts_on.slice(0, 10))} – {formatDate(proposal.ends_on.slice(0, 10))}</span><span>{proposal.policy_version}</span></div>}
       </Card><div className="staffing-fit-results">
         {awaitingRecommendation && <Card padded className="staffing-fitment-waiting" role="status" aria-live="polite" aria-busy={p.running}>
           <span className="staffing-fitment-waiting-mark" aria-hidden="true">✦</span>
@@ -107,38 +117,41 @@ export function LiveFitmentPresentation(p: Props) {
               : 'This page checks automatically for a new execution. If automatic staffing is disabled, use Run fitment above.'}</p>
           </div>
         </Card>}
-        {p.proposal?.origin === 'MANUAL_DRAFT' && <Card padded className="staffing-candidate-section">
+        {!proposal && !awaitingRecommendation && !reviewState.final && <LatestStaffingOutcome execution={p.execution} />}
+        {proposal && <>
+        {proposal?.origin === 'MANUAL_DRAFT' && <Card padded className="staffing-candidate-section">
           <h3>Captain manual preview</h3><p className="staffing-muted">Saved draft—not an agent recommendation. No capacity is reserved until approval.</p>
           <p>Manual choices use a hard 100% cap: (existing POD hours + new POD hours) ÷ contracted working hours × 100. Leave and external commitments are ignored only for those choices; their records and normal workload reports remain unchanged.</p>
           {p.canManual && <div className="staffing-inline-actions"><Button disabled={p.busy} onClick={p.onRecalculate}>Recalculate selection</Button>
             <Button disabled={p.busy} onClick={p.onDiscardManual}>Discard manual draft</Button></div>}
         </Card>}
-        {p.proposal?.stale === 'Y' && <div className="staffing-fit-summary-note" role="alert">{p.proposal.stale_reason || 'Request changed. Run fitment again before approving.'}</div>}
         {review && <Card padded className="staffing-selection-summary"><div className="staffing-selection-summary-head">
           <div><h3>{review.revision ? 'Captain selection' : 'Recommended POD selected'}</h3>
             <p>{review.revision ? `Saved selection ${review.revision}. ` : ''}No capacity is reserved until approval.</p></div>
-          {p.canDecide && <Button size="small" disabled={p.busy} onClick={p.onRecalculate}>Recalculate selection</Button>}
+          {canDecide && <Button size="small" disabled={p.busy} onClick={p.onRecalculate}>Recalculate selection</Button>}
         </div><p className="staffing-selection-original">Original recommendation: {review.original_members.map(m => `${m.full_name} (${podRole(m.role_in_pod)})`).join(' · ')}</p></Card>}
         <SavedFactors proposal={displayed} />
         <SavedCandidates title="Pod lead" subtitle={manual ? 'Selected Lead and recorded allocation exceptions' : 'Recommended Lead and eligible alternatives'} members={displayed?.members.filter(m => m.role_in_pod === 'POD_LEAD') ?? []}
-          count={p.proposal?.lead_count ?? 1} request={detail} proposalStatus={p.proposal?.status} stale={p.proposal?.stale === 'Y'} />
-        {review && <ReplacementChoices key={`lead-${p.proposal?.proposal_id}-${review.revision}`} role="POD_LEAD" options={review.alternatives}
-          selected={review.members} disabled={!p.canDecide || p.busy} onChoose={p.onReplacement} />}
+          count={proposal?.lead_count ?? 1} request={detail} proposalStatus={proposal?.status} stale={proposal?.stale === 'Y'} />
+        {review && <ReplacementChoices key={`lead-${proposal?.proposal_id}-${review.revision}`} role="POD_LEAD" options={review.alternatives}
+          selected={review.members} disabled={!canDecide || p.busy} onChoose={p.onReplacement} />}
         <SavedCandidates title="Contributors" subtitle={manual ? 'Selected contributors, planned hours and any manual exceptions' : 'Capability match, deliverable experience, and remaining capacity'} members={displayed?.members.filter(m => m.role_in_pod !== 'POD_LEAD') ?? []}
-          count={p.proposal?.member_count ?? Number(detail?.requestedPodSize?.match(/(\d+) contributor/)?.[1] ?? 2)} request={detail} proposalStatus={p.proposal?.status} stale={p.proposal?.stale === 'Y'} />
-        {review && <ReplacementChoices key={`member-${p.proposal?.proposal_id}-${review.revision}`} role="POD_MEMBER" options={review.alternatives}
-          selected={review.members} disabled={!p.canDecide || p.busy} onChoose={p.onReplacement} />}
+          count={proposal?.member_count ?? Number(detail?.requestedPodSize?.match(/(\d+) contributor/)?.[1] ?? 2)} request={detail} proposalStatus={proposal?.status} stale={proposal?.stale === 'Y'} />
+        {review && <ReplacementChoices key={`member-${proposal?.proposal_id}-${review.revision}`} role="POD_MEMBER" options={review.alternatives}
+          selected={review.members} disabled={!canDecide || p.busy} onChoose={p.onReplacement} />}
         {review?.notes.map(note => <p className="staffing-muted" key={note}>{note}</p>)}
-        {displayed && <Card padded className="staffing-candidate-section"><h3>Why this POD</h3><p className="staffing-muted">{displayed.rationale}</p></Card>}
+        {displayed && <WhyThisPod proposal={displayed} />}
+        </>}
         {(p.running || p.execution?.last_error_code) && <div className="staffing-section-gap">{log}</div>}
-        <div className="staffing-source-strip"><span>{reviewState.finalLabel ?? (manual ? `Captain manual ${p.proposal?.origin === 'MANUAL_DRAFT' ? 'preview' : 'decision'} · ${liveStatusLabel(p.proposal?.status ?? '')}` : p.execution ? liveStatusLabel(p.execution.status) : 'Awaiting execution')}</span>
+        {previous && <PreviousRecommendation key={previous.proposal_id} proposal={previous} />}
+        <div className="staffing-source-strip"><span>{reviewState.finalLabel ?? (manual ? `Captain manual ${proposal?.origin === 'MANUAL_DRAFT' ? 'preview' : 'decision'} · ${liveStatusLabel(proposal?.status ?? '')}` : p.execution ? liveStatusLabel(p.execution.status) : 'Awaiting execution')}</span>
           {(reviewState.final ? Boolean(p.execution) : !manual || p.execution) && <Button size="small" onClick={() => dispatch({ type: 'set-screen', screen: 'agent' })}>{reviewState.final ? 'View execution history' : manual ? 'View prior agent execution' : 'View execution'}</Button>}</div>
       </div>
     </div>)}
     {!p.request && !p.loading && !p.error && <Card padded><div className="staffing-empty">No requests are linked to your staffing identity.</div></Card>}
-    <Modal open={Boolean(p.decision)} title={p.decision === 'REJECTED' ? 'Reject proposed pod' : 'Approve proposed pod'} onClose={p.onCancelDecision}
+    <Modal open={Boolean(p.decision) && Boolean(canDecide)} title={p.decision === 'REJECTED' ? 'Reject proposed pod' : 'Approve proposed pod'} onClose={p.onCancelDecision}
       footer={<><Button disabled={p.busy} onClick={p.onCancelDecision}>Cancel</Button>
-        <Button variant="primary" disabled={p.busy || !p.canDecide || (p.decision === 'REJECTED' && !p.reason.trim())} onClick={p.onSaveDecision}>
+        <Button variant="primary" disabled={p.busy || !canDecide || (p.decision === 'REJECTED' && !p.reason.trim())} onClick={p.onSaveDecision}>
           {p.busy ? 'Saving…' : p.decision === 'REJECTED' ? 'Confirm rejection' : 'Confirm final assignment'}</Button></>}>
       <div className="staffing-approval-summary"><b>{p.request?.title}</b><p>{displayed?.members.map(m => `${m.full_name} — ${m.planned_hours} hours`).join(', ')}</p>
         {displayed?.members.map(m => <div key={m.person_id}><p>{m.full_name}: {allocationMetric(m.factors.current_window_allocation_pct)} → {allocationMetric(m.factors.window_allocation_pct)} {m.source === 'MANUAL' ? 'POD-only utilization' : 'allocation'} in request period; {allocationMetric(m.factors.projected_allocation_pct)} peak week.</p>
@@ -153,6 +166,35 @@ export function LiveFitmentPresentation(p: Props) {
 
 function initials(name: string) { return name.split(' ').map(p => p[0]).join('').slice(0, 2); }
 function podRole(role: string) { return role === 'POD_LEAD' ? 'POD Lead' : 'POD Member'; }
+
+function LatestStaffingOutcome({ execution }: { execution: Execution | null }) {
+  const status = execution?.status;
+  const title = status === 'NO_FEASIBLE_POD' ? 'No feasible POD found in the latest run'
+    : status === 'FAILED' ? 'The latest staffing run failed'
+    : status === 'NEEDS_INFORMATION' ? 'More information is needed before staffing'
+    : status === 'READY_FOR_REVIEW' ? 'Loading the latest recommendation'
+    : 'No current POD recommendation';
+  return <Card padded className="staffing-fitment-outcome" role="status" aria-live="polite">
+    <h3>{title}</h3>
+    <p>{execution?.last_error_summary || (status === 'READY_FOR_REVIEW'
+      ? 'The result is being refreshed. No team can be approved until the matching proposal is loaded.'
+      : 'There is no current team available for approval. Review the request and run fitment again when ready.')}</p>
+    {status === 'NO_FEASIBLE_POD' && <p>No new team was recommended. Review the execution log and staffing requirements before re-running, or use a permitted manual override.</p>}
+  </Card>;
+}
+
+function PreviousRecommendation({ proposal }: { proposal: Pod }) {
+  const members = proposal.selection_review?.members ?? proposal.members;
+  return <Card padded className="staffing-proposal-history"><details>
+    <summary>Previous recommendation — historical only</summary>
+    <div className="staffing-proposal-history-body">
+      <p>This saved team is no longer current. It cannot be selected or approved and does not reserve capacity.</p>
+      {proposal.stale_reason && <p className="staffing-muted">{proposal.stale_reason}</p>}
+      <p className="staffing-muted">Proposal version {proposal.proposal_version} · {proposal.policy_version} · {formatDate(proposal.starts_on.slice(0, 10))} – {formatDate(proposal.ends_on.slice(0, 10))}</p>
+      <ul>{members.map(m => <li key={m.person_id}>{m.full_name} · {podRole(m.role_in_pod)} · {m.planned_hours} hours in the saved plan</li>)}</ul>
+    </div>
+  </details></Card>;
+}
 
 function ExecutionLog({ execution, running }: { execution: Execution | null; running: boolean }) {
   return <Card><CardHeader><div><h3>Execution log</h3><p>Transparent signals and exclusions</p></div>
@@ -215,7 +257,7 @@ function SavedCandidates({ title, subtitle, members, count, request, proposalSta
           <span>{stale ? 'Re-run required' : liveStatusLabel(proposalStatus ?? 'READY_FOR_REVIEW')}</span></div>
         {m.source === 'MANUAL' && <ManualMetrics member={m} />}
       </article>;
-    }) : <div className="staffing-empty compact">A validated recommendation will appear after fitment completes.</div>}</CardBody>
+    }) : <div className="staffing-empty compact">{count === 0 ? 'No POD Members requested.' : 'A validated recommendation will appear after fitment completes.'}</div>}</CardBody>
   </Card>;
 }
 

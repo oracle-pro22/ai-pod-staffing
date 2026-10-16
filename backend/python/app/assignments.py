@@ -92,11 +92,15 @@ def capacity_people(connection, person_ids, monday, sunday, today, policy, names
         FROM pod_assignments WHERE person_id IN ({placeholders}) AND status='CONFIRMED'
         AND starts_on<=:todayDay AND ends_on>=:todayDay GROUP BY person_id""", **binds, todayDay=today)
     active_by_id = {row["person_id"]: row["total"] for row in active}
+    onboarding = rows(connection, f"""SELECT person_id,status FROM roster_onboarding
+        WHERE person_id IN ({placeholders})""", **binds)
+    onboarding_by_id = {row['person_id']: row['status'] for row in onboarding}
     ledgers = load_capacity_ledgers(connection, person_ids, monday, sunday)
     people = []
     for person_id in person_ids:
         value = {"person_id": person_id, "allocation_pct": None, "capacity_status": "UNKNOWN",
                  "active_pods": active_by_id.get(person_id, 0),
+                 "onboarding_status": onboarding_by_id.get(person_id),
                  "staffing_eligible": eligibility.get(person_id, False) if eligibility is not None else True}
         if names and person_id in names:
             value["full_name"] = names[person_id]
@@ -119,8 +123,17 @@ def capacity_people(connection, person_ids, monday, sunday, today, policy, names
                     external_hours=_week_hours(ledger.external_work, week.week_start, end),
                 )
                 weeks.append(detail)
+            daily = []
+            day = monday
+            while day <= sunday:
+                daily.append({"work_date": day,
+                    "pod_hours": _week_hours(ledger.confirmed_work, day, day),
+                    "reported_pod_hours": _week_hours(ledger.reported_pod_work, day, day),
+                    "external_hours": _week_hours(ledger.external_work, day, day),
+                    "leave_hours": _week_hours(ledger.absences, day, day)})
+                day += timedelta(days=1)
             value.update(capacity_status="CURRENT", allocation_pct=capacity.weeks[0].allocation_pct,
-                         weeks=weeks)
+                         weeks=weeks, capacity_days=daily)
         people.append(value)
     return people
 
@@ -159,7 +172,9 @@ class AssignmentStore:
             return self.team_workspace(actor, week)
         clause, binds = scope_clause(actor, resource)
         permission = actor.require(resource, 'view')
-        own_only = permission.scope == 'OWN' and resource != 'REQUESTS'
+        # Assigned fitment shares the basic project roster, not private teammate
+        # evidence. The independent profile allowlist below still redacts it.
+        own_only = permission.scope == 'OWN' and resource not in ('REQUESTS', 'AI_FITMENT')
         assignment_filter = " AND a.person_id=:ownId" if own_only else ""
         assignment_binds = {**binds, **({'ownId': actor.person_id} if own_only else {})}
         with self.database.read() as connection:
@@ -181,6 +196,13 @@ class AssignmentStore:
             summary_binds = {**binds, 'activePolicy': policy.version}
             summary = rows(connection, f"""SELECT
                 COUNT(CASE WHEN p.status='READY_FOR_REVIEW' AND p.request_revision=r.request_revision
+                    AND r.status IN ('NEEDS_RECOMMENDATION','IN_REVIEW')
+                    AND EXISTS (SELECT 1 FROM agent_executions current_run
+                        WHERE current_run.execution_id=p.execution_id AND current_run.status='READY_FOR_REVIEW'
+                        AND NOT EXISTS (SELECT 1 FROM agent_executions newer_run
+                            WHERE newer_run.request_id=current_run.request_id
+                            AND (newer_run.created_at>current_run.created_at
+                                OR (newer_run.created_at=current_run.created_at AND newer_run.execution_id>current_run.execution_id))))
                     {policy_filter} THEN 1 END) AS pending_review,
                 COUNT(CASE WHEN p.status='APPROVED' THEN 1 END) AS approved,
                 COUNT(CASE WHEN p.status='REJECTED' THEN 1 END) AS rejected
@@ -200,7 +222,7 @@ class AssignmentStore:
             led_requests = {a["request_id"] for a in assignments if a["person_id"] == actor.person_id
                             and a["role_in_pod"] == "POD_LEAD" and a["status"] == "CONFIRMED"}
             for request in requests:
-                request["can_close"] = bool(lead_update and request["status"] == "STAFFED"
+                request["can_close"] = bool(resource != 'AI_FITMENT' and lead_update and request["status"] == "STAFFED"
                                             and request["request_id"] in led_requests)
             days = rows(connection, f"""SELECT d.assignment_id,d.person_id,d.work_date,d.assigned_hours,a.request_id
                 FROM assignment_days d JOIN pod_assignments a ON a.assignment_id=d.assignment_id

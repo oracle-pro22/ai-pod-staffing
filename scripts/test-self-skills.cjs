@@ -46,7 +46,8 @@ async function transaction(fn) {
   try {
     const result = await fn({ execute: async (sql, binds = {}) => {
       calls.push({ sql, binds });
-      if (injectFailure?.(sql, binds)) throw Object.assign(new Error('Injected database failure'), { errorNum: 99999 });
+      const failure = injectFailure?.(sql, binds);
+      if (failure) throw failure instanceof Error ? failure : Object.assign(new Error('Injected database failure'), { errorNum: 99999 });
       if (/^(ALTER SESSION|SET TRANSACTION)/.test(sql)) return {};
       if (/SELECT USER AS db_user/.test(sql)) return { rows: [{ DB_USER: 'AI_POD_STAFFING', CURRENT_SCHEMA: 'AI_POD_STAFFING' }] };
       if (/SELECT ur.person_id FROM app_user_roles/.test(sql)) return { rows: working.identityAllowed ? [{ PERSON_ID: binds.personId }] : [] };
@@ -379,6 +380,33 @@ test('skills modal retains role capability controls without demo warnings or a s
 
 const experience = { deliverableId: 'DEL-001', experienceLevel: 'SUPPORTED', contributionScope: 'CONTRIBUTOR', interested: true, experience: 'Helped produce launch communications with guidance.' };
 const deliveryPatch = (row = experience, version = 0) => ({ version, deliverableUpserts: [row] });
+
+test('Oracle driver stays external so pooled connections and CLOB bind types share one module instance', () => {
+  const config = require('../next.config.ts').default;
+  assert.ok(config.serverExternalPackages.includes('oracledb'));
+});
+
+test('save diagnostics identify the failing stage without leaking employee text or SQL binds', async () => {
+  reset();
+  const original = structuredClone(database);
+  const diagnostic = [];
+  const originalConsoleError = console.error;
+  const failure = new Error('NJS-012: private.person@example.invalid PRIVATE-EVIDENCE SQL-BIND');
+  injectFailure = sql => /UPDATE.*people SET deliverable_experience_json/s.test(sql) && failure;
+  console.error = (...args) => diagnostic.push(args);
+  try {
+    await assert.rejects(updateSelfSkills(deliveryPatch(), member), error => error === failure);
+  } finally {
+    console.error = originalConsoleError;
+  }
+  assert.deepEqual(diagnostic, [['[skills.save] Unexpected failure', {
+    phase: 'save-deliverable-experience', code: 'NJS-012', errorNum: null, offset: null,
+  }]]);
+  assert.doesNotMatch(JSON.stringify(diagnostic), /private\.person|PRIVATE-EVIDENCE|SQL-BIND/);
+  assert.deepEqual(database, original);
+  assert.equal(commits, 0);
+  assert.equal(rollbacks, 1);
+});
 
 test('deliverable payload validates enums, interests, evidence, duplicates and server-owned fields', () => {
   assert.deepEqual(validateSelfSkillsPatch(deliveryPatch()).deliverableUpserts, [experience]);

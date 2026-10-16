@@ -76,8 +76,10 @@ class TeamPrivacyTests(unittest.TestCase):
             UPDATE requests SET title=request_id,request_revision=1,responsible_captain_id='captain',created_at='2026-09-01';
             UPDATE pod_assignments SET assignment_id='A-' || rowid,proposal_id=request_id,
                 starts_on='2026-09-14',ends_on='2026-09-18',assigned_hours=8,close_reason='private closure note';
-            CREATE TABLE pod_proposals(proposal_id TEXT,request_id TEXT,status TEXT,request_revision INTEGER,policy_version TEXT,validation_json TEXT);
-            INSERT INTO pod_proposals SELECT DISTINCT proposal_id,request_id,'APPROVED',1,'v1','{}' FROM pod_assignments;
+            CREATE TABLE pod_proposals(proposal_id TEXT,request_id TEXT,status TEXT,request_revision INTEGER,policy_version TEXT,validation_json TEXT,execution_id TEXT);
+            INSERT INTO pod_proposals SELECT DISTINCT proposal_id,request_id,'APPROVED',1,'v1','{}',NULL FROM pod_assignments;
+            CREATE TABLE agent_executions(execution_id TEXT,request_id TEXT,status TEXT,created_at TEXT);
+            CREATE TABLE roster_onboarding(person_id TEXT,status TEXT);
             CREATE TABLE pod_proposal_members(proposal_id TEXT,person_id TEXT,responsibilities TEXT);
             INSERT INTO pod_proposal_members SELECT proposal_id,person_id,'Project contribution; 8 planned hours. Deliverable experience: mentor. PRIVATE-SKILL-EVIDENCE' FROM pod_assignments;
             CREATE TABLE assignment_days(assignment_id TEXT,person_id TEXT,work_date TEXT,assigned_hours INTEGER);
@@ -155,8 +157,8 @@ class TeamPrivacyTests(unittest.TestCase):
         with patch('app.policy_admin.active_policy_version', return_value='v1'), patch("app.assignments.load_policy", side_effect=RuntimeError("database failed")), self.assertRaises(RuntimeError):
             AssignmentStore(db, SimpleNamespace(staffing_policy_version="v1")).workspace(actor("POD_MEMBER", "OWN"), resource="TEAM_SKILLS")
 
-    def workspace(self, role, scope, pid, resource="REQUESTS", team=True):
-        permissions = [Permission(role, resource, "FULL", frozenset({"view", "export"}))]
+    def workspace(self, role, scope, pid, resource="REQUESTS", team=True, resource_scope="FULL"):
+        permissions = [Permission(role, resource, resource_scope, frozenset({"view", "export"}))]
         if team:
             permissions.append(Permission(role, "TEAM_SKILLS", scope, frozenset({"view"})))
         user = Actor("subject", pid, frozenset({role}), tuple(permissions))
@@ -178,7 +180,7 @@ class TeamPrivacyTests(unittest.TestCase):
         return result, loaded
 
     def test_member_all_resource_responses_are_own_with_basic_project_roster(self):
-        for resource in ("REQUESTS", "ALLOCATION_CALENDAR", "REPORTS", "MY_AVAILABILITY"):
+        for resource in ("REQUESTS", "AI_FITMENT", "ALLOCATION_CALENDAR", "REPORTS", "MY_AVAILABILITY"):
             for scope in ("OWN", "SCOPED", "FULL"):
                 with self.subTest(resource=resource, scope=scope):
                     result, loaded = self.workspace("POD_MEMBER", scope, "member", resource)
@@ -196,7 +198,7 @@ class TeamPrivacyTests(unittest.TestCase):
                     self.assertEqual(own["assigned_hours"], 8)
 
     def test_lead_other_response_paths_use_active_led_pods_not_historical_roster(self):
-        for resource in ("REQUESTS", "ALLOCATION_CALENDAR", "REPORTS"):
+        for resource in ("REQUESTS", "AI_FITMENT", "ALLOCATION_CALENDAR", "REPORTS"):
             with self.subTest(resource=resource):
                 result, loaded = self.workspace("POD_LEAD", "SCOPED", "lead", resource)
                 self.assertEqual(loaded, {"lead", "member", "future_member"})
@@ -247,11 +249,61 @@ class TeamPrivacyTests(unittest.TestCase):
             self.assertEqual(loaded, expected)
             self.assertEqual({p["person_id"] for p in result["people"]}, expected)
 
+    def test_pending_count_excludes_a_ready_proposal_after_failed_rerun(self):
+        self.db.execute("UPDATE requests SET status='IN_REVIEW' WHERE request_id='active'")
+        self.db.execute("UPDATE pod_proposals SET status='READY_FOR_REVIEW',execution_id='run1' WHERE request_id='active'")
+        self.db.execute("UPDATE pod_proposals SET policy_version=? WHERE request_id='active'", (DEFAULT_POLICY.version,))
+        self.db.execute("INSERT INTO agent_executions VALUES ('run1','active','READY_FOR_REVIEW','2026-09-14T09:00')")
+        result, _ = self.workspace('SYSTEM_ADMINISTRATOR', 'FULL', 'admin')
+        self.assertEqual(result['summary']['pending_review'], 1)
+        self.db.execute("INSERT INTO agent_executions VALUES ('run2','active','NO_FEASIBLE_POD','2026-09-14T10:00')")
+        result, _ = self.workspace('SYSTEM_ADMINISTRATOR', 'FULL', 'admin')
+        self.assertEqual(result['summary']['pending_review'], 0)
+
     def test_full_administrator_report_includes_capacity_without_team_screen_access(self):
         result, loaded = self.workspace("SYSTEM_ADMINISTRATOR", "FULL", "admin", "REPORTS", team=False)
         expected = set(self.visible(actor("POD_CAPTAIN", "FULL", "admin")))
         self.assertEqual(loaded, expected)
         self.assertEqual({person["person_id"] for person in result["people"]}, expected)
+
+    def test_assigned_fitment_does_not_use_proposals_or_cancelled_membership(self):
+        self.db.execute("INSERT INTO requests(request_id,status) VALUES ('pending-only','IN_REVIEW')")
+        self.db.execute("INSERT INTO pod_proposals(proposal_id,request_id,status) VALUES ('new-proposal','pending-only','READY_FOR_REVIEW')")
+        self.db.execute("INSERT INTO pod_proposal_members VALUES ('new-proposal','unassigned','Proposed candidate only')")
+        for role in ('POD_LEAD', 'POD_MEMBER'):
+            for pid in ('unassigned', 'cancelled_member'):
+                result, _ = self.workspace(role, 'FULL', pid, 'AI_FITMENT')
+                self.assertEqual(result['requests'], [])
+                self.assertEqual(result['assignments'], [])
+        result, _ = self.workspace('POD_MEMBER', 'OWN', 'member', 'AI_FITMENT', resource_scope='OWN')
+        self.assertEqual([r['request_id'] for r in result['requests']], ['active'])
+        self.assertTrue(all(not r['can_close'] for r in result['requests']))
+        self.assertEqual(result['request_scope'], 'Your assigned projects')
+        lead = next(a for a in result['assignments'] if a['person_id'] == 'lead')
+        self.assertNotIn('assigned_hours', lead)
+        self.assertNotIn('PRIVATE-SKILL-EVIDENCE', lead['responsibilities'])
+
+    def test_lead_assigned_in_member_slot_can_review_that_pod_without_peer_profiles(self):
+        result, loaded = self.workspace('POD_LEAD', 'SCOPED', 'lead', 'AI_FITMENT')
+        self.assertIn('member_slot', {r['request_id'] for r in result['requests']})
+        self.assertIn('closed', {r['request_id'] for r in result['requests']})
+        self.assertFalse(any(r['can_close'] for r in result['requests']))
+        self.assertNotIn('member_slot_peer', loaded)
+        peer = next(a for a in result['assignments'] if a['person_id'] == 'member_slot_peer')
+        self.assertEqual(peer['full_name'], 'member_slot_peer name')
+        self.assertNotIn('assigned_hours', peer)
+        self.assertNotIn('PRIVATE-SKILL-EVIDENCE', peer['responsibilities'])
+
+    def test_assigned_fitment_requires_its_own_active_view_grant_before_database_read(self):
+        from unittest.mock import MagicMock
+        database = MagicMock()
+        store = AssignmentStore(database, SimpleNamespace())
+        for role in ('POD_LEAD', 'POD_MEMBER'):
+            for permissions in ((), (Permission(role, 'REQUESTS', 'SCOPED', frozenset({'view'})),),
+                                (Permission(role, 'AI_FITMENT', 'LOCKED', frozenset({'view'})),)):
+                with self.subTest(role=role, permissions=permissions), self.assertRaises(ServiceError):
+                    store.workspace(Actor('subject', 'member', frozenset({role}), permissions), resource='AI_FITMENT')
+        database.read.assert_not_called()
 
 
 if __name__ == "__main__":

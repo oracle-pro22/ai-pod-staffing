@@ -27,6 +27,7 @@ for (const extension of ['.ts', '.tsx']) require.extensions[extension] = (mod, f
 }).outputText, filename);
 const { LiveFitmentPresentation } = require('../components/screens/fitment/LiveFitmentPresentation.tsx');
 const { ManualPodEditor, manualPeopleForSlot } = require('../components/screens/fitment/ManualPodEditor.tsx');
+const { AssignedFitmentPresentation } = require('../components/screens/fitment/AssignedFitmentReview.tsx');
 const { POST, GET } = require('../app/api/agentic/[...path]/route.ts');
 const { NextRequest } = require('next/server');
 function member(id, name, role = 'POD_MEMBER', source = 'RECOMMENDED') {
@@ -41,8 +42,9 @@ const alternatives = [
   ...['Ava Morgan', 'Noah Foster'].flatMap((name, i) => ['P-4', 'P-5'].map(replaces => ({ replaces, role: 'POD_MEMBER', member: member(`P-${i+6}`, name, 'POD_MEMBER', 'ALTERNATIVE') }))),
 ];
 const props = { executionView: false, request: { request_id: 'REQ-1', title: 'AI service sales guide', status: 'NEEDS_RECOMMENDATION', responsible_captain_id: 'P-10' },
-  requests: [{ request_id: 'REQ-1', title: 'AI service sales guide', status: 'NEEDS_RECOMMENDATION' }], execution: null,
-  proposal: { proposal_id: 'PP-1', request_id: 'REQ-1', proposal_version: 1, status: 'READY_FOR_REVIEW', stale: 'N',
+  requests: [{ request_id: 'REQ-1', title: 'AI service sales guide', status: 'NEEDS_RECOMMENDATION' }],
+  execution: { execution_id: 'run-1', request_id: 'REQ-1', status: 'READY_FOR_REVIEW', clarification_questions: [], events: [], proposals: [] },
+  proposal: { proposal_id: 'PP-1', request_id: 'REQ-1', execution_id: 'run-1', proposal_version: 1, status: 'READY_FOR_REVIEW', stale: 'N',
     starts_on: '2026-09-21', ends_on: '2026-09-25', total_hours: 24, lead_count: 1, member_count: 2, policy_version: 'staffing-utilization-v1',
     rationale: '24 person-hours across three people, with complete capability coverage.', members,
     selection_review: { revision: 0, selection_id: null, members, original_members: members, alternatives,
@@ -50,6 +52,184 @@ const props = { executionView: false, request: { request_id: 'REQ-1', title: 'AI
   loading: false, busy: false, running: false, error: '', canRun: true, canDecide: true, decision: null, reason: '',
   onRun() {}, onRefresh() {}, onSelect() {}, onReason() {}, onDecision() {}, onSaveDecision() {}, onCancelDecision() {}, onReplacement() {}, onRecalculate() {} };
 function markup(extra = {}) { return renderToStaticMarkup(React.createElement(LiveFitmentPresentation, { ...props, ...extra })); }
+
+const assignedSnapshot = {
+  requests: [{ request_id: 'REQ-1', title: 'AI service sales guide', status: 'STAFFED', planned_start_on: '2026-09-21',
+    planned_end_on: '2026-09-25' }],
+  assignments: [{ assignment_id: 'A-1', request_id: 'REQ-1', person_id: 'P-1', full_name: 'Lead One', role_in_pod: 'POD_LEAD',
+    responsibilities: 'Coordinate project delivery.', status: 'CONFIRMED', staffing_method: 'AGENT_RECOMMENDATION' },
+  { assignment_id: 'A-2', request_id: 'REQ-1', person_id: 'P-2', full_name: 'Member Two', role_in_pod: 'POD_MEMBER',
+    responsibilities: 'Review the deck.', status: 'CONFIRMED', assigned_hours: 8, starts_on: '2026-09-21', ends_on: '2026-09-25',
+    staffing_method: 'AGENT_RECOMMENDATION' }],
+};
+function assignedMarkup(overrides = {}) {
+  return renderToStaticMarkup(React.createElement(AssignedFitmentPresentation, {
+    snapshot: assignedSnapshot, error: '', activeRequestId: 'REQ-1', personId: 'P-2', details: context.data.requests,
+    onRefresh() {}, onSelect() {}, ...overrides,
+  }));
+}
+
+test('assigned fitment renders the approved roster and permitted own work without action or ranking controls', () => {
+  const html = assignedMarkup();
+  assert.match(html, /AI fitment review/);
+  assert.match(html, /Read-only review/);
+  assert.match(html, /Your assigned request/);
+  assert.match(html, /Lead One/);
+  assert.match(html, /Member Two/);
+  assert.match(html, /Your assignment/);
+  assert.match(html, /8 originally planned hours/);
+  assert.match(html, /Review the deck/);
+  assert.match(html, /Key deliverables/);
+  assert.match(html, /Agent recommendation approved by a Captain/);
+  assert.doesNotMatch(html, /<button[^>]*>[^<]*(Approve|Reject|Re-run|Close project|Manual override)|Alternative Leads|AI recommendation|Fit score/);
+  // No fabricated zero hours or zero score for the redacted Lead roster row.
+  assert.equal((html.match(/originally planned hours/g) ?? []).length, 1);
+  assert.doesNotMatch(html, /0 originally planned hours|0% allocated/);
+});
+
+test('assigned request picker cannot be expanded by stale active IDs or unrelated request metadata', () => {
+  const html = assignedMarkup({ activeRequestId: 'SECRET', details: [...context.data.requests,
+    { ...context.data.requests[0], id: 'SECRET', title: 'Private unrelated request', businessObjectives: 'Private objective' }] });
+  assert.match(html, /AI service sales guide/);
+  assert.doesNotMatch(html, /Private unrelated request|Private objective|SECRET/);
+  const empty = assignedMarkup({ snapshot: { requests: [], assignments: [] } });
+  assert.match(empty, /No approved PODs are assigned to you yet/);
+  assert.doesNotMatch(empty, /Lead One|Member Two|AI service sales guide|Your assigned request/);
+});
+
+test('assigned fitment distinguishes closed history, manual staffing and lead-only teams', () => {
+  const html = assignedMarkup({ personId: 'P-1', snapshot: {
+    requests: [{ ...assignedSnapshot.requests[0], status: 'CLOSED' }],
+    assignments: [{ ...assignedSnapshot.assignments[0], status: 'CLOSED', staffing_method: 'MANUAL_OVERRIDE' }],
+  } });
+  assert.match(html, /Approved POD · Project closed/);
+  assert.match(html, /Captain manual override/);
+  assert.match(html, /No POD Members requested/);
+  assert.doesNotMatch(html, /awaiting|pending recommendation will|Approve pod|Close project/);
+});
+
+test('assigned fitment loading and errors never fall back to preview recommendations', () => {
+  assert.match(assignedMarkup({ snapshot: null }), /Loading your assigned PODs/);
+  const html = assignedMarkup({ snapshot: null, error: 'Access is not permitted. Refresh your session.' });
+  assert.match(html, /role="alert"/);
+  assert.match(html, /Refresh your session/);
+  assert.doesNotMatch(html, /Lead One|Member Two|AI service sales guide/);
+  const screen = fs.readFileSync(path.join(root, 'components/screens/fitment/AiFitmentScreen.tsx'), 'utf8');
+  assert.match(screen, /\['POD Lead', 'POD Member'\].*return <AssignedFitmentReview/);
+  assert.doesNotMatch(screen, /RequestsScreen/);
+  const source = fs.readFileSync(path.join(root, 'components/screens/fitment/AssignedFitmentReview.tsx'), 'utf8');
+  assert.match(source, /useLiveWorkspace\('AI_FITMENT'\)/);
+  assert.doesNotMatch(source, /LiveStaffingReview|resolveFitmentRecommendations|staffingFetch|onDecision|onReplacement/);
+});
+
+test('proxy forwards read-only AI_FITMENT workspace scope and retains backend denial', async () => {
+  forwarded = [];
+  const originalBackend = backend;
+  const { StaffingApiError } = require('../lib/errors/staffing-api-error.ts');
+  try {
+    backend = async (...args) => { forwarded.push(args); return assignedSnapshot; };
+    const req = new NextRequest('http://127.0.0.1:3001/api/agentic/workspace?resource=AI_FITMENT');
+    const ctx = { params: Promise.resolve({ path: ['workspace'] }) };
+    const response = await GET(req, ctx);
+    assert.equal(response.status, 200);
+    assert.equal(forwarded[0][1], '/v1/workspace?resource=AI_FITMENT');
+    assert.match(response.headers.get('cache-control'), /no-store/);
+    backend = async () => { throw new StaffingApiError('Not permitted.', 403, 'FORBIDDEN'); };
+    assert.equal((await GET(req, ctx)).status, 403);
+    assert.equal((await POST(new NextRequest(req.url, { method: 'POST', body: '{}' }), ctx)).status, 404);
+  } finally { backend = originalBackend; }
+});
+test('completed lead-only recommendation does not promise another member recommendation', () => {
+  const html = markup({ proposal: { ...props.proposal, member_count: 0, members: [members[0]], selection_review: undefined } });
+  assert.match(html, /No POD Members requested\./);
+  assert.doesNotMatch(html, /A validated recommendation will appear after fitment completes/);
+  assert.match(html, /Mara Bennett/);
+});
+
+test('manual preview error is persistent inside the editor, actionable, and replaces green readiness', () => {
+  const html = renderToStaticMarkup(React.createElement(ManualPodEditor, {
+    people: [{ person_id: 'P-1', full_name: 'Lead One', role_codes: ['POD_LEAD'] }], selected: [],
+    slots: [{ person_id: 'P-1', role: 'POD_LEAD', manual: true }], leadCount: 1, memberCount: 0, busy: false,
+    error: 'This team exceeds 100% of contracted hours. Change people, dates or effort.', onClose() {}, onPreview() {},
+  }));
+  assert.match(html, /role="alert"/);
+  assert.match(html, /Preview could not be calculated/);
+  assert.match(html, /Change people, dates or effort/);
+  assert.match(html, /No assignments are created until you approve a saved preview/);
+  assert.match(html, /Retry preview/);
+  assert.doesNotMatch(html, /staffing-manual-readiness ready|ready for allocation preview/);
+  const source = fs.readFileSync(path.join(root, 'components/screens/fitment/LiveStaffingReview.tsx'), 'utf8');
+  assert.match(source, /setManualError\(message\)/);
+  assert.match(source, /error=\{manualError\} onChange=\{\(\) => setManualError\(''\)\}/);
+});
+
+test('calculating a valid manual choice does not show green ready status', () => {
+  const html = renderToStaticMarkup(React.createElement(ManualPodEditor, {
+    people: [{ person_id: 'P-1', full_name: 'Lead One', role_codes: ['POD_LEAD'] }], selected: [],
+    slots: [{ person_id: 'P-1', role: 'POD_LEAD', manual: true }], leadCount: 1, memberCount: 0, busy: true,
+    onClose() {}, onPreview() {},
+  }));
+  assert.match(html, /Checking the selected team/);
+  assert.doesNotMatch(html, /staffing-manual-readiness ready|ready for allocation preview/);
+});
+
+test('Ask AI Pod is not mounted in the application shell, but its implementation is retained', () => {
+  const shell = fs.readFileSync(path.join(root, 'components/shell/AppShell.tsx'), 'utf8');
+  assert.doesNotMatch(shell, /AskAiPod|staffing-ask-btn/);
+  assert.ok(fs.existsSync(path.join(root, 'components/chat/AskAiPod.tsx')));
+});
+test('a failed rerun fences the earlier ready recommendation and labels it as history', () => {
+  const { agentProposalIsCurrent } = require('../lib/live-presentation.ts');
+  const original = { ...props.proposal, execution_id: 'run-1' };
+  assert.equal(agentProposalIsCurrent(original, { execution_id: 'run-1', status: 'READY_FOR_REVIEW' }), true);
+  for (const status of ['NO_FEASIBLE_POD', 'FAILED', 'RUNNING', 'READY_FOR_REVIEW']) {
+    assert.equal(agentProposalIsCurrent(original, { execution_id: 'run-2', status }), false);
+  }
+  assert.equal(agentProposalIsCurrent({ ...original, status: 'APPROVED' }, null), true);
+  assert.equal(agentProposalIsCurrent({ ...original, origin: 'MANUAL_DRAFT' }, null), true);
+  const html = markup({ canDecide: false, proposal: { ...original, stale: 'Y', stale_reason: 'Latest execution found no feasible POD.' } });
+  assert.match(html, /Previous recommendation — historical only/);
+  assert.match(html, /Latest execution found no feasible POD/);
+  assert.doesNotMatch(html, />Approve pod</);
+  assert.doesNotMatch(markup({ executionView: true, execution: { ...props.execution, execution_id: 'run-2', status: 'NO_FEASIBLE_POD' }, proposal: { ...original, stale: 'Y' } }), /Ready for review/);
+});
+
+test('failed and infeasible runs never present historical teams as current recommendations', () => {
+  for (const executionView of [false, true]) {
+    for (const status of ['NO_FEASIBLE_POD', 'FAILED', 'NEEDS_INFORMATION', 'SUPERSEDED']) {
+      const html = markup({ executionView, canDecide: true, decision: 'APPROVED',
+        execution: { ...props.execution, execution_id: 'run-2', status, last_error_code: status, last_error_summary: 'Latest run outcome.' } });
+      assert.match(html, /Previous recommendation — historical only/);
+      assert.match(html, /<details><summary>/); // History is collapsed by default.
+      assert.doesNotMatch(html, /<details open/);
+      assert.match(html, /Mara Bennett · POD Lead · 8 hours in the saved plan/);
+      assert.doesNotMatch(html, /AI recommendation|staffing-candidate selected|Recommended Lead and eligible alternatives|How the recommendation was formed|Alternative Leads|Fit score|aria-label="Select |Approve pod|Confirm final assignment/);
+      if (status === 'NO_FEASIBLE_POD') assert.match(html, /No feasible POD found in the latest run/);
+      if (status === 'FAILED') assert.match(html, /The latest staffing run failed/);
+    }
+  }
+});
+
+test('explicit API history, refreshed results and saved manual previews stay separate', () => {
+  const { staffingProposalState } = require('../lib/live-presentation.ts');
+  const old = { ...props.proposal, stale: 'Y' };
+  const partition = staffingProposalState(old, props.execution);
+  assert.equal(partition.currentProposal, null);
+  assert.equal(partition.previousProposal, old);
+  const html = markup({ proposal: null, previousProposal: old, execution: { ...props.execution, status: 'NO_FEASIBLE_POD' } });
+  assert.match(html, /No feasible POD found in the latest run/);
+  assert.match(html, /Previous recommendation — historical only/);
+  assert.doesNotMatch(html, /AI recommendation|Approve pod/);
+  const current = markup({ previousProposal: null });
+  assert.match(current, /AI recommendation/);
+  assert.match(current, /Approve pod/);
+  assert.doesNotMatch(current, /historical only|No feasible POD/);
+  const manual = markup({ ...manualProps, execution: { ...props.execution, execution_id: 'run-2', status: 'NO_FEASIBLE_POD' } });
+  assert.match(manual, /Captain manual preview/);
+  assert.match(manual, /Approve pod/);
+  assert.doesNotMatch(manual, /No feasible POD found in the latest run/);
+});
+
 test('approval and closure keep older execution history without requesting another run', () => {
   const { staffingReviewState } = require('../lib/live-presentation.ts');
   const execution = { request_id: 'REQ-1', request_revision: 3, status: 'READY_FOR_REVIEW',
@@ -104,6 +284,50 @@ test('fitment keeps theme, selected recommendations and two distinct alternative
   assert.match(html, /Original recommendation/);
   assert.match(html, /No capacity is reserved until approval/);
   assert.doesNotMatch(html, /Manual override/);
+});
+
+test('Why this POD is structured and uses saved facts instead of the raw rationale', () => {
+  const html = markup({ proposal: { ...props.proposal, rationale: 'RAW LONG RATIONALE WITH 999% ALLOCATION',
+    selection_review: { ...props.proposal.selection_review, rationale: 'RAW LONG RATIONALE WITH 999% ALLOCATION' } } });
+  assert.match(html, /Why this POD/);
+  assert.match(html, /Mara Bennett will lead the work, supported by Alex Rivera and Carlos Reed/);
+  assert.match(html, /24h of planned work is split equally/);
+  assert.match(html, /aria-label="Planned team contributions"/);
+  assert.match(html, /Sep 21, 2026 – Sep 25, 2026/);
+  assert.match(html, /Total planned effort/);
+  assert.match(html, /Capacity is reserved only after approval/);
+  assert.doesNotMatch(html, /RAW LONG RATIONALE|999%/);
+});
+
+test('polished wording and changed selections cannot replace authoritative figures', () => {
+  const selected = [alternatives[0].member, ...members.slice(1)];
+  const html = markup({ proposal: { ...props.proposal,
+    explanation_copy: { opening: 'team_first', effort: 'total_first', source: 'fallback' },
+    selection_review: { ...props.proposal.selection_review, members: selected,
+      explanation_copy: { version: 1, opening: 'work_first', effort: 'people_first', source: 'llm' } } } });
+  const why = html.slice(html.indexOf('staffing-pod-explanation"'));
+  assert.match(why, /The work will be led by Elena Garcia/);
+  assert.match(why, /3-person team is scheduled for 24h/);
+  assert.match(why, />8h</);
+  assert.match(why, />70%</);
+  assert.doesNotMatch(why, /Mara Bennett/);
+});
+
+test('Why this POD distinguishes unequal contributions, unknown allocation and manual exceptions', () => {
+  const { WhyThisPod } = require('../components/screens/fitment/WhyThisPod.tsx');
+  const changed = [ { ...members[0], planned_hours: 12 }, { ...members[1], planned_hours: 8 },
+    { ...members[2], planned_hours: 4, factors: {} } ];
+  const html = renderToStaticMarkup(React.createElement(WhyThisPod, { proposal: { ...props.proposal, members: changed } }));
+  assert.match(html, /plan assigns 24h across 3 people/);
+  assert.match(html, /Not recorded/);
+  assert.doesNotMatch(html, /split equally|>0%</);
+  const manual = renderToStaticMarkup(React.createElement(WhyThisPod, manualProps));
+  assert.match(manual, /POD-only utilization/);
+  assert.match(manual, /Manual choices bypass skill matching/);
+  assert.doesNotMatch(manual, /accounting for recorded skills, leave and existing commitments/);
+  const approved = renderToStaticMarkup(React.createElement(WhyThisPod, { proposal: { ...props.proposal, status: 'APPROVED' } }));
+  assert.match(approved, /These assignments are approved/);
+  assert.doesNotMatch(approved, /Capacity is reserved only after approval/);
 });
 test('Captain changes use the saved team in final confirmation without hiding the original', () => {
   const selected = [alternatives[0].member, ...members.slice(1)];

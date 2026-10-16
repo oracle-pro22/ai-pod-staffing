@@ -10,6 +10,7 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { canPerform, hasGrantedRole } from '@/lib/role-policy';
 import { downloadExcelWorkbook } from '@/lib/export-xlsx';
 import { useLiveWorkspace } from '@/lib/use-live-workspace';
+import { livePersonAllocationLabel } from '@/lib/formatting';
 import { announceStaffingChange, CLOSURE_EXPLANATION, CLOSED_EXPLANATION, OVERDUE_EXPLANATION } from '@/lib/project-closure';
 
 export function LiveAssignments({ view = 'projects' }: { view?: 'projects' | 'calendar' | 'reports' }) {
@@ -61,7 +62,7 @@ export function LiveAssignments({ view = 'projects' }: { view?: 'projects' | 'ca
       <p>{snapshot.week_start} – {snapshot.week_end} · {snapshot.timezone}. Pending proposals reserve no capacity.</p>
       <div className="staffing-table-wrap"><table><thead><tr><th>Person</th><th>Weekly allocation</th><th>Available hours</th><th>Committed hours</th><th>Active PODs today</th></tr></thead><tbody>
         {snapshot.people.map(p => <tr key={p.person_id}><td>{data.people.find(x => x.id === p.person_id)?.name || p.person_id}</td>
-          <td>{p.capacity_status === 'CURRENT' ? p.allocation_pct === null ? 'No available hours' : `${p.allocation_pct}%` : 'Needs refresh'}</td>
+          <td>{livePersonAllocationLabel(p)}</td>
           <td>{p.weeks?.[0]?.available_hours ?? '—'}</td><td>{p.weeks?.[0]?.committed_hours ?? '—'}</td><td>{p.active_pods}</td></tr>)}
       </tbody></table></div>
       {view === 'calendar' && <div className="staffing-table-wrap"><table><thead><tr><th>Date</th><th>Person</th><th>Request</th><th>Assigned hours</th></tr></thead><tbody>

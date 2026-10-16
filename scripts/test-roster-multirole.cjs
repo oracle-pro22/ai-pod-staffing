@@ -33,6 +33,7 @@ const { LiveAssignments } = require('../components/screens/requests/LiveAssignme
 const { AvailabilityScreen } = require('../components/screens/availability/AvailabilityScreen.tsx');
 const { RoleSelector } = require('../components/shell/RoleSelector.tsx');
 const { OnboardingEntry, deliverableOptionLabel } = require('../components/entry/OnboardingEntry.tsx');
+const { onboardingDateIssue } = require('../lib/onboarding-validation.ts');
 const { AccountAccess } = require('../components/screens/administration/AccountAccess.tsx');
 
 test('first-login entry explains contracted hours without invented skills or a percentage field', () => {
@@ -63,6 +64,62 @@ test('first-login source contains no Captain review hold', () => {
   const source = fs.readFileSync(path.join(root, 'components/entry/OnboardingEntry.tsx'), 'utf8');
   assert.doesNotMatch(source, /Captain review required|needs review|Check review status|hold your profile for review/);
   assert.match(source, /counts toward your capacity immediately/);
+});
+
+test('first-login setup uses shared styled dropdowns and explains deliverable interest', () => {
+  const source = fs.readFileSync(path.join(root, 'components/entry/OnboardingEntry.tsx'), 'utf8');
+  assert.doesNotMatch(source, /<select|<option/);
+  assert.match(source, /DropdownField/);
+  for (const label of ['Proficiency', 'Experience level', 'Contribution', 'Type', 'Your existing POD role']) {
+    assert.match(source, new RegExp(`label=["']${label}["']`));
+  }
+  assert.match(source, /Consider me for future work with this deliverable/);
+  assert.match(source, /preference only\. Your experience level is recorded separately/);
+});
+
+test('first-login setup distinguishes the confirmation period from individual plans', () => {
+  const source = fs.readFileSync(path.join(root, 'components/entry/OnboardingEntry.tsx'), 'utf8');
+  assert.match(source, /Availability confirmation period/);
+  assert.match(source, /Planned work and leave within this period/);
+  assert.match(source, /must fall within these dates/);
+  assert.match(source, /Period starts/);
+  assert.match(source, /Period ends/);
+});
+
+test('onboarding date errors identify the entry, both ranges, and the correction', () => {
+  const work = [{ starts_on: '2026-10-19', ends_on: '2026-10-23' }, { starts_on: '2026-11-09', ends_on: '2026-11-13' }];
+  const issue = onboardingDateIssue('2026-10-15', '2026-10-30', work);
+  assert.equal(issue.entryIndex, 1);
+  for (const value of ['Entry 2', '2026-11-09 to 2026-11-13', '2026-10-15 to 2026-10-30', 'Change this entry', 'extend the confirmation period']) {
+    assert.ok(issue.message.includes(value), issue.message);
+  }
+  assert.equal(onboardingDateIssue('2026-10-15', '2026-12-30', work), null);
+  assert.equal(onboardingDateIssue('2026-10-15', '2026-12-30', [{ starts_on: '2026-10-15', ends_on: '2026-12-30' }]), null);
+  assert.match(onboardingDateIssue('2026-10-15', '2026-12-30', [{ starts_on: '2026-10-14', ends_on: '2026-10-15' }]).message, /outside your confirmed period/);
+});
+
+test('onboarding rejects missing, impossible and reversed dates before API submission', () => {
+  for (const value of ['', '2026-02-30', '2026-13-01', 'not-a-date']) {
+    assert.match(onboardingDateIssue(value, '2026-12-30', []).message, /Enter valid Period/);
+    assert.match(onboardingDateIssue('2026-10-15', '2026-12-30', [{ starts_on: value, ends_on: '2026-11-13' }]).message, /Entry 1: enter valid/);
+  }
+  assert.match(onboardingDateIssue('2026-11-13', '2026-11-09', []).message, /Period ends.*on or after Period starts/);
+  assert.match(onboardingDateIssue('2026-10-15', '2026-12-30', [{ starts_on: '2026-11-13', ends_on: '2026-11-09' }]).message, /Entry 1: End.*before Start/);
+});
+
+test('onboarding date limits match server complete-week boundaries and work-entry limit', () => {
+  assert.equal(onboardingDateIssue('2026-10-12', '2027-01-10', []), null);
+  assert.match(onboardingDateIssue('2026-10-12', '2027-01-11', []).message, /13 complete weeks/);
+  assert.equal(onboardingDateIssue('2026-10-12', '2027-01-10', [{ starts_on: '2026-10-12', ends_on: '2027-01-03' }]), null);
+  assert.match(onboardingDateIssue('2026-10-12', '2027-01-10', [{ starts_on: '2026-10-12', ends_on: '2027-01-04' }]).message, /Split this work or leave/);
+});
+
+test('onboarding uses date validation for Continue and final save and focuses the visible error', () => {
+  const source = fs.readFileSync(path.join(root, 'components/entry/OnboardingEntry.tsx'), 'utf8');
+  assert.match(source, /if \(dateIssue\).*setError\(dateIssue.message\); setStep\(1\); return;/);
+  assert.match(source, /step === 1 && dateIssue/);
+  assert.match(source, /role="alert" tabIndex=\{-1\} ref=\{errorRef\}/);
+  assert.match(source, /aria-describedby=.*setup-error/);
 });
 
 test('account management states history retention and exposes no password controls', () => {

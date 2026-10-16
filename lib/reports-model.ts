@@ -24,7 +24,7 @@ export function capacityRows(snapshot: LiveWorkspace) {
     const at = known && limit !== null && !over && available > 0 && Math.abs(committed - available * limit / 100) < 0.0000001;
     return { ...person, name: person.full_name || person.person_id, available: known ? available : null,
       committed: known ? committed : null, leave, pod, reportedPod, external, known, allocation, headroom, over,
-      status: person.staffing_eligible === false ? 'Not eligible for POD assignment' : !known ? 'Needs refresh' : limit === null ? 'Policy unavailable' : available === 0 && !over ? 'No working capacity' : over ? 'Above limit' : at ? 'At limit' : 'Within limit' };
+      status: person.staffing_eligible === false ? 'Not eligible for POD assignment' : person.onboarding_status === 'DRAFT' ? 'Setup incomplete · Finish staffing profile' : !known ? 'Needs refresh' : limit === null ? 'Policy unavailable' : available === 0 && !over ? 'No working capacity' : over ? 'Above limit' : at ? 'At limit' : 'Within limit' };
   }).sort((a, b) => a.name.localeCompare(b.name));
 }
 

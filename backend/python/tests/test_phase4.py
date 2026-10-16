@@ -31,6 +31,7 @@ class DecisionTests(unittest.TestCase):
         self.proposal_status = "READY_FOR_REVIEW"
         self.revision = 1
         self.existing = []
+        self.latest_execution = {'execution_id': 'RUN-1', 'status': 'READY_FOR_REVIEW'}
         @contextmanager
         def write():
             try:
@@ -42,6 +43,7 @@ class DecisionTests(unittest.TestCase):
         # These fixtures describe September work. Freeze business time rather
         # than letting the calendar invalidate all transaction regressions.
         self.patches = [patch("app.decisions.rows", side_effect=self.read), patch("app.decisions.execute", side_effect=self.execute),
+                        patch("app.proposal_state.rows", side_effect=self.read),
                         patch("app.selections.rows", side_effect=self.read),
                         patch("app.manual_store.rows", side_effect=self.read),
                         patch('app.policy_admin.rows', side_effect=lambda *_a, **_kw: [{'policy_version': self.data.policy.version}]),
@@ -59,6 +61,8 @@ class DecisionTests(unittest.TestCase):
 
     def read(self, _connection, sql, **_binds):
         self.order.append(sql)
+        if sql.startswith('SELECT execution_id,status FROM agent_executions'):
+            return [self.latest_execution]
         if sql.startswith("SELECT request_id,policy_version"):
             return [{"request_id": "REQ-1046", "policy_version": self.data.policy.version}]
         if sql.startswith("SELECT request_revision"):
@@ -70,7 +74,7 @@ class DecisionTests(unittest.TestCase):
                 "responsibilities": m.responsibilities, "deliverable_ids_json": json_text(list(m.deliverable_ids)),
                 "person_skills_version": 0} for m in self.option.proposal.members]
         if sql.startswith("SELECT * FROM pod_proposals"):
-            return [{"proposal_id": "PP-1", "status": self.proposal_status, "proposal_version": 1, "request_revision": 1,
+            return [{"proposal_id": "PP-1", "request_id": "REQ-1046", "status": self.proposal_status, "proposal_version": 1, "request_revision": 1,
                 "responsible_captain_id": "P-010", "execution_id": "RUN-1", "rationale": "Evidence fit",
                 "evidence_refs_json": json_text(list(self.option.proposal.evidence_refs))}]
         if sql.startswith("SELECT d.*"):
@@ -107,6 +111,15 @@ class DecisionTests(unittest.TestCase):
         person_locks = [i for i, sql in enumerate(self.order) if sql.startswith("SELECT person_id FROM people")]
         self.assertEqual(len(person_locks), 2)
         self.assertLess(max(person_locks), self.order.index("fresh-capacity"))
+
+    def test_later_run_prevents_approval_even_if_old_proposal_still_ready(self):
+        for status in ('NO_FEASIBLE_POD', 'FAILED', 'RUNNING', 'READY_FOR_REVIEW'):
+            with self.subTest(status=status):
+                self.latest_execution = {'execution_id': 'RUN-2', 'status': status}
+                with self.assertRaises(ServiceError) as error:
+                    self.decide()
+                self.assertEqual(error.exception.code, 'STALE_PROPOSAL')
+                self.assertEqual(self.committed, [])
 
     def test_rejection_requires_reason_and_creates_no_assignments(self):
         with self.assertRaises(ValidationError):

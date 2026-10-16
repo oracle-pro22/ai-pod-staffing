@@ -110,6 +110,8 @@ class DecisionStore:
             selected_review = None
             validation = {}
             if decision.action == "APPROVED":
+                from app.proposal_state import require_current_agent_result
+                require_current_agent_result(connection, proposal)
                 require_current_policy(connection, policy_version)
                 fresh = collect_evidence(connection, request_id, policy_version, self.settings.staffing_max_candidates)
                 require_future_schedule(fresh.request, fresh.policy)
@@ -149,7 +151,8 @@ class DecisionStore:
                 final_id, final_version = write_proposal(connection, fresh, selected_review.selected,
                     proposal["execution_id"], {"origin": "CAPTAIN_SELECTION", "source_proposal_id": decision.proposal_id,
                     "source_proposal_version": decision.proposal_version, "selection_id": decision.selection_id,
-                    "selection_sources": selected_review.sources, "issues": [], "policy_version": policy_version},
+                    "selection_sources": selected_review.sources, "issues": [], "policy_version": policy_version,
+                    "explanation_copy": selected_review.explanation_copy.model_dump(mode='json')},
                     selected_review.rationale)
                 decision = decision.model_copy(update={"proposal_id": final_id, "proposal_version": final_version})
             return commit_final_decision(connection, actor, decision, proposal, request_id, policy_version,

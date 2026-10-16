@@ -11,7 +11,8 @@ import { canCaptainAct } from '@/lib/live-permissions';
 import { RescheduleRequest } from './RescheduleRequest';
 import { AnswerClarification } from './AnswerClarification';
 import { requestBusinessDate } from '@/lib/request-date-policy';
-import { staffingReviewState } from '@/lib/live-presentation';
+import { agentProposalIsCurrent, staffingProposalState, staffingReviewState } from '@/lib/live-presentation';
+import { announceStaffingChange } from '@/lib/project-closure';
 
 export type RequestRow = { request_id: string; title: string; status: string; responsible_captain_id: string; request_revision?: number; starts_on?: string; ends_on?: string; needed_by?: string; total_hours?: number };
 type Identity = { person_id: string; roles: string[]; permissions: { role: string; resource: string; scope: string; actions: string[] }[] };
@@ -26,14 +27,17 @@ export type Member = { person_id: string; full_name: string; role_in_pod: string
     current_window_allocation_pct?: string | null; window_allocation_pct?: string | null;
     allocation_basis?: string; ignored_leave_hours?: number | string; ignored_external_hours?: number | string;
     reported_workload?: { window_allocation_pct: string | null; projected_allocation_pct: string | null; no_available_capacity?: boolean } } };
-export type Pod = { proposal_id: string; request_id: string; proposal_version: number; status: string; stale: 'Y' | 'N';
+export type Pod = { proposal_id: string; request_id: string; execution_id?: string; request_revision?: number; proposal_version: number; status: string; stale: 'Y' | 'N';
   starts_on: string; ends_on: string; total_hours: number; lead_count: number; member_count: number;
-  rationale: string; policy_version: string; members: Member[]; stale_reason?: string; selection_review?: SelectionReview; origin?: string };
+  rationale: string; policy_version: string; members: Member[]; stale_reason?: string; selection_review?: SelectionReview; origin?: string;
+  explanation_copy?: { version: 1; opening: 'team_first' | 'work_first'; effort: 'total_first' | 'people_first'; source: 'llm' | 'fallback' } };
+type ProposalResult = { current_proposal: Pod | null; previous_proposal: Pod | null };
 export type Replacement = { replaces: string; role: string; member: Member };
 export type SelectionReview = { revision: number; selection_id: string | null; members: Member[];
   original_members: Member[]; alternatives: Replacement[]; rationale: string; notes: string[];
-  search_exhaustive: boolean; reserves_capacity: false };
+  search_exhaustive: boolean; reserves_capacity: false; explanation_copy?: Pod['explanation_copy'] };
 export type ManualDraft = { draft_id: string; revision: number; request_id: string; request_revision: number;
+  explanation_copy?: Pod['explanation_copy'];
   policy_version: string; source_proposal_id: string | null; slots: ManualSlot[]; starts_on: string; ends_on: string;
   lead_count: number; member_count: number; total_hours: number; members: Member[]; original_members: Member[]; rationale: string };
 type ManualState = { people: ManualPerson[]; request_revision: number; lead_count: number; member_count: number; latest_draft_id: string | null; draft: ManualDraft | null };
@@ -63,10 +67,12 @@ export function LiveStaffingReview({ executionView = false }: { executionView?: 
   const [reason, setReason] = useState('');
   const [manualState, setManualState] = useState<ManualState | null>(null);
   const [manualOpen, setManualOpen] = useState(false);
+  const [manualError, setManualError] = useState('');
   const operationKeys = useRef(new Map<string, string>());
   const decisionTarget = useRef<string | null>(null);
   const mutation = useRef(0);
   const mutating = useRef(false);
+  const lastExecutionState = useRef<string | null>(null);
   const selected = requests.find(r => r.request_id === state.activeRequestId) ?? requests[0];
   const requestId = selected?.request_id;
   const running = execution?.status === 'QUEUED' || execution?.status === 'RUNNING';
@@ -75,7 +81,8 @@ export function LiveStaffingReview({ executionView = false }: { executionView?: 
   const manualDraft = manualState?.draft;
   const manualPod: Pod | null = manualDraft ? { ...manualDraft, proposal_id: manualDraft.draft_id,
     proposal_version: manualDraft.revision, status: 'READY_FOR_REVIEW', stale: 'N', origin: 'MANUAL_DRAFT' } : null;
-  const reviewedProposal = manualPod ?? proposal;
+  const { currentProposal, previousProposal } = staffingProposalState(proposal, execution);
+  const reviewedProposal = manualPod ?? currentProposal;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -91,7 +98,8 @@ export function LiveStaffingReview({ executionView = false }: { executionView?: 
     [reviewedProposal?.proposal_id, reviewedProposal?.proposal_version, reviewedProposal?.status, reviewedProposal?.selection_review?.revision]);
 
   useEffect(() => {
-    setExecution(null); setProposal(null); setDecision(null); setReason(''); setManualState(null); setManualOpen(false);
+    setExecution(null); setProposal(null); setDecision(null); setReason(''); setManualState(null); setManualOpen(false); setManualError('');
+    lastExecutionState.current = null;
     if (!requestId) return;
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
@@ -100,9 +108,21 @@ export function LiveStaffingReview({ executionView = false }: { executionView?: 
       try {
         if (mutating.current) return;
         const current = await api<Execution | null>(`requests/${requestId}/execution`, undefined, controller.signal);
-        const next = await api<Pod | null>(`requests/${requestId}/proposal`, undefined, controller.signal);
+        const result = await api<ProposalResult | Pod | null>(`requests/${requestId}/proposal`, undefined, controller.signal);
+        // Accept the legacy response during a staggered frontend/API restart.
+        const next = result && 'current_proposal' in result ? result.current_proposal ?? result.previous_proposal : result;
         const manual = canManual ? await api<ManualState>(`requests/${requestId}/manual`, undefined, controller.signal) : null;
-        if (!controller.signal.aborted && generation === mutation.current && !mutating.current) { setExecution(current); setProposal(next); setManualState(manual); setError(''); }
+        if (!controller.signal.aborted && generation === mutation.current && !mutating.current) {
+          const executionState = current ? `${current.execution_id}:${current.status}` : 'none';
+          if (lastExecutionState.current !== null && lastExecutionState.current !== executionState) {
+            announceStaffingChange(); router.refresh();
+          }
+          lastExecutionState.current = executionState;
+          setExecution(current);
+          setProposal(next && !agentProposalIsCurrent(next, current) ? { ...next, stale: 'Y',
+            stale_reason: `Previous recommendation. Latest execution: ${current?.status.replaceAll('_', ' ').toLowerCase() ?? 'unavailable'}. Run fitment again or use a manual override.` } : next);
+          setManualState(manual); setError('');
+        }
       } catch (e) {
         if (!controller.signal.aborted) setError(e instanceof Error ? e.message : 'Unable to refresh staffing status.');
       } finally {
@@ -111,7 +131,7 @@ export function LiveStaffingReview({ executionView = false }: { executionView?: 
     }
     void poll();
     return () => { controller.abort(); clearTimeout(timer); };
-  }, [requestId, refresh, canManual]);
+  }, [requestId, refresh, canManual, router]);
 
   function operationKey(signature: string) {
     if (!operationKeys.current.has(signature)) operationKeys.current.set(signature, browserId());
@@ -126,6 +146,7 @@ export function LiveStaffingReview({ executionView = false }: { executionView?: 
       await api(`requests/${requestId}/executions`, { idempotency_key: operationKey(signature) });
       operationKeys.current.delete(signature);
       notify('Staffing started', `${requestId} is queued for fitment.`);
+      announceStaffingChange(); router.refresh();
       setRefresh(v => v + 1);
     } catch (e) { notify('Unable to start staffing', e instanceof Error ? e.message : 'Check execution status before retrying.'); }
     finally { setBusy(false); }
@@ -133,7 +154,7 @@ export function LiveStaffingReview({ executionView = false }: { executionView?: 
 
   async function saveDecision() {
     const proposal = reviewedProposal;
-    if (!proposal || !decision || busy || (decision === 'REJECTED' && !reason.trim())) return;
+    if (!proposal || !canDecide || !decision || busy || (decision === 'REJECTED' && !reason.trim())) return;
     if (decisionTarget.current !== `${proposal.proposal_id}:${proposal.proposal_version}:${proposal.selection_review?.revision ?? 0}`) {
       setDecision(null); notify('Review changed', 'Review the current proposal before confirming.'); return;
     }
@@ -149,7 +170,7 @@ export function LiveStaffingReview({ executionView = false }: { executionView?: 
       operationKeys.current.delete(signature);
       notify(decision === 'APPROVED' ? 'POD approved' : 'POD rejected', decision === 'APPROVED'
         ? 'The assignments are final. No member acceptance is required.' : 'Your reason was saved for the next recommendation.');
-      setDecision(null); setReason(''); setRefresh(v => v + 1); router.refresh();
+      setDecision(null); setReason(''); setRefresh(v => v + 1); announceStaffingChange(); router.refresh();
     } catch (e) { notify('Decision not confirmed', e instanceof Error ? e.message : 'Refresh the review before retrying.'); }
     finally { setBusy(false); mutating.current = false; }
   }
@@ -177,7 +198,7 @@ export function LiveStaffingReview({ executionView = false }: { executionView?: 
 
   function beginDecision(action: 'APPROVED' | 'REJECTED') {
     const proposal = reviewedProposal;
-    if (!proposal) return;
+    if (!proposal || !canDecide) return;
     decisionTarget.current = `${proposal.proposal_id}:${proposal.proposal_version}:${proposal.selection_review?.revision ?? 0}`;
     setDecision(action);
   }
@@ -187,13 +208,17 @@ export function LiveStaffingReview({ executionView = false }: { executionView?: 
     const source = manualDraft?.source_proposal_id ?? (proposal?.status === 'READY_FOR_REVIEW' && proposal.stale === 'N' && proposal.selection_review ? proposal.proposal_id : null);
     const body = { request_revision: manualState.request_revision, previous_draft_id: manualState.latest_draft_id, source_proposal_id: source, slots };
     const signature = `manual:${requestId}:${JSON.stringify(body)}`;
-    setBusy(true); mutating.current = true; mutation.current++; setDecision(null);
+    setBusy(true); mutating.current = true; mutation.current++; setDecision(null); setManualError('');
     try {
       const draft = await api<ManualDraft>(`requests/${requestId}/manual-preview`, { ...body, idempotency_key: operationKey(signature) });
       operationKeys.current.delete(signature);
       setManualState(current => current ? { ...current, latest_draft_id: draft.draft_id, draft } : current);
       setManualOpen(false); notify('Manual preview saved', 'Review the exact selected people, hours and both allocation figures before approval.');
-    } catch (e) { notify('Manual preview not saved', e instanceof Error ? e.message : 'Refresh and retry.'); }
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Refresh the request, review the selected people and try again.';
+      setManualError(message);
+      if (!manualOpen) notify('Manual preview not saved', message);
+    }
     finally { setBusy(false); mutating.current = false; }
   }
 
@@ -225,18 +250,20 @@ export function LiveStaffingReview({ executionView = false }: { executionView?: 
         disabled={busy || running || expiredDates} onSaved={message => { notify('Clarification saved', message); setRefresh(n => n + 1); router.refresh(); }} />}
     <LiveFitmentPresentation executionView={executionView} request={selected}
     requests={requests} execution={reviewState.showExecution ? execution : null}
-    proposal={(executionView ? proposal : reviewedProposal)?.request_id === requestId ? (executionView ? proposal : reviewedProposal) : null} loading={loading} busy={busy}
+    proposal={(executionView ? currentProposal : reviewedProposal)?.request_id === requestId ? (executionView ? currentProposal : reviewedProposal) : null}
+    previousProposal={previousProposal?.request_id === requestId ? previousProposal : null} loading={loading} busy={busy}
     running={running} error={error} canRun={Boolean(hasPermission('AGENT_EXECUTION', 'create')) && !manualDraft}
     canDecide={canDecide} decision={decision} reason={reason}
     onReason={setReason} onRun={run} onRefresh={() => setRefresh(n => n + 1)}
     onDecision={beginDecision} onSaveDecision={saveDecision}
     onReplacement={changeSelection} onRecalculate={() => manualDraft ? previewManual(manualDraft.slots) : changeSelection()}
-    canManual={canManual && Boolean(manualState) && !running} onManual={() => setManualOpen(true)} onDiscardManual={discardManual}
+    canManual={canManual && Boolean(manualState) && !running} onManual={() => { setManualError(''); setManualOpen(true); }} onDiscardManual={discardManual}
     onCancelDecision={() => { if (!busy) { setDecision(null); setReason(''); } }}
     onSelect={requestId => dispatch({ type: 'set-active-request', requestId })} />
     {reviewState.needsNewExecution && <p role="status">Updated request saved. Waiting for an agent run for this revision. Agents must be enabled and the worker running; you can also use Re-run.</p>}
     {manualOpen && manualState && <ManualPodEditor key={manualDraft?.draft_id ?? requestId} people={manualState.people} selected={initialMembers}
       slots={manualDraft?.slots} leadCount={manualState.lead_count}
       memberCount={manualState.member_count}
-      busy={busy} onClose={() => { if (!busy) setManualOpen(false); }} onPreview={previewManual} />}</>;
+      busy={busy} error={manualError} onChange={() => setManualError('')}
+      onClose={() => { if (!busy) { setManualOpen(false); setManualError(''); } }} onPreview={previewManual} />}</>;
 }

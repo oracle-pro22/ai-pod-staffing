@@ -4,14 +4,12 @@ import { capacityAttention } from '@/lib/allocation-policy';
 import { Button } from '@/components/ui/Button';
 import { Drawer } from '@/components/ui/Drawer';
 import { useStaffingApp } from '@/context/StaffingAppProvider';
-import { selectScopedRecommendations, selectVisiblePeople, selectVisibleRequests } from '@/lib/selectors';
+import { selectDashboardMetrics, selectVisiblePeople } from '@/lib/selectors';
 
 export function NotificationDrawer() {
   const { data, state, dispatch } = useStaffingApp();
   const open = state.drawer?.id === 'notifications';
-  const requests = selectVisibleRequests(data, state.role);
-  const pending = requests.flatMap((request) => selectScopedRecommendations(request, data, state.role))
-    .filter((item) => /pending/i.test(item.decisionStatus));
+  const pending = selectDashboardMetrics(data, state.role).pendingRecommendations;
   const constrained = selectVisiblePeople(data, state.role)
     .filter(person => capacityAttention(person, data.allocationPolicy?.maximumAllocationPct));
   const close = () => dispatch({ type: 'close-drawer' });
@@ -20,7 +18,7 @@ export function NotificationDrawer() {
     <Drawer open={open} title="Notifications" onClose={close} footer={<Button onClick={close}>Close</Button>}>
       <div className="staffing-audit-item">
         <i className="staffing-audit-dot" />
-        <div><b>{pending.length} recommendations await review</b><div className="staffing-row-sub">Current {state.role} access scope</div></div>
+        <div><b>{pending} recommendation{pending === 1 ? '' : 's'} await review</b><div className="staffing-row-sub">Current {state.role} access scope</div></div>
       </div>
       <div className="staffing-audit-item">
         <i className="staffing-audit-dot" />

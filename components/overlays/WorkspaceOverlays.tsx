@@ -1,6 +1,6 @@
 'use client';
 import { staffingFetch } from '@/lib/staffing-fetch';
-import { personAllocationLabel } from '@/lib/formatting';
+import { personAllocationLabel, personProfileSummary } from '@/lib/formatting';
 
 import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -72,7 +72,7 @@ function PersonDetailsDrawer() {
   const visible = selectVisiblePeople(data, state.role);
   const person = visible.find((item) => item.id === personId);
   const close = () => dispatch({ type: 'close-drawer' });
-  return <Drawer open={open} title={person?.name ?? 'Person details'} onClose={close}>{person ? <><div className="staffing-person-drawer-head"><Avatar initials={person.initials} /><div><h3>{person.name}</h3><p>{person.jobTitle} • {person.location}</p></div></div><div className="staffing-reason-grid"><div><span>Allocation</span><strong>{personAllocationLabel(person)}</strong></div><div><span>Active pods</span><strong>{person.activePods}</strong></div><div><span>Mapped skills</span><strong>{person.skills.length}</strong></div></div><h4>Capabilities and evidence</h4>{person.skills.map((skill) => <div className="staffing-person-skill" key={skill.id}><div><b>{skill.name}</b><small>{skill.category}</small></div><span className="staffing-stars">{'★'.repeat(skill.strength)}{'☆'.repeat(5 - skill.strength)}</span><p>{skill.evidence || 'No evidence note recorded'}</p></div>)}</> : <div className="staffing-empty">Person unavailable in the current access scope.</div>}</Drawer>;
+  return <Drawer open={open} title={person?.name ?? 'Person details'} onClose={close}>{person ? <><div className="staffing-person-drawer-head"><Avatar initials={person.initials} /><div><h3>{person.name}</h3>{personProfileSummary(person) && <p>{personProfileSummary(person)}</p>}</div></div><div className="staffing-reason-grid"><div><span>Allocation</span><strong>{personAllocationLabel(person)}</strong></div><div><span>Active pods</span><strong>{person.activePods}</strong></div><div><span>Mapped skills</span><strong>{person.skills.length}</strong></div></div><h4>Capabilities and evidence</h4>{person.skills.map((skill) => <div className="staffing-person-skill" key={skill.id}><div><b>{skill.name}</b><small>{skill.category}</small></div><span className="staffing-stars">{'★'.repeat(skill.strength)}{'☆'.repeat(5 - skill.strength)}</span><p>{skill.evidence || 'No evidence note recorded'}</p></div>)}</> : <div className="staffing-empty">Person unavailable in the current access scope.</div>}</Drawer>;
 }
 
 function AvailabilityDrawer() {

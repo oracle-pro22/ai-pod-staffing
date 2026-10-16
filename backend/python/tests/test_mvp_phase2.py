@@ -258,6 +258,7 @@ class SelectionStoreTests(SelectionTests):
                 self.pending.clear()
         self.store = SelectionStore(SimpleNamespace(write=transaction), SimpleNamespace(staffing_max_candidates=60, staffing_search_limit=2000))
         self.patches = [patch('app.selections.rows', side_effect=self.read),
+            patch('app.proposal_state.rows', side_effect=self.read),
             patch('app.manual_store.rows', side_effect=self.read),
             patch('app.selections.execute', side_effect=self.write),
             patch('app.selections.require_current_policy'), patch('app.decisions.DecisionStore.authorize'),
@@ -267,12 +268,14 @@ class SelectionStoreTests(SelectionTests):
             p.start(); self.addCleanup(p.stop)
 
     def read(self, _, sql, **binds):
+        if 'SELECT execution_id,status FROM agent_executions' in sql:
+            return [{'execution_id': 'RUN-1', 'status': 'READY_FOR_REVIEW'}]
         if 'SELECT request_id,policy_version' in sql:
             return [{'request_id': self.data.request.request_id, 'policy_version': self.data.policy.version}]
         if 'SELECT request_revision' in sql:
             return [{'request_revision': 1, 'responsible_captain_id': 'P-010', 'status': 'NEEDS_RECOMMENDATION'}]
         if 'SELECT * FROM pod_proposals' in sql:
-            return [{'status': 'READY_FOR_REVIEW', 'request_revision': 1}]
+            return [{'request_id': self.data.request.request_id, 'execution_id': 'RUN-1', 'status': 'READY_FOR_REVIEW', 'request_revision': 1}]
         if 'body_hash FROM' in sql:
             return self.prior
         return []
