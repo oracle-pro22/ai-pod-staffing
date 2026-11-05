@@ -97,7 +97,7 @@ test('first-login current-work wording keeps the existing external-work contract
   assert.match(source, /20 hours per week for four weeks means 80 total hours/);
   assert.match(source, /Use separate entries when your workload varies/);
   assert.match(source, /WORK_TYPE_OPTIONS.find\(option => option.value === w.kind\)\?\.label/);
-  assert.match(source, /If I added no work or leave, I confirm I have no existing commitments during this period/);
+  assert.match(source, /I’m ready to save my profile\./);
   assert.match(source, /work: work.map\(w => \(\{ \.\.\.w, total_hours: Number\(w.total_hours\) \}\)\)/);
 });
 

@@ -129,7 +129,7 @@ export function OnboardingEntry({ initial, sessionKey }: { initial: OnboardingSt
           <p>Availability confirmation period: <strong>{start} – {end}</strong>. Contracted capacity: <strong>40 hours/week</strong>.</p>
           <ul>{work.map((w, i) => <li key={i}>{w.title || '(Missing title)'} — {WORK_TYPE_OPTIONS.find(option => option.value === w.kind)?.label ?? w.kind}, {w.total_hours || '0'} total hours across these dates, {w.starts_on} to {w.ends_on}</li>)}</ul>
           {work.some(w => w.kind === 'EXTERNAL') && <p className="roster-notice">Current work counts toward your capacity when you save your profile. It does not create a project assignment or increase the active-POD count.</p>}
-          <label className="roster-check"><input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} /> I reviewed my skills, experience, current work and leave. If I added no work or leave, I confirm I have no existing commitments during this period.</label>
+          <label className="roster-check"><input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} /> I’m ready to save my profile.</label>
         </>}
         <footer>{step > 0 && <button type="button" disabled={busy} onClick={() => setStep(step - 1)}>Back</button>}{step < 2 ? <button type="button" className="roster-primary" onClick={() => {
           if (step === 1 && dateIssue) { setError(dateIssue.message); return; }
