@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useStaffingApp } from '@/context/StaffingAppProvider';
 import { Button } from '@/components/ui/Button';
+import { CapabilityText } from '@/components/ui/CapabilityText';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { canPerform, hasGrantedRole } from '@/lib/role-policy';
@@ -78,7 +79,7 @@ export function LiveAssignments({ view = 'projects' }: { view?: 'projects' | 'ca
         {request.past_planned_end && <p className="staffing-fit-summary-note">{OVERDUE_EXPLANATION}</p>}
         {request.status === 'CLOSED' && <p className="staffing-fit-summary-note">{CLOSED_EXPLANATION}</p>}
         {members.length ? <div className="staffing-table-wrap"><table><thead><tr><th>Person</th><th>POD role</th><th>Planned hours</th><th>Dates</th><th>Responsibilities</th><th>Status</th></tr></thead><tbody>
-          {members.map(m => <tr key={m.assignment_id}><td>{m.full_name}</td><td>{m.role_in_pod === 'POD_LEAD' ? 'POD Lead' : 'POD Member'}</td><td>{m.assigned_hours ?? '—'}</td><td>{m.starts_on && m.ends_on ? `${m.starts_on.slice(0, 10)} – ${m.ends_on.slice(0, 10)}` : '—'}</td><td>{m.responsibilities}</td><td>{m.status}</td></tr>)}
+          {members.map(m => <tr key={m.assignment_id}><td>{m.full_name}</td><td>{m.role_in_pod === 'POD_LEAD' ? 'POD Lead' : 'POD Member'}</td><td>{m.assigned_hours ?? '—'}</td><td>{m.starts_on && m.ends_on ? `${m.starts_on.slice(0, 10)} – ${m.ends_on.slice(0, 10)}` : '—'}</td><td><CapabilityText>{m.responsibilities}</CapabilityText></td><td>{m.status}</td></tr>)}
         </tbody></table></div> : <p>No final assignment yet.</p>}
         {closing === request.request_id && request.status === 'STAFFED' && request.can_close === true && <div style={{ marginTop: 20 }}><p>{CLOSURE_EXPLANATION}</p><small>Dates follow the assignment’s staffing-policy timezone. This does not record actual hours worked.</small>
           <label>Closure note<textarea value={reason} maxLength={2000} disabled={busy} onChange={e => setReason(e.target.value)} style={{ display: 'block', width: '100%', minHeight: 90 }} /></label>

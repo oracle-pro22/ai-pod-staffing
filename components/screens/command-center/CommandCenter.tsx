@@ -7,6 +7,7 @@ import { personAllocationLabel } from '@/lib/formatting';
 
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
+import { CapabilityText } from '@/components/ui/CapabilityText';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { KpiCard } from '@/components/ui/KpiCard';
 import { PageHeader } from '@/components/ui/PageHeader';
@@ -147,7 +148,7 @@ function MyFitmentPreview() {
       <CardBody>
         {request && recommendation ? <>
           <div className="staffing-preview-score"><span><b>{request.title}</b><small>{request.id} • {recommendation.roleInPod}</small></span>{!data.identity && <strong>{recommendation.score}</strong>}</div>
-          <p className="staffing-muted">{recommendation.rationale}</p>
+          <p className="staffing-muted"><CapabilityText>{recommendation.rationale}</CapabilityText></p>
           <Button size="small" onClick={() => { dispatch({ type: 'set-active-request', requestId: request.id }); dispatch({ type: 'open-drawer', drawer: { id: 'request-details', title: request.title, payload: { requestId: request.id } } }); }}>Open my project</Button>
         </> : <div className="staffing-empty compact">No assigned recommendation is available.</div>}
       </CardBody>

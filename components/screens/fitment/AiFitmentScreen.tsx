@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
+import { CapabilityText } from '@/components/ui/CapabilityText';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { DropdownField } from '@/components/ui/DropdownField';
 import { PageHeader } from '@/components/ui/PageHeader';
@@ -109,6 +110,6 @@ function CandidateSection({ title, subtitle, badge, recommendations, requestId }
     const person = data.people.find((candidate) => candidate.id === item.personId);
     const isSelected = selected.includes(item.personId) || (!canSelect && item.selected === true);
     const availabilityCount = person?.availability.length ?? 0;
-    return <button type="button" aria-disabled={!canSelect} className={`staffing-candidate${index === 0 ? ' recommended' : ''}${isSelected ? ' selected' : ''}`} key={`${item.personId}-${item.roleInPod}`} onClick={() => canSelect && dispatch({ type: 'toggle-candidate', requestId, personId: item.personId })}><div className="staffing-candidate-head"><Avatar initials={person?.initials ?? item.personName.split(' ').map((part) => part[0]).join('')} /><div className="staffing-candidate-main"><div className="staffing-candidate-name">{item.personName} • {item.roleInPod}</div><div className="staffing-candidate-meta">{person?.allocationPct ?? 0}% allocated • {person?.activePods ?? 0} active pods</div></div><div className="staffing-score">{item.score}</div></div><div className="staffing-tag-row">{item.matchingSkills.map((skill) => <span key={skill}>{skill}</span>)}</div><div className="staffing-rationale">{item.rationale}</div><div className="staffing-candidate-foot">{item.decisionStatus}　•　{availabilityCount} availability event{availabilityCount === 1 ? '' : 's'}　•　{item.source}</div></button>;
+    return <button type="button" aria-disabled={!canSelect} className={`staffing-candidate${index === 0 ? ' recommended' : ''}${isSelected ? ' selected' : ''}`} key={`${item.personId}-${item.roleInPod}`} onClick={() => canSelect && dispatch({ type: 'toggle-candidate', requestId, personId: item.personId })}><div className="staffing-candidate-head"><Avatar initials={person?.initials ?? item.personName.split(' ').map((part) => part[0]).join('')} /><div className="staffing-candidate-main"><div className="staffing-candidate-name">{item.personName} • {item.roleInPod}</div><div className="staffing-candidate-meta">{person?.allocationPct ?? 0}% allocated • {person?.activePods ?? 0} active pods</div></div><div className="staffing-score">{item.score}</div></div><div className="staffing-tag-row">{item.matchingSkills.map((skill) => <span key={skill}>{skill}</span>)}</div><div className="staffing-rationale"><CapabilityText>{item.rationale}</CapabilityText></div><div className="staffing-candidate-foot">{item.decisionStatus}　•　{availabilityCount} availability event{availabilityCount === 1 ? '' : 's'}　•　{item.source}</div></button>;
   }) : <div className="staffing-empty compact">No candidates are available in this scope.</div>}</CardBody></Card>;
 }

@@ -2,6 +2,7 @@
 
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
+import { CapabilityText } from '@/components/ui/CapabilityText';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { DropdownField } from '@/components/ui/DropdownField';
 import { FormGroup, TextArea } from '@/components/ui/FormControls';
@@ -89,7 +90,7 @@ export function LiveFitmentPresentation(p: Props) {
         <Button size="small" onClick={() => dispatch({ type: 'set-screen', screen: 'fitment' })}>Open full review</Button>
       </CardHeader><CardBody>{proposal.members.map(m => <div className="staffing-agent-result" key={m.person_id}>
         <Avatar initials={initials(m.full_name)} /><div><b>{m.full_name} • {podRole(m.role_in_pod)}</b>
-          <small>{m.responsibilities}</small><small>{m.planned_hours} planned hours</small></div><strong>{m.score}</strong>
+          <small><CapabilityText>{m.responsibilities}</CapabilityText></small><small>{m.planned_hours} planned hours</small></div><strong>{m.score}</strong>
       </div>)}</CardBody></Card>}
         {previous && <PreviousRecommendation key={previous.proposal_id} proposal={previous} />}
       </div>
@@ -249,7 +250,7 @@ function SavedCandidates({ title, subtitle, members, count, request, proposalSta
             : person ? `${personAllocationLabel(person)} current allocation · ${person.activePods} active pods` : m.person_id}</div>
         </div><div className="staffing-score" aria-label={m.score === null ? 'Not AI-ranked' : `Fit score ${m.score}`}>{m.score === null ? '—' : m.score}</div></div>
         <div className="staffing-tag-row">{skills.map(s => <span key={s.id}>{s.name}</span>)}</div>
-        <div className="staffing-rationale">{m.responsibilities}</div>
+        <div className="staffing-rationale"><CapabilityText>{m.responsibilities}</CapabilityText></div>
         <div className="staffing-candidate-foot"><span>{m.planned_hours} planned hours</span>
           {scheduled && <span>{after === null ? 'Period allocation unavailable' : `${after} ${m.source === 'MANUAL' ? 'POD-only, max 100%' : 'projected'} for request period`}</span>}
           <span title={m.factors?.peak_week_start ? `Week of ${formatDate(m.factors.peak_week_start)}` : undefined}>
@@ -292,7 +293,7 @@ function ReplacementCard({ replacements, selected, disabled, onChoose }: {
     <div className="staffing-candidate-head"><Avatar initials={initials(m.full_name)} /><div className="staffing-candidate-main">
       <div className="staffing-candidate-name">{m.full_name} • {podRole(m.role_in_pod)}</div><Pill>Alternative</Pill></div>
       <div className="staffing-score" aria-label={`Fit score ${m.score}`}>{m.score}</div></div>
-    <p className="staffing-muted">{m.responsibilities}</p>
+    <p className="staffing-muted"><CapabilityText>{m.responsibilities}</CapabilityText></p>
     <div className="staffing-candidate-foot"><span>{m.planned_hours} planned hours</span>
       <span>{allocationMetric(m.factors.current_window_allocation_pct)} → {allocationMetric(m.factors.window_allocation_pct)} in request period</span>
       <span>{allocationMetric(m.factors.projected_allocation_pct)} peak weekly allocation</span></div>

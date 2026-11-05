@@ -12,7 +12,7 @@ import { RescheduleRequest } from './RescheduleRequest';
 import { AnswerClarification } from './AnswerClarification';
 import { requestBusinessDate } from '@/lib/request-date-policy';
 import { agentProposalIsCurrent, staffingProposalState, staffingReviewState } from '@/lib/live-presentation';
-import { announceStaffingChange } from '@/lib/project-closure';
+import { announceStaffingChange, STAFFING_CHANGED_EVENT } from '@/lib/project-closure';
 
 export type RequestRow = { request_id: string; title: string; status: string; responsible_captain_id: string; request_revision?: number; starts_on?: string; ends_on?: string; needed_by?: string; total_hours?: number };
 type Identity = { person_id: string; roles: string[]; permissions: { role: string; resource: string; scope: string; actions: string[] }[] };
@@ -83,6 +83,17 @@ export function LiveStaffingReview({ executionView = false }: { executionView?: 
     proposal_version: manualDraft.revision, status: 'READY_FOR_REVIEW', stale: 'N', origin: 'MANUAL_DRAFT' } : null;
   const { currentProposal, previousProposal } = staffingProposalState(proposal, execution);
   const reviewedProposal = manualPod ?? currentProposal;
+
+  useEffect(() => {
+    const invalidate = () => {
+      mutation.current++;
+      decisionTarget.current = null;
+      setDecision(null); setReason('');
+      setRefresh(value => value + 1);
+    };
+    window.addEventListener(STAFFING_CHANGED_EVENT, invalidate);
+    return () => window.removeEventListener(STAFFING_CHANGED_EVENT, invalidate);
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();

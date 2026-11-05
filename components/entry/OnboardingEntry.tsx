@@ -25,9 +25,8 @@ const CONTRIBUTION_OPTIONS: DropdownOption[] = [
   { value: 'END_TO_END', label: 'End to end' },
 ];
 const WORK_TYPE_OPTIONS: DropdownOption[] = [
-  { value: 'EXTERNAL', label: 'External commitment' },
+  { value: 'EXTERNAL', label: 'Current work' },
   { value: 'LEAVE', label: 'Leave' },
-  { value: 'POD', label: 'Existing POD work' },
 ];
 
 function RosterDropdown({ label, value, options, onChange, disabled = false }: {
@@ -54,7 +53,6 @@ export function OnboardingEntry({ initial, sessionKey }: { initial: OnboardingSt
   const errorRef = useRef<HTMLParagraphElement>(null);
   const dateIssue = onboardingDateIssue(start, end, work);
   useEffect(() => { if (error) errorRef.current?.focus(); }, [error]);
-  const staffingRoles = initial.staffing_roles ?? [];
   async function signOut() {
     try {
       const response = await staffingFetch('/api/auth/logout', { method: 'POST' });
@@ -115,26 +113,23 @@ export function OnboardingEntry({ initial, sessionKey }: { initial: OnboardingSt
             <button type="button" onClick={() => setExperiences(experiences.filter((_, n) => n !== i))}>Remove deliverable</button></fieldset>; })}
         </>}
         {step === 1 && <>
-          <h2>Availability confirmation period</h2><p>Choose the period you are confirming, starting today and covering up to 13 complete weeks. Your normal 40-hour weekly schedule applies throughout this period. Any planned work or leave you add below must fall within these dates.</p>
+          <h2>Availability confirmation period</h2><p>Choose the period you are confirming, starting today and covering up to 13 complete weeks. Keep every work and leave entry within these dates. Your standard schedule is 40 hours per week.</p>
           <div className="roster-fields"><label>Period starts<input type="date" value={start} onChange={e => setStart(e.target.value)} /></label><label>Period ends<input type="date" value={end} onChange={e => setEnd(e.target.value)} /></label></div>
-          <h2>Planned work and leave within this period</h2><p>Add each existing commitment or leave period that affects your availability. Give each entry its own dates and total hours; hours are spread across weekdays. Use separate entries for uneven schedules. If you add no entries, you are confirming that none are already planned within this period.</p>
+          <h2>Your current work and planned leave</h2><p>Add the work you already do, such as customer support, internal projects or regular responsibilities, and any planned leave. Choose Current work for these responsibilities and Leave for planned time off. Do not add work already assigned to you in this application. Enter the total hours for the selected start and end dates, not hours per week. For example, 20 hours per week for four weeks means 80 total hours. We spread these hours across weekdays. Use separate entries when your workload varies. If you add no work or leave, you are confirming that you have no existing commitments during this period.</p>
           {work.map((w, i) => <fieldset key={i}><legend>Entry {i + 1}</legend>
-            <RosterDropdown label="Type" value={w.kind} options={WORK_TYPE_OPTIONS.filter(option => option.value !== 'POD' || staffingRoles.length > 0)}
-              onChange={value => setWork(work.map((v, n) => n === i ? { ...v, kind: value, role_code: value === 'POD' ? staffingRoles[0] ?? null : null } : v))} />
-            <label>Work / leave title<input value={w.title} maxLength={500} onChange={e => setWork(work.map((v, n) => n === i ? { ...v, title: e.target.value } : v))} /></label>
-            <div className="roster-fields"><label>Start<input type="date" value={w.starts_on} aria-invalid={Boolean(error && dateIssue?.entryIndex === i)} aria-describedby={error && dateIssue?.entryIndex === i ? 'setup-error' : undefined} onChange={e => setWork(work.map((v, n) => n === i ? { ...v, starts_on: e.target.value } : v))} /></label><label>End<input type="date" value={w.ends_on} aria-invalid={Boolean(error && dateIssue?.entryIndex === i)} aria-describedby={error && dateIssue?.entryIndex === i ? 'setup-error' : undefined} onChange={e => setWork(work.map((v, n) => n === i ? { ...v, ends_on: e.target.value } : v))} /></label><label>Total hours<input type="number" min="0.01" step="0.01" value={w.total_hours} onChange={e => setWork(work.map((v, n) => n === i ? { ...v, total_hours: e.target.value } : v))} /></label></div>
-            {w.kind === 'POD' && <RosterDropdown label="Your existing POD role" value={w.role_code ?? ''}
-              options={staffingRoles.map(role => ({ value: role, label: role === 'POD_LEAD' ? 'Lead' : 'Member' }))}
-              onChange={value => setWork(work.map((v, n) => n === i ? { ...v, role_code: value } : v))} />}
+            <RosterDropdown label="Type" value={w.kind} options={WORK_TYPE_OPTIONS}
+              onChange={value => setWork(work.map((v, n) => n === i ? { ...v, kind: value, role_code: null } : v))} />
+            <label>Work or leave name<input value={w.title} maxLength={500} onChange={e => setWork(work.map((v, n) => n === i ? { ...v, title: e.target.value } : v))} /></label>
+            <div className="roster-fields"><label>Start<input type="date" value={w.starts_on} aria-invalid={Boolean(error && dateIssue?.entryIndex === i)} aria-describedby={error && dateIssue?.entryIndex === i ? 'setup-error' : undefined} onChange={e => setWork(work.map((v, n) => n === i ? { ...v, starts_on: e.target.value } : v))} /></label><label>End<input type="date" value={w.ends_on} aria-invalid={Boolean(error && dateIssue?.entryIndex === i)} aria-describedby={error && dateIssue?.entryIndex === i ? 'setup-error' : undefined} onChange={e => setWork(work.map((v, n) => n === i ? { ...v, ends_on: e.target.value } : v))} /></label><label>Total hours across these dates<input type="number" min="0.01" step="0.01" value={w.total_hours} onChange={e => setWork(work.map((v, n) => n === i ? { ...v, total_hours: e.target.value } : v))} /></label></div>
             <button type="button" onClick={() => setWork(work.filter((_, n) => n !== i))}>Remove entry</button></fieldset>)}
           <button type="button" disabled={work.length >= 40} onClick={() => setWork([...work, { kind: 'EXTERNAL', title: '', starts_on: start, ends_on: end, total_hours: '', role_code: null }])}>＋ Add work or leave</button>
         </>}
         {step === 2 && <>
           <h2>Review your details</h2><p>{skills.length} skill assessments · {experiences.length} deliverable assessments · {work.length} dated work/leave entries.</p>
           <p>Availability confirmation period: <strong>{start} – {end}</strong>. Contracted capacity: <strong>40 hours/week</strong>.</p>
-          <ul>{work.map((w, i) => <li key={i}>{w.title || '(Missing title)'} — {w.kind}, {w.total_hours || '0'} total hours, {w.starts_on} to {w.ends_on}</li>)}</ul>
-          {work.some(w => w.kind === 'POD') && <p className="roster-notice">Existing POD work is saved as self-reported workload and counts toward your capacity immediately. It does not create a project assignment or increase the active-POD count by itself.</p>}
-          <label className="roster-check"><input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} /> I reviewed my skills, experience, current work and leave. Empty sections mean I have nothing to record.</label>
+          <ul>{work.map((w, i) => <li key={i}>{w.title || '(Missing title)'} — {WORK_TYPE_OPTIONS.find(option => option.value === w.kind)?.label ?? w.kind}, {w.total_hours || '0'} total hours across these dates, {w.starts_on} to {w.ends_on}</li>)}</ul>
+          {work.some(w => w.kind === 'EXTERNAL') && <p className="roster-notice">Current work counts toward your capacity when you save your profile. It does not create a project assignment or increase the active-POD count.</p>}
+          <label className="roster-check"><input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} /> I reviewed my skills, experience, current work and leave. If I added no work or leave, I confirm I have no existing commitments during this period.</label>
         </>}
         <footer>{step > 0 && <button type="button" disabled={busy} onClick={() => setStep(step - 1)}>Back</button>}{step < 2 ? <button type="button" className="roster-primary" onClick={() => {
           if (step === 1 && dateIssue) { setError(dateIssue.message); return; }

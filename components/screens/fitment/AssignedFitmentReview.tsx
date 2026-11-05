@@ -2,6 +2,7 @@
 
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
+import { CapabilityText } from '@/components/ui/CapabilityText';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { DropdownField } from '@/components/ui/DropdownField';
 import { PageHeader } from '@/components/ui/PageHeader';
@@ -87,7 +88,7 @@ function AssignedPeople({ title, people, personId }: { title: string; people: Li
         <div className="staffing-candidate-main"><b>{person.full_name}</b><div className="staffing-candidate-meta">{roleName(person.role_in_pod)}</div></div>
         <Pill tone={person.person_id === personId ? 'teal' : ''}>{person.person_id === personId ? 'Your assignment' : person.status === 'CLOSED' ? 'Closed' : 'Assigned'}</Pill>
       </div>
-      <p className="staffing-rationale">{person.responsibilities}</p>
+      <p className="staffing-rationale"><CapabilityText>{person.responsibilities}</CapabilityText></p>
       {(person.assigned_hours !== undefined || (person.starts_on && person.ends_on)) && <div className="staffing-candidate-foot">
         {person.assigned_hours !== undefined && <span>{person.assigned_hours} originally planned hours</span>}
         {person.starts_on && person.ends_on && <span>{formatDate(person.starts_on.slice(0, 10))} – {formatDate(person.ends_on.slice(0, 10))}</span>}

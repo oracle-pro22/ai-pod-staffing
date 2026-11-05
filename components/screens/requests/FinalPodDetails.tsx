@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
+import { CapabilityText } from '@/components/ui/CapabilityText';
 import { FormGroup, TextArea } from '@/components/ui/FormControls';
 import { Pill } from '@/components/ui/Pill';
 import { useStaffingApp } from '@/context/StaffingAppProvider';
@@ -40,7 +41,7 @@ export function FinalPodDetails({ requestId }: { requestId: string }) {
     {members.map(m => <article className="staffing-candidate recommended" key={m.assignment_id}>
       <div className="staffing-candidate-head"><Avatar initials={m.full_name.split(' ').map(p => p[0]).join('').slice(0, 2)} />
         <div className="staffing-candidate-main"><b>{m.full_name}</b><div className="staffing-candidate-meta">{m.role_in_pod === 'POD_LEAD' ? 'POD Lead' : 'POD Member'}{m.assigned_hours !== undefined && <> · {m.assigned_hours} originally planned hours</>}</div></div>
-        <Pill tone="teal">{liveStatusLabel(m.status)}</Pill></div><div className="staffing-rationale">{m.responsibilities}</div>
+        <Pill tone="teal">{liveStatusLabel(m.status)}</Pill></div><div className="staffing-rationale"><CapabilityText>{m.responsibilities}</CapabilityText></div>
         {m.starts_on && m.ends_on && <small>{formatDate(m.starts_on.slice(0, 10))} – {formatDate(m.ends_on.slice(0, 10))}</small>}
     </article>)}
     {canClose && !closing && <Button onClick={() => setClosing(true)}>Close project</Button>}

@@ -63,14 +63,14 @@ test('first-login deliverable labels include project context and never render un
 test('first-login source contains no Captain review hold', () => {
   const source = fs.readFileSync(path.join(root, 'components/entry/OnboardingEntry.tsx'), 'utf8');
   assert.doesNotMatch(source, /Captain review required|needs review|Check review status|hold your profile for review/);
-  assert.match(source, /counts toward your capacity immediately/);
+  assert.match(source, /Current work counts toward your capacity when you save your profile/);
 });
 
 test('first-login setup uses shared styled dropdowns and explains deliverable interest', () => {
   const source = fs.readFileSync(path.join(root, 'components/entry/OnboardingEntry.tsx'), 'utf8');
   assert.doesNotMatch(source, /<select|<option/);
   assert.match(source, /DropdownField/);
-  for (const label of ['Proficiency', 'Experience level', 'Contribution', 'Type', 'Your existing POD role']) {
+  for (const label of ['Proficiency', 'Experience level', 'Contribution', 'Type']) {
     assert.match(source, new RegExp(`label=["']${label}["']`));
   }
   assert.match(source, /Consider me for future work with this deliverable/);
@@ -80,10 +80,25 @@ test('first-login setup uses shared styled dropdowns and explains deliverable in
 test('first-login setup distinguishes the confirmation period from individual plans', () => {
   const source = fs.readFileSync(path.join(root, 'components/entry/OnboardingEntry.tsx'), 'utf8');
   assert.match(source, /Availability confirmation period/);
-  assert.match(source, /Planned work and leave within this period/);
-  assert.match(source, /must fall within these dates/);
+  assert.match(source, /Your current work and planned leave/);
+  assert.match(source, /Keep every work and leave entry within these dates/);
   assert.match(source, /Period starts/);
   assert.match(source, /Period ends/);
+});
+
+test('first-login current-work wording keeps the existing external-work contract', () => {
+  const source = fs.readFileSync(path.join(root, 'components/entry/OnboardingEntry.tsx'), 'utf8');
+  assert.match(source, /value: 'EXTERNAL', label: 'Current work'/);
+  assert.match(source, /Choose Current work for these responsibilities and Leave for planned time off/);
+  assert.match(source, /Do not add work already assigned to you in this application/);
+  assert.doesNotMatch(source, /value: 'POD'|Existing POD work|Your existing POD role/);
+  assert.match(source, /Work or leave name<input value=\{w.title\}/);
+  assert.match(source, /Total hours across these dates<input type="number" min="0.01" step="0.01" value=\{w.total_hours\}/);
+  assert.match(source, /20 hours per week for four weeks means 80 total hours/);
+  assert.match(source, /Use separate entries when your workload varies/);
+  assert.match(source, /WORK_TYPE_OPTIONS.find\(option => option.value === w.kind\)\?\.label/);
+  assert.match(source, /If I added no work or leave, I confirm I have no existing commitments during this period/);
+  assert.match(source, /work: work.map\(w => \(\{ \.\.\.w, total_hours: Number\(w.total_hours\) \}\)\)/);
 });
 
 test('onboarding date errors identify the entry, both ranges, and the correction', () => {

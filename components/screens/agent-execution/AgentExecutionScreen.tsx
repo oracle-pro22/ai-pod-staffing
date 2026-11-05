@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
+import { CapabilityText } from '@/components/ui/CapabilityText';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { SelectField } from '@/components/ui/FormControls';
 import { PageHeader } from '@/components/ui/PageHeader';
@@ -223,7 +224,7 @@ function PreviewExecutionScreen() {
                       <Avatar initials={person?.initials ?? 'AI'} />
                       <div>
                         <b>{item.personName} • {item.roleInPod}</b>
-                        <small>{item.rationale}</small>
+                        <small><CapabilityText>{item.rationale}</CapabilityText></small>
                         <small>{item.source}</small>
                       </div>
                       <strong>{item.score}</strong>
